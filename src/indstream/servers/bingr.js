@@ -20,7 +20,10 @@ module.exports = {
     const year = meta && meta.year ? meta.year : '';
     const type = ctx.type;
     const id = String(ctx.tmdbId || '');
-    if (!title || !id) return [];
+    if (!title || !id) {
+      ctx.log('bingr: missing ' + (!title ? 'title' : 'id') + ', skipping');
+      return [];
+    }
 
     const postHeaders = {
       'Content-Type': 'application/json',
@@ -46,6 +49,10 @@ module.exports = {
               headers: postHeaders,
             });
       if (!text) continue;
+      if (isChallengeHtml(text)) {
+        ctx.log('bingr: ' + srv + ' blocked by challenge page');
+        continue;
+      }
       bingrSources(text).forEach(function (s) {
         if (seen[s.url]) return;
         seen[s.url] = true;
@@ -77,7 +84,14 @@ function bingrBody(srv, type, id, title, year, season, episode) {
   return { srv: srv, t: type === 'tv' ? 'tv' : 'movie', id: id, query: query };
 }
 
+function isChallengeHtml(text) {
+  const t = String(text || '');
+  if (!t) return false;
+  return t.indexOf('<!DOCTYPE') >= 0 || t.indexOf('<html') >= 0 || t.indexOf('Attention Required') >= 0 || t.indexOf('Just a moment') >= 0;
+}
+
 function bingrSources(jsonText) {
+  if (isChallengeHtml(jsonText)) return [];
   let root = null;
   try {
     root = JSON.parse(jsonText);
@@ -98,4 +112,5 @@ function bingrSources(jsonText) {
 module.exports._test = {
   bingrBody: bingrBody,
   bingrSources: bingrSources,
+  isChallengeHtml: isChallengeHtml,
 };

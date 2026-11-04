@@ -23,13 +23,16 @@ module.exports = {
       timeoutMs: ctx.timeoutMs,
       headers: { Referer: BASE + '/' },
     });
-    if (!html) return [];
+    if (!html) {
+      ctx.log('vidrift: embed page unreachable (' + page + ')');
+      return [];
+    }
 
     const out = [];
     vidriftStreams(html).forEach(function (pair) {
       const rel = pair[0];
       const label = pair[1];
-      const abs = /^https?:/i.test(rel) ? rel : BASE + rel;
+      const abs = /^https?:/i.test(rel) ? rel : BASE + (rel.charAt(0) === '/' ? rel : '/' + rel);
       out.push({
         provider: module.exports.name,
         url: abs,
@@ -42,6 +45,11 @@ module.exports = {
         headers: { 'User-Agent': http.DEFAULT_UA, Referer: BASE + '/' },
       });
     });
+    if (!out.length) {
+      if (html.indexOf('embedMeta') >= 0) ctx.log('vidrift: embedMeta present but no usable stream urls');
+      else if (html.indexOf('iframe') >= 0 || html.indexOf('Embed this page') >= 0) ctx.log('vidrift: embed gated (iframe wall)');
+      else ctx.log('vidrift: no embedMeta in page');
+    }
     return out;
   },
 };

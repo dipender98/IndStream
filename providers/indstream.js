@@ -1106,12 +1106,15 @@ var require_vidrift = __commonJS({
             timeoutMs: ctx.timeoutMs,
             headers: { Referer: BASE + "/" }
           });
-          if (!html) return [];
+          if (!html) {
+            ctx.log("vidrift: embed page unreachable (" + page + ")");
+            return [];
+          }
           const out = [];
           vidriftStreams(html).forEach(function(pair) {
             const rel = pair[0];
             const label = pair[1];
-            const abs = /^https?:/i.test(rel) ? rel : BASE + rel;
+            const abs = /^https?:/i.test(rel) ? rel : BASE + (rel.charAt(0) === "/" ? rel : "/" + rel);
             out.push({
               provider: module2.exports.name,
               url: abs,
@@ -1124,6 +1127,11 @@ var require_vidrift = __commonJS({
               headers: { "User-Agent": http2.DEFAULT_UA, Referer: BASE + "/" }
             });
           });
+          if (!out.length) {
+            if (html.indexOf("embedMeta") >= 0) ctx.log("vidrift: embedMeta present but no usable stream urls");
+            else if (html.indexOf("iframe") >= 0 || html.indexOf("Embed this page") >= 0) ctx.log("vidrift: embed gated (iframe wall)");
+            else ctx.log("vidrift: no embedMeta in page");
+          }
           return out;
         });
       }
@@ -1192,7 +1200,10 @@ var require_bingr = __commonJS({
           const year = meta && meta.year ? meta.year : "";
           const type = ctx.type;
           const id = String(ctx.tmdbId || "");
-          if (!title || !id) return [];
+          if (!title || !id) {
+            ctx.log("bingr: missing " + (!title ? "title" : "id") + ", skipping");
+            return [];
+          }
           const postHeaders = {
             "Content-Type": "application/json",
             Origin: "https://bingr.one",
@@ -1213,6 +1224,10 @@ var require_bingr = __commonJS({
               headers: postHeaders
             });
             if (!text) continue;
+            if (isChallengeHtml(text)) {
+              ctx.log("bingr: " + srv + " blocked by challenge page");
+              continue;
+            }
             bingrSources(text).forEach(function(s) {
               if (seen[s.url]) return;
               seen[s.url] = true;
@@ -1243,7 +1258,13 @@ var require_bingr = __commonJS({
       }
       return { srv, t: type === "tv" ? "tv" : "movie", id, query };
     }
+    function isChallengeHtml(text) {
+      const t = String(text || "");
+      if (!t) return false;
+      return t.indexOf("<!DOCTYPE") >= 0 || t.indexOf("<html") >= 0 || t.indexOf("Attention Required") >= 0 || t.indexOf("Just a moment") >= 0;
+    }
     function bingrSources(jsonText) {
+      if (isChallengeHtml(jsonText)) return [];
       let root = null;
       try {
         root = JSON.parse(jsonText);
@@ -1262,7 +1283,8 @@ var require_bingr = __commonJS({
     }
     module2.exports._test = {
       bingrBody,
-      bingrSources
+      bingrSources,
+      isChallengeHtml
     };
   }
 });
@@ -1295,7 +1317,10 @@ var require_moviebox = __commonJS({
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
           const title = meta && meta.title ? meta.title : "";
           const type = ctx.type;
-          if (!title) return [];
+          if (!title) {
+            ctx.log("moviebox: missing title, skipping");
+            return [];
+          }
           const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           const seasonKey = Number(ctx.season) > 0 ? Number(ctx.season) : 1;
           const episodeKey = Number(ctx.episode) > 0 ? Number(ctx.episode) : 1;
@@ -1313,7 +1338,13 @@ var require_moviebox = __commonJS({
           }
           if (!items || !items.length) return [];
           const subjects = matchSubjects(items, title, type, seasonKey);
-          if (!subjects.length) return [];
+          if (!subjects.length) {
+            const titles = items.slice(0, 5).map(function(it) {
+              return it && it.title ? String(it.title) : "?";
+            }).join(" | ");
+            ctx.log('moviebox: no title match for "' + title + '"; search returned: ' + titles);
+            return [];
+          }
           const out = [];
           const seen = {};
           for (let i = 0; i < subjects.length; i += 1) {
@@ -1405,7 +1436,11 @@ var require_moviebox = __commonJS({
         const audioTag = "";
         const clean = rawTitle.replace(SEASON_SUFFIX_RE, "").replace(BRACKET_REMOVE_RE, "").replace(YEAR_RE, "").trim();
         const cleanNorm = norm(clean);
-        if (cleanNorm && cleanNorm !== titleNorm && !(titleNorm.length >= 4 && cleanNorm.indexOf(titleNorm) === 0)) return;
+        if (cleanNorm !== titleNorm) {
+          const prefixForward = titleNorm.length >= 4 && cleanNorm.indexOf(titleNorm) === 0;
+          const prefixReverse = cleanNorm.length >= 4 && titleNorm.indexOf(cleanNorm) === 0;
+          if (!prefixForward && !prefixReverse) return;
+        }
         out.push({ id, seasonEnd, audioTag, detailPath: String(item.detailPath || "") });
       });
       return out;
@@ -1910,7 +1945,10 @@ var require_hub4k = __commonJS({
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
-          if (!title) return [];
+          if (!title) {
+            ctx.log("hub4k: missing title, skipping");
+            return [];
+          }
           const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           let base = "";
           let searchHtml = "";
@@ -2148,7 +2186,10 @@ var require_fsl = __commonJS({
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
-          if (!title) return [];
+          if (!title) {
+            ctx.log("fsl: missing title, skipping");
+            return [];
+          }
           const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           const out = [];
           const seen = {};
@@ -2476,7 +2517,7 @@ function probeUnknownQuality(stream, ctx) {
     return stream;
   });
 }
-var GRACE_MS = 3500;
+var GRACE_MS = 9e3;
 var OVERALL_MAX_MS = 3e4;
 var TMDB_META_CAP_MS = 8e3;
 var SERVER_CAPS = {
@@ -2503,6 +2544,7 @@ function runSources(wanted, context) {
       finished = true;
       clearTimeout(overallTimer);
       if (graceTimer) clearTimeout(graceTimer);
+      context.log("done: " + collected.length + " streams from " + settled + "/" + total + " sources");
       resolve(collected.slice());
     }
     function onFirstStream() {
@@ -2514,10 +2556,12 @@ function runSources(wanted, context) {
     }
     wanted.forEach(function(server, i) {
       const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1e3 });
+      const startedAt = Date.now();
       http.withTimeout(server.resolve(scope), caps[i], []).then(function(list) {
         const normalized = (list || []).map(function(raw) {
           return normalizeStream(raw, server, context);
         }).filter(Boolean);
+        context.log(server.name + ": " + normalized.length + " streams in " + (Date.now() - startedAt) + "ms");
         if (normalized.length && !graceTimer) onFirstStream();
         Array.prototype.push.apply(collected, normalized);
         settled += 1;
@@ -2544,6 +2588,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
     };
     const metaPromise = http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), TMDB_META_CAP_MS, null).catch(function() {
       return null;
+    });
+    metaPromise.then(function(m) {
+      context.log("tmdb: " + (m && m.title ? '"' + m.title + '" (' + (m.year || "?") + ")" : "metadata unavailable"));
     });
     context.metaPromise = metaPromise;
     context.meta = null;

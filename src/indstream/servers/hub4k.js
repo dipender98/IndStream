@@ -24,7 +24,10 @@ module.exports = {
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
-    if (!title) return [];
+    if (!title) {
+      ctx.log('hub4k: missing title, skipping');
+      return [];
+    }
 
     const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
 

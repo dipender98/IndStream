@@ -53,7 +53,7 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
-const GRACE_MS = 3500;
+const GRACE_MS = 9000;
 const OVERALL_MAX_MS = 30000;
 const TMDB_META_CAP_MS = 8000;
 
@@ -88,6 +88,7 @@ function runSources(wanted, context) {
       finished = true;
       clearTimeout(overallTimer);
       if (graceTimer) clearTimeout(graceTimer);
+      context.log('done: ' + collected.length + ' streams from ' + settled + '/' + total + ' sources');
       resolve(collected.slice());
     }
 
@@ -102,10 +103,12 @@ function runSources(wanted, context) {
 
     wanted.forEach(function (server, i) {
       const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1000 });
+      const startedAt = Date.now();
       http.withTimeout(server.resolve(scope), caps[i], []).then(function (list) {
         const normalized = (list || []).map(function (raw) {
           return normalizeStream(raw, server, context);
         }).filter(Boolean);
+        context.log(server.name + ': ' + normalized.length + ' streams in ' + (Date.now() - startedAt) + 'ms');
         if (normalized.length && !graceTimer) onFirstStream();
         Array.prototype.push.apply(collected, normalized);
         settled += 1;
@@ -133,6 +136,9 @@ async function getStreams(tmdbId, mediaType, season, episode) {
   // tmdbId (Vidrift) run right away; title-keyed sources wait on this promise.
   const metaPromise = http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), TMDB_META_CAP_MS, null)
     .catch(function () { return null; });
+  metaPromise.then(function (m) {
+    context.log('tmdb: ' + (m && m.title ? '"' + m.title + '" (' + (m.year || '?') + ')' : 'metadata unavailable'));
+  });
   context.metaPromise = metaPromise;
   context.meta = null;
 

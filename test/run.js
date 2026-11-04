@@ -192,6 +192,13 @@ test('bingrSources parses', function () {
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].quality, '1080p');
 });
+test('isChallengeHtml rejects cloudflare pages', function () {
+  const cf = '<!DOCTYPE html><html><head><title>Attention Required! | bingr.one</title></head><body>Just a moment...</body></html>';
+  assert.strictEqual(bingr._test.isChallengeHtml(cf), true);
+  assert.strictEqual(bingr._test.isChallengeHtml('{"sources":[]}'), false);
+  assert.strictEqual(bingr._test.isChallengeHtml(''), false);
+  assert.strictEqual(bingr._test.bingrSources(cf).length, 0);
+});
 
 console.log('moviebox');
 test('seasonEndOf', function () {
@@ -208,6 +215,11 @@ test('matchSubjects exact title', function () {
   const subjects = moviebox._test.matchSubjects(items, 'Inception', 'movie', 1);
   assert.strictEqual(subjects.length, 2);
   assert.strictEqual(subjects[0].id, '1');
+});
+test('matchSubjects reverse prefix', function () {
+  const items = [{ subjectId: '9', title: 'The Fast and the Furious (2001)' }];
+  const subjects = moviebox._test.matchSubjects(items, 'The Fast', 'movie', 1);
+  assert.strictEqual(subjects.length, 1);
 });
 test('cloudFrontCookie filters blanks', function () {
   const cookie = moviebox._test.cloudFrontCookie('CloudFront-Policy="abc"; CloudFront-Signature=""; CloudFront-Key-Pair-Id="k1"');

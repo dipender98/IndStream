@@ -29,7 +29,10 @@ module.exports = {
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
     const title = meta && meta.title ? meta.title : '';
     const type = ctx.type;
-    if (!title) return [];
+    if (!title) {
+      ctx.log('moviebox: missing title, skipping');
+      return [];
+    }
 
     const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
 
@@ -52,7 +55,11 @@ module.exports = {
     if (!items || !items.length) return [];
 
     const subjects = matchSubjects(items, title, type, seasonKey);
-    if (!subjects.length) return [];
+    if (!subjects.length) {
+      const titles = items.slice(0, 5).map(function (it) { return it && it.title ? String(it.title) : '?'; }).join(' | ');
+      ctx.log('moviebox: no title match for "' + title + '"; search returned: ' + titles);
+      return [];
+    }
 
     const out = [];
     const seen = {};
@@ -150,7 +157,11 @@ function matchSubjects(items, title, type, seasonKey) {
       .replace(YEAR_RE, '')
       .trim();
     const cleanNorm = norm(clean);
-    if (cleanNorm && cleanNorm !== titleNorm && !(titleNorm.length >= 4 && cleanNorm.indexOf(titleNorm) === 0)) return;
+    if (cleanNorm !== titleNorm) {
+      const prefixForward = titleNorm.length >= 4 && cleanNorm.indexOf(titleNorm) === 0;
+      const prefixReverse = cleanNorm.length >= 4 && titleNorm.indexOf(cleanNorm) === 0;
+      if (!prefixForward && !prefixReverse) return;
+    }
     out.push({ id: id, seasonEnd: seasonEnd, audioTag: audioTag, detailPath: String(item.detailPath || '') });
   });
   return out;
