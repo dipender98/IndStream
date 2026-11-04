@@ -30,13 +30,17 @@ module.exports = {
   timeoutMs: 30000,
 
   async resolve(ctx) {
-    const title = ctx.meta && ctx.meta.title ? ctx.meta.title : '';
-    const year = (ctx.meta && ctx.meta.year) || '';
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
+    const title = meta && meta.title ? meta.title : '';
+    const year = meta && meta.year ? meta.year : '';
     if (!title) return [];
+
+    const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
 
     const out = [];
     const seen = {};
     for (let s = 0; s < SEEDS.length; s += 1) {
+      if (Date.now() > deadline) break;
       const seed = SEEDS[s];
       const base = await fslBase(seed, ctx.timeoutMs);
       if (!base) continue;
@@ -50,11 +54,13 @@ module.exports = {
         .sort(function (a, b) { return b.score - a.score; })
         .slice(0, 2);
       for (let r = 0; r < ranked.length; r += 1) {
+        if (Date.now() > deadline) break;
         const permalink = util.resolveUrl(base, ranked[r].hit.permalink);
         const post = await fslGet(permalink, base, 10000, ctx.timeoutMs);
         if (!post) continue;
         const groups = util.episodeOrSeason(fslGroups(post), function (g) { return g.heading; }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
         for (let g = 0; g < groups.length; g += 1) {
+          if (Date.now() > deadline) break;
           const group = groups[g];
           const size = headingSizeOf(group.heading);
           const priorityLang = releaseLanguageOf(group.heading);
@@ -62,6 +68,7 @@ module.exports = {
           const qText = (group.heading.match(/\b(2160p|1440p|1080p|720p|480p)\b/i) || [])[0] || '';
           let perGroup = 0;
           for (let gw = 0; gw < group.gateways.length; gw += 1) {
+            if (Date.now() > deadline) break;
             const gateway = group.gateways[gw];
             let cloudLinks = [];
             if (/vcloud\./i.test(gateway)) {
@@ -73,8 +80,10 @@ module.exports = {
             }
             const ordered = episodeFirstOrder(cloudLinks, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0);
             for (let v = 0; v < ordered.length; v += 1) {
+              if (Date.now() > deadline) break;
               const links = await filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx.timeoutMs);
               for (let l = 0; l < links.length; l += 1) {
+                if (Date.now() > deadline) break;
                 const link = links[l];
                 if (seen[link.url]) continue;
                 seen[link.url] = true;

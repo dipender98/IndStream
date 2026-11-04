@@ -15,8 +15,9 @@ module.exports = {
   timeoutMs: 15000,
 
   async resolve(ctx) {
-    const title = ctx.meta && ctx.meta.title ? ctx.meta.title : '';
-    const year = (ctx.meta && ctx.meta.year) || '';
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
+    const title = meta && meta.title ? meta.title : '';
+    const year = meta && meta.year ? meta.year : '';
     const type = ctx.type;
     const id = String(ctx.tmdbId || '');
     if (!title || !id) return [];
@@ -30,7 +31,7 @@ module.exports = {
 
     const out = [];
     const seen = {};
-    const deadline = Date.now() + ctx.timeoutMs;
+    const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
     for (let i = 0; i < SRVS.length; i += 1) {
       const srv = SRVS[i];
       if (out.length >= 6 || Date.now() > deadline) break;

@@ -1187,8 +1187,9 @@ var require_bingr = __commonJS({
       timeoutMs: 15e3,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const title = ctx.meta && ctx.meta.title ? ctx.meta.title : "";
-          const year = ctx.meta && ctx.meta.year || "";
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const title = meta && meta.title ? meta.title : "";
+          const year = meta && meta.year ? meta.year : "";
           const type = ctx.type;
           const id = String(ctx.tmdbId || "");
           if (!title || !id) return [];
@@ -1200,7 +1201,7 @@ var require_bingr = __commonJS({
           };
           const out = [];
           const seen = {};
-          const deadline = Date.now() + ctx.timeoutMs;
+          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           for (let i = 0; i < SRVS.length; i += 1) {
             const srv = SRVS[i];
             if (out.length >= 6 || Date.now() > deadline) break;
@@ -1291,9 +1292,11 @@ var require_moviebox = __commonJS({
       timeoutMs: 2e4,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const title = ctx.meta && ctx.meta.title ? ctx.meta.title : "";
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const title = meta && meta.title ? meta.title : "";
           const type = ctx.type;
           if (!title) return [];
+          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           const seasonKey = Number(ctx.season) > 0 ? Number(ctx.season) : 1;
           const episodeKey = Number(ctx.episode) > 0 ? Number(ctx.episode) : 1;
           const subjectType = type === "movie" ? 1 : 2;
@@ -1301,18 +1304,20 @@ var require_moviebox = __commonJS({
           if (!token) return [];
           let baseHeaders = headersFor(token);
           let items = yield searchItems(baseHeaders, title, subjectType, ctx);
-          if (!items || !items.length) {
+          if ((!items || !items.length) && Date.now() < deadline - 2e3) {
             const fresh = yield fetchBearer(true);
-            if (!fresh) return [];
-            baseHeaders = headersFor(fresh);
-            items = yield searchItems(baseHeaders, title, subjectType, ctx);
-            if (!items || !items.length) return [];
+            if (fresh) {
+              baseHeaders = headersFor(fresh);
+              items = yield searchItems(baseHeaders, title, subjectType, ctx);
+            }
           }
+          if (!items || !items.length) return [];
           const subjects = matchSubjects(items, title, type, seasonKey);
           if (!subjects.length) return [];
           const out = [];
           const seen = {};
           for (let i = 0; i < subjects.length; i += 1) {
+            if (Date.now() > deadline) break;
             const ref = subjects[i];
             if (type === "tv" && ref.seasonEnd > 0 && ref.seasonEnd < seasonKey) continue;
             const streams = yield subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx);
@@ -1902,9 +1907,11 @@ var require_hub4k = __commonJS({
       timeoutMs: 25e3,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const title = ctx.meta && ctx.meta.title ? ctx.meta.title : "";
-          const year = ctx.meta && ctx.meta.year || "";
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const title = meta && meta.title ? meta.title : "";
+          const year = meta && meta.year ? meta.year : "";
           if (!title) return [];
+          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           let base = "";
           let searchHtml = "";
           let fallback = null;
@@ -1938,6 +1945,7 @@ var require_hub4k = __commonJS({
           const out = [];
           const seen = {};
           for (let i = 0; i < Math.min(2, ranked.length); i += 1) {
+            if (Date.now() > deadline) break;
             const card = ranked[i].card;
             const post = yield http2.getText(card.url, {
               timeoutMs: 8e3,
@@ -1949,12 +1957,14 @@ var require_hub4k = __commonJS({
               return it.title;
             }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
             for (let j = 0; j < items.length; j += 1) {
+              if (Date.now() > deadline) break;
               const item = items[j];
               const langNames = util2.languageNames(item.languages);
               const lang = langNames.join(", ");
               const audioLang = util2.languageLabel(item.languages) || lang;
               const priority = hubLangOf(item.languages);
               for (let g = 0; g < item.gatewayUrls.length; g += 1) {
+                if (Date.now() > deadline) break;
                 const gateway = item.gatewayUrls[g];
                 const gwPage = yield http2.getText(gateway, {
                   timeoutMs: 1e4,
@@ -1983,6 +1993,7 @@ var require_hub4k = __commonJS({
                 const referer = util2.originOf(finalDrive) || "https://hubcloud.ist/";
                 const files = yield filehost.hubDriveFiles(finalDrive, card.url);
                 for (let f = 0; f < files.length; f += 1) {
+                  if (Date.now() > deadline) break;
                   const file = files[f];
                   const qText = file.quality || (item.title.match(HUB_QUALITY_RE) || [])[0] || "";
                   const fileAudio = util2.languageLabel(file.language);
@@ -2134,12 +2145,15 @@ var require_fsl = __commonJS({
       timeoutMs: 3e4,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const title = ctx.meta && ctx.meta.title ? ctx.meta.title : "";
-          const year = ctx.meta && ctx.meta.year || "";
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const title = meta && meta.title ? meta.title : "";
+          const year = meta && meta.year ? meta.year : "";
           if (!title) return [];
+          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
           const out = [];
           const seen = {};
           for (let s = 0; s < SEEDS.length; s += 1) {
+            if (Date.now() > deadline) break;
             const seed = SEEDS[s];
             const base = yield fslBase(seed, ctx.timeoutMs);
             if (!base) continue;
@@ -2155,6 +2169,7 @@ var require_fsl = __commonJS({
               return b.score - a.score;
             }).slice(0, 2);
             for (let r = 0; r < ranked.length; r += 1) {
+              if (Date.now() > deadline) break;
               const permalink = util2.resolveUrl(base, ranked[r].hit.permalink);
               const post = yield fslGet(permalink, base, 1e4, ctx.timeoutMs);
               if (!post) continue;
@@ -2162,6 +2177,7 @@ var require_fsl = __commonJS({
                 return g.heading;
               }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
               for (let g = 0; g < groups.length; g += 1) {
+                if (Date.now() > deadline) break;
                 const group = groups[g];
                 const size = headingSizeOf(group.heading);
                 const priorityLang = releaseLanguageOf(group.heading);
@@ -2169,6 +2185,7 @@ var require_fsl = __commonJS({
                 const qText = (group.heading.match(/\b(2160p|1440p|1080p|720p|480p)\b/i) || [])[0] || "";
                 let perGroup = 0;
                 for (let gw = 0; gw < group.gateways.length; gw += 1) {
+                  if (Date.now() > deadline) break;
                   const gateway = group.gateways[gw];
                   let cloudLinks = [];
                   if (/vcloud\./i.test(gateway)) {
@@ -2180,8 +2197,10 @@ var require_fsl = __commonJS({
                   }
                   const ordered = episodeFirstOrder(cloudLinks, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0);
                   for (let v = 0; v < ordered.length; v += 1) {
+                    if (Date.now() > deadline) break;
                     const links = yield filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx.timeoutMs);
                     for (let l = 0; l < links.length; l += 1) {
+                      if (Date.now() > deadline) break;
                       const link = links[l];
                       if (seen[link.url]) continue;
                       seen[link.url] = true;
@@ -2457,6 +2476,56 @@ function probeUnknownQuality(stream, ctx) {
     return stream;
   });
 }
+var GRACE_MS = 3500;
+var OVERALL_MAX_MS = 3e4;
+var TMDB_META_CAP_MS = 8e3;
+var SERVER_CAPS = {
+  vidrift: 8e3,
+  bingr: 8e3,
+  moviebox: 1e4,
+  hub4k: 1e4,
+  fsl: 1e4
+};
+function runSources(wanted, context) {
+  return new Promise(function(resolve) {
+    const total = wanted.length;
+    const collected = [];
+    let settled = 0;
+    let finished = false;
+    let graceTimer = null;
+    const caps = wanted.map(function(server) {
+      return Math.min(SERVER_CAPS[server.id] || 15e3, context.settings.requestTimeout * 1e3 + 5e3);
+    });
+    const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9e3);
+    const overallTimer = setTimeout(finish, overallMs);
+    function finish() {
+      if (finished) return;
+      finished = true;
+      clearTimeout(overallTimer);
+      if (graceTimer) clearTimeout(graceTimer);
+      resolve(collected.slice());
+    }
+    function onFirstStream() {
+      if (graceTimer) return;
+      graceTimer = setTimeout(finish, GRACE_MS);
+    }
+    function consider() {
+      if (settled >= total) finish();
+    }
+    wanted.forEach(function(server, i) {
+      const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1e3 });
+      http.withTimeout(server.resolve(scope), caps[i], []).then(function(list) {
+        const normalized = (list || []).map(function(raw) {
+          return normalizeStream(raw, server, context);
+        }).filter(Boolean);
+        if (normalized.length && !graceTimer) onFirstStream();
+        Array.prototype.push.apply(collected, normalized);
+        settled += 1;
+        consider();
+      });
+    });
+  });
+}
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
@@ -2473,38 +2542,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
       } : function() {
       }
     };
-    let meta = null;
-    try {
-      meta = yield http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), 1e4, null);
-    } catch (error) {
-      meta = null;
-    }
-    context.meta = meta;
+    const metaPromise = http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), TMDB_META_CAP_MS, null).catch(function() {
+      return null;
+    });
+    context.metaPromise = metaPromise;
+    context.meta = null;
     const wanted = servers.SERVERS.filter(function(server) {
       return s.sources[server.id] !== false;
     });
     if (!wanted.length) return [];
-    const perServer = s.requestTimeout * 1e3 + 5e3;
-    const overallMs = Math.min(wanted.length * perServer + 1e4, 6e4);
-    const results = yield http.withTimeout(
-      http.parallelMap(wanted, wanted.length, function(server) {
-        return http.withTimeout(
-          server.resolve(context).then(function(list) {
-            return (list || []).map(function(raw) {
-              return normalizeStream(raw, server, context);
-            }).filter(Boolean);
-          }),
-          perServer,
-          []
-        );
-      }),
-      overallMs,
-      []
-    );
-    let streams = [];
-    results.forEach(function(list) {
-      if (Array.isArray(list)) streams = streams.concat(list);
-    });
+    let streams = yield runSources(wanted, context);
     const includeDash = s.includeDash;
     streams = streams.filter(function(stream) {
       if (!includeDash && stream.type === "dash") return false;

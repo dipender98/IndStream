@@ -21,9 +21,12 @@ module.exports = {
   timeoutMs: 25000,
 
   async resolve(ctx) {
-    const title = ctx.meta && ctx.meta.title ? ctx.meta.title : '';
-    const year = (ctx.meta && ctx.meta.year) || '';
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
+    const title = meta && meta.title ? meta.title : '';
+    const year = meta && meta.year ? meta.year : '';
     if (!title) return [];
+
+    const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
 
     let base = '';
     let searchHtml = '';
@@ -59,6 +62,7 @@ module.exports = {
     const out = [];
     const seen = {};
     for (let i = 0; i < Math.min(2, ranked.length); i += 1) {
+      if (Date.now() > deadline) break;
       const card = ranked[i].card;
       const post = await http.getText(card.url, {
         timeoutMs: 8000,
@@ -69,6 +73,7 @@ module.exports = {
       const items = util.episodeOrSeason(hub4kItems(post), function (it) { return it.title; }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
 
       for (let j = 0; j < items.length; j += 1) {
+        if (Date.now() > deadline) break;
         const item = items[j];
         const langNames = util.languageNames(item.languages);
         const lang = langNames.join(', ');
@@ -76,6 +81,7 @@ module.exports = {
         const priority = hubLangOf(item.languages);
 
         for (let g = 0; g < item.gatewayUrls.length; g += 1) {
+          if (Date.now() > deadline) break;
           const gateway = item.gatewayUrls[g];
           const gwPage = await http.getText(gateway, {
             timeoutMs: 10000,
@@ -106,6 +112,7 @@ module.exports = {
           const referer = util.originOf(finalDrive) || 'https://hubcloud.ist/';
           const files = await filehost.hubDriveFiles(finalDrive, card.url);
           for (let f = 0; f < files.length; f += 1) {
+            if (Date.now() > deadline) break;
             const file = files[f];
             const qText = file.quality || (item.title.match(HUB_QUALITY_RE) || [])[0] || '';
             const fileAudio = util.languageLabel(file.language);

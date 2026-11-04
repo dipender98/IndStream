@@ -21,12 +21,14 @@ async function run() {
   });
 
   let streams = [];
+  const started = Date.now();
   if (mode === 'movie') {
     streams = await plugin.getStreams(TMDB.inception, 'movie', null, null);
   } else {
     streams = await plugin.getStreams(TMDB.got.id, 'tv', TMDB.got.season, TMDB.got.episode);
   }
-
+  const elapsed = Date.now() - started;
+  console.log('elapsed: ' + elapsed + 'ms');
   console.log('total streams: ' + streams.length);
   streams.forEach(function (s, i) {
     console.log('  [' + i + '] ' + s.provider + ' | ' + s.quality + ' | ' + s.language + ' | ' + s.type + ' | ' + s.url.slice(0, 110));

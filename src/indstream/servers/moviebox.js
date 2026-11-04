@@ -26,9 +26,12 @@ module.exports = {
   timeoutMs: 20000,
 
   async resolve(ctx) {
-    const title = ctx.meta && ctx.meta.title ? ctx.meta.title : '';
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
+    const title = meta && meta.title ? meta.title : '';
     const type = ctx.type;
     if (!title) return [];
+
+    const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
 
     const seasonKey = Number(ctx.season) > 0 ? Number(ctx.season) : 1;
     const episodeKey = Number(ctx.episode) > 0 ? Number(ctx.episode) : 1;
@@ -39,13 +42,14 @@ module.exports = {
     let baseHeaders = headersFor(token);
 
     let items = await searchItems(baseHeaders, title, subjectType, ctx);
-    if (!items || !items.length) {
+    if ((!items || !items.length) && Date.now() < deadline - 2000) {
       const fresh = await fetchBearer(true);
-      if (!fresh) return [];
-      baseHeaders = headersFor(fresh);
-      items = await searchItems(baseHeaders, title, subjectType, ctx);
-      if (!items || !items.length) return [];
+      if (fresh) {
+        baseHeaders = headersFor(fresh);
+        items = await searchItems(baseHeaders, title, subjectType, ctx);
+      }
     }
+    if (!items || !items.length) return [];
 
     const subjects = matchSubjects(items, title, type, seasonKey);
     if (!subjects.length) return [];
@@ -53,6 +57,7 @@ module.exports = {
     const out = [];
     const seen = {};
     for (let i = 0; i < subjects.length; i += 1) {
+      if (Date.now() > deadline) break;
       const ref = subjects[i];
       if (type === 'tv' && ref.seasonEnd > 0 && ref.seasonEnd < seasonKey) continue;
       const streams = await subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx);

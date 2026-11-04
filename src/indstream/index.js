@@ -53,6 +53,68 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
+const GRACE_MS = 3500;
+const OVERALL_MAX_MS = 30000;
+const TMDB_META_CAP_MS = 8000;
+
+const SERVER_CAPS = {
+  vidrift: 8000,
+  bingr: 8000,
+  moviebox: 10000,
+  hub4k: 10000,
+  fsl: 10000,
+};
+
+// Runs all sources concurrently. Resolves as soon as one of these happens:
+// - every source has settled, or
+// - at least one stream arrived and the grace window has elapsed, or
+// - the overall deadline passed.
+function runSources(wanted, context) {
+  return new Promise(function (resolve) {
+    const total = wanted.length;
+    const collected = [];
+    let settled = 0;
+    let finished = false;
+    let graceTimer = null;
+
+    const caps = wanted.map(function (server) {
+      return Math.min(SERVER_CAPS[server.id] || 15000, context.settings.requestTimeout * 1000 + 5000);
+    });
+    const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9000);
+    const overallTimer = setTimeout(finish, overallMs);
+
+    function finish() {
+      if (finished) return;
+      finished = true;
+      clearTimeout(overallTimer);
+      if (graceTimer) clearTimeout(graceTimer);
+      resolve(collected.slice());
+    }
+
+    function onFirstStream() {
+      if (graceTimer) return;
+      graceTimer = setTimeout(finish, GRACE_MS);
+    }
+
+    function consider() {
+      if (settled >= total) finish();
+    }
+
+    wanted.forEach(function (server, i) {
+      const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1000 });
+      http.withTimeout(server.resolve(scope), caps[i], []).then(function (list) {
+        const normalized = (list || []).map(function (raw) {
+          return normalizeStream(raw, server, context);
+        }).filter(Boolean);
+        if (normalized.length && !graceTimer) onFirstStream();
+        Array.prototype.push.apply(collected, normalized);
+        settled += 1;
+        consider();
+      });
+    });
+  });
+}
+
 async function getStreams(tmdbId, mediaType, season, episode) {
   const type = mediaType === 'tv' || mediaType === 'series' ? 'tv' : 'movie';
   const s = settings.getSettings();
@@ -67,44 +129,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     log: s.debug ? function (message) { console.log('[IndStream] ' + message); } : function () {},
   };
 
-  // Resolve TMDB metadata first so title-keyed sources (MovieBox, 4KHDHub, FSL)
-  // have a title to search. Vidrift and Bingr work from tmdbId alone.
-  let meta = null;
-  try {
-    meta = await http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), 10000, null);
-  } catch (error) {
-    meta = null;
-  }
-  context.meta = meta;
+  // Start TMDB metadata resolution immediately. Sources that only need the
+  // tmdbId (Vidrift) run right away; title-keyed sources wait on this promise.
+  const metaPromise = http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), TMDB_META_CAP_MS, null)
+    .catch(function () { return null; });
+  context.metaPromise = metaPromise;
+  context.meta = null;
 
   const wanted = servers.SERVERS.filter(function (server) {
     return s.sources[server.id] !== false;
   });
   if (!wanted.length) return [];
 
-  const perServer = s.requestTimeout * 1000 + 5000;
-  const overallMs = Math.min(wanted.length * perServer + 10000, 60000);
-
-  const results = await http.withTimeout(
-    http.parallelMap(wanted, wanted.length, function (server) {
-      return http.withTimeout(
-        server.resolve(context).then(function (list) {
-          return (list || []).map(function (raw) {
-            return normalizeStream(raw, server, context);
-          }).filter(Boolean);
-        }),
-        perServer,
-        []
-      );
-    }),
-    overallMs,
-    []
-  );
-
-  let streams = [];
-  results.forEach(function (list) {
-    if (Array.isArray(list)) streams = streams.concat(list);
-  });
+  let streams = await runSources(wanted, context);
 
   const includeDash = s.includeDash;
   streams = streams.filter(function (stream) {
