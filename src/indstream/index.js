@@ -53,16 +53,16 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
-const GRACE_MS = 9000;
-const OVERALL_MAX_MS = 30000;
-const TMDB_META_CAP_MS = 8000;
+const GRACE_MS = 4000;
+const OVERALL_MAX_MS = 14000;
+const TMDB_META_CAP_MS = 6000;
 
 const SERVER_CAPS = {
-  vidrift: 8000,
-  bingr: 8000,
-  moviebox: 10000,
-  hub4k: 10000,
-  fsl: 10000,
+  vidrift: 5000,
+  bingr: 5000,
+  moviebox: 6000,
+  hub4k: 7000,
+  fsl: 6000,
 };
 
 // Runs all sources concurrently. Resolves as soon as one of these happens:

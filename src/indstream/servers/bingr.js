@@ -15,7 +15,7 @@ module.exports = {
   timeoutMs: 15000,
 
   async resolve(ctx) {
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8000, null);
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
     const type = ctx.type;

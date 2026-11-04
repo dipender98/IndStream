@@ -1195,7 +1195,7 @@ var require_bingr = __commonJS({
       timeoutMs: 15e3,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           const type = ctx.type;
@@ -1314,7 +1314,7 @@ var require_moviebox = __commonJS({
       timeoutMs: 2e4,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const type = ctx.type;
           if (!title) {
@@ -1942,7 +1942,7 @@ var require_hub4k = __commonJS({
       timeoutMs: 25e3,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           if (!title) {
@@ -2183,7 +2183,7 @@ var require_fsl = __commonJS({
       timeoutMs: 3e4,
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 8e3, null);
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           if (!title) {
@@ -2517,15 +2517,15 @@ function probeUnknownQuality(stream, ctx) {
     return stream;
   });
 }
-var GRACE_MS = 9e3;
-var OVERALL_MAX_MS = 3e4;
-var TMDB_META_CAP_MS = 8e3;
+var GRACE_MS = 4e3;
+var OVERALL_MAX_MS = 14e3;
+var TMDB_META_CAP_MS = 6e3;
 var SERVER_CAPS = {
-  vidrift: 8e3,
-  bingr: 8e3,
-  moviebox: 1e4,
-  hub4k: 1e4,
-  fsl: 1e4
+  vidrift: 5e3,
+  bingr: 5e3,
+  moviebox: 6e3,
+  hub4k: 7e3,
+  fsl: 6e3
 };
 function runSources(wanted, context) {
   return new Promise(function(resolve) {
