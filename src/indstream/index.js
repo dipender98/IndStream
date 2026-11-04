@@ -173,11 +173,22 @@ async function getStreams(tmdbId, mediaType, season, episode) {
   return streams;
 }
 
-function onSettings() {
+async function onSettings() {
   return settings.onSettings();
 }
 
-module.exports = {
+const api = {
   getStreams: getStreams,
   onSettings: onSettings,
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = api;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.getStreams = getStreams;
+  globalThis.onSettings = onSettings;
+} else if (typeof global !== 'undefined') {
+  global.getStreams = getStreams;
+  global.onSettings = onSettings;
+}

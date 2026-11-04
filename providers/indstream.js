@@ -2580,9 +2580,21 @@ function getStreams(tmdbId, mediaType, season, episode) {
   });
 }
 function onSettings() {
-  return settings.onSettings();
+  return __async(this, null, function* () {
+    return settings.onSettings();
+  });
 }
-module.exports = {
+var api = {
   getStreams,
   onSettings
 };
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = api;
+}
+if (typeof globalThis !== "undefined") {
+  globalThis.getStreams = getStreams;
+  globalThis.onSettings = onSettings;
+} else if (typeof global !== "undefined") {
+  global.getStreams = getStreams;
+  global.onSettings = onSettings;
+}
