@@ -17,7 +17,7 @@ function normalizeStream(raw, server, ctx) {
   const height = Number(raw.height) || 0;
   const quality = raw.quality || util.qualityLabel(height);
   const stream = {
-    title: raw.title || server.name || '',
+    title: util.displayName(server.name, raw.language || '', null, raw.size || '', ''),
     name: server.name || '',
     url: raw.url,
     type: type,

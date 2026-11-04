@@ -81,6 +81,11 @@ test('qualityText/normalizeSizeToken', function () {
   assert.strictEqual(util.normalizeSizeToken('65.95 GB'), '65.95GB');
   assert.strictEqual(util.normalizeSizeToken('450MB'), '450MB');
 });
+test('displayName prism-style naming', function () {
+  assert.strictEqual(util.displayName('4KHDHub', 'Hindi, English', null, '65.95GB', ''), '4KHDHub (🇮🇳 Hindi, 🇬🇧 English) 65.95GB');
+  assert.strictEqual(util.displayName('Bingr', 'Original', null, '', ''), 'Bingr (Original)');
+  assert.strictEqual(util.displayName('MovieBox', '', null, '', ''), 'MovieBox (Unknown)');
+});
 test('episodeMatches/episodeOrSeason', function () {
   assert.strictEqual(util.episodeMatches('S01E05', 1, 5), true);
   assert.strictEqual(util.episodeMatches('S01E05', 1, 6), false);

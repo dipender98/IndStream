@@ -386,6 +386,69 @@ function truncate(value, length) {
   return text.length > length ? text.slice(0, length) + '…' : text;
 }
 
+const FLAG_MAP = {
+  Hindi: '🇮🇳', English: '🇬🇧', Tamil: '🇮🇳', Telugu: '🇮🇳', Malayalam: '🇮🇳',
+  Urdu: '🇵🇰', Bengali: '🇧🇩', Arabic: '🇸🇦', Russian: '🇷🇺', Chinese: '🇨🇳',
+  Mandarin: '🇨🇳', Japanese: '🇯🇵', Korean: '🇰🇷', French: '🇫🇷', Spanish: '🇪🇸',
+  Portuguese: '🇵🇹', Filipino: '🇵🇭', Indonesian: '🇮🇩', Malaysian: '🇲🇾',
+  Vietnamese: '🇻🇳', Nepali: '🇳🇵', Sinhala: '🇱🇰', Thai: '🇹🇭', Turkish: '🇹🇷',
+  German: '🇩🇪', Italian: '🇮🇹', Dutch: '🇳🇱', Polish: '🇵🇱',
+};
+
+function flagOf(tag) {
+  return FLAG_MAP[tag] || '';
+}
+
+const RESOLUTION_TOKEN_RE = /\\s*(?:\\d{3,4}\\s*p(?:\\d{2,3})?|[24]\\s*k)\\b/gi;
+const QUALITY_ALIAS_RE = /(?:\\s*\\b(?:FHD|UHD|QHD)\\b)|(?:\\s+\\bHD\\b(?=\\s*$))/gi;
+const TRAILING_LANGUAGE_RE = /(?:[\\s,+/&()\\[\\]{}-]*\\b(?:hindi|english|tamil|telugu|malayalam|kannada|bengali|bangla|marathi|punjabi|gujarati|urdu|nepali|sinhala|arabic|russian|chinese|mandarin|japanese|korean|french|spanish|portuguese|filipino|tagalog|indonesian|malaysian|vietnamese|thai|turkish|german|italian|dutch|polish|multi|dual)\\b(?:\\s*[(\\[]?\\s*(?:audio|dub|dubbed)\\s*[)\\]]?)?[^\\n]*)+$/i;
+
+function stripQualityText(value) {
+  return String(value == null ? '' : value)
+    .replace(RESOLUTION_TOKEN_RE, ' ')
+    .replace(QUALITY_ALIAS_RE, ' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+function displayLanguageNamesFixed(audioLabel, mediaLabel) {
+  const audio = languageNames(audioLabel);
+  const media = languageNames(mediaLabel);
+  if (audio.length >= 2 && audio.length >= media.length) return audio;
+  if (media.length > audio.length) return media;
+  if (audio.length) return audio;
+  if (media.length) return media;
+  return [];
+}
+
+function languageTagPart(label, names) {
+  const parts = names && names.length ? names : String(label || '').split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+  if (parts.length >= 2 && !parts.some(function (p) { return p === 'Multi' || p === 'Unknown' || p === 'Original'; })) {
+    return '(' + parts.map(function (p) {
+      const f = flagOf(p);
+      return f ? f + ' ' + p : p;
+    }).join(', ') + ')';
+  }
+  const single = parts.length === 1 ? parts[0] : null;
+  const f = single ? flagOf(single) : '';
+  return f ? '(' + f + ' ' + single + ')' : '(' + label + ')';
+}
+
+function displayName(serverName, audioLabel, subIndicator, sizeLabel, mediaLabel) {
+  const rawName = String(serverName == null ? '' : serverName).trim() || 'Server';
+  let cleanName = stripQualityText(rawName) || 'Server';
+  const composed = subIndicator ? (cleanName + ' ' + String(subIndicator).trim()).trim() : cleanName;
+  let named = stripQualityText(String(composed).replace(TRAILING_LANGUAGE_RE, '')).trim() || 'Server';
+  named = stripQualityText(named).trim() || 'Server';
+  const names = displayLanguageNamesFixed(audioLabel, mediaLabel);
+  const tag = names.length === 1 ? names[0]
+    : (names.length > 1 ? names.join(', ')
+      : (languageLabel(audioLabel) || languageLabel(mediaLabel) || 'Unknown'));
+  const tagPart = languageTagPart(tag, names);
+  const sizePart = String(sizeLabel == null ? '' : sizeLabel).trim();
+  return [named, tagPart, sizePart].filter(Boolean).join(' ');
+}
+
 function sleep(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, Math.max(0, ms)); });
 }
@@ -422,4 +485,6 @@ module.exports = {
   chunk: chunk,
   truncate: truncate,
   sleep: sleep,
+  displayName: displayName,
+  flagOf: flagOf,
 };

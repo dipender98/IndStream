@@ -1041,6 +1041,82 @@ var require_util = __commonJS({
       const text = String(value == null ? "" : value);
       return text.length > length ? text.slice(0, length) + "\u2026" : text;
     }
+    var FLAG_MAP = {
+      Hindi: "\u{1F1EE}\u{1F1F3}",
+      English: "\u{1F1EC}\u{1F1E7}",
+      Tamil: "\u{1F1EE}\u{1F1F3}",
+      Telugu: "\u{1F1EE}\u{1F1F3}",
+      Malayalam: "\u{1F1EE}\u{1F1F3}",
+      Urdu: "\u{1F1F5}\u{1F1F0}",
+      Bengali: "\u{1F1E7}\u{1F1E9}",
+      Arabic: "\u{1F1F8}\u{1F1E6}",
+      Russian: "\u{1F1F7}\u{1F1FA}",
+      Chinese: "\u{1F1E8}\u{1F1F3}",
+      Mandarin: "\u{1F1E8}\u{1F1F3}",
+      Japanese: "\u{1F1EF}\u{1F1F5}",
+      Korean: "\u{1F1F0}\u{1F1F7}",
+      French: "\u{1F1EB}\u{1F1F7}",
+      Spanish: "\u{1F1EA}\u{1F1F8}",
+      Portuguese: "\u{1F1F5}\u{1F1F9}",
+      Filipino: "\u{1F1F5}\u{1F1ED}",
+      Indonesian: "\u{1F1EE}\u{1F1E9}",
+      Malaysian: "\u{1F1F2}\u{1F1FE}",
+      Vietnamese: "\u{1F1FB}\u{1F1F3}",
+      Nepali: "\u{1F1F3}\u{1F1F5}",
+      Sinhala: "\u{1F1F1}\u{1F1F0}",
+      Thai: "\u{1F1F9}\u{1F1ED}",
+      Turkish: "\u{1F1F9}\u{1F1F7}",
+      German: "\u{1F1E9}\u{1F1EA}",
+      Italian: "\u{1F1EE}\u{1F1F9}",
+      Dutch: "\u{1F1F3}\u{1F1F1}",
+      Polish: "\u{1F1F5}\u{1F1F1}"
+    };
+    function flagOf(tag) {
+      return FLAG_MAP[tag] || "";
+    }
+    var RESOLUTION_TOKEN_RE = /\\s*(?:\\d{3,4}\\s*p(?:\\d{2,3})?|[24]\\s*k)\\b/gi;
+    var QUALITY_ALIAS_RE = /(?:\\s*\\b(?:FHD|UHD|QHD)\\b)|(?:\\s+\\bHD\\b(?=\\s*$))/gi;
+    var TRAILING_LANGUAGE_RE = /(?:[\\s,+/&()\\[\\]{}-]*\\b(?:hindi|english|tamil|telugu|malayalam|kannada|bengali|bangla|marathi|punjabi|gujarati|urdu|nepali|sinhala|arabic|russian|chinese|mandarin|japanese|korean|french|spanish|portuguese|filipino|tagalog|indonesian|malaysian|vietnamese|thai|turkish|german|italian|dutch|polish|multi|dual)\\b(?:\\s*[(\\[]?\\s*(?:audio|dub|dubbed)\\s*[)\\]]?)?[^\\n]*)+$/i;
+    function stripQualityText(value) {
+      return String(value == null ? "" : value).replace(RESOLUTION_TOKEN_RE, " ").replace(QUALITY_ALIAS_RE, " ").replace(/\\s+/g, " ").trim();
+    }
+    function displayLanguageNamesFixed(audioLabel, mediaLabel) {
+      const audio = languageNames(audioLabel);
+      const media = languageNames(mediaLabel);
+      if (audio.length >= 2 && audio.length >= media.length) return audio;
+      if (media.length > audio.length) return media;
+      if (audio.length) return audio;
+      if (media.length) return media;
+      return [];
+    }
+    function languageTagPart(label, names) {
+      const parts = names && names.length ? names : String(label || "").split(",").map(function(p) {
+        return p.trim();
+      }).filter(Boolean);
+      if (parts.length >= 2 && !parts.some(function(p) {
+        return p === "Multi" || p === "Unknown" || p === "Original";
+      })) {
+        return "(" + parts.map(function(p) {
+          const f2 = flagOf(p);
+          return f2 ? f2 + " " + p : p;
+        }).join(", ") + ")";
+      }
+      const single = parts.length === 1 ? parts[0] : null;
+      const f = single ? flagOf(single) : "";
+      return f ? "(" + f + " " + single + ")" : "(" + label + ")";
+    }
+    function displayName(serverName, audioLabel, subIndicator, sizeLabel, mediaLabel) {
+      const rawName = String(serverName == null ? "" : serverName).trim() || "Server";
+      let cleanName = stripQualityText(rawName) || "Server";
+      const composed = subIndicator ? (cleanName + " " + String(subIndicator).trim()).trim() : cleanName;
+      let named = stripQualityText(String(composed).replace(TRAILING_LANGUAGE_RE, "")).trim() || "Server";
+      named = stripQualityText(named).trim() || "Server";
+      const names = displayLanguageNamesFixed(audioLabel, mediaLabel);
+      const tag = names.length === 1 ? names[0] : names.length > 1 ? names.join(", ") : languageLabel(audioLabel) || languageLabel(mediaLabel) || "Unknown";
+      const tagPart = languageTagPart(tag, names);
+      const sizePart = String(sizeLabel == null ? "" : sizeLabel).trim();
+      return [named, tagPart, sizePart].filter(Boolean).join(" ");
+    }
     function sleep(ms) {
       return new Promise(function(resolve) {
         setTimeout(resolve, Math.max(0, ms));
@@ -1077,7 +1153,9 @@ var require_util = __commonJS({
       episodeOrSeason,
       chunk,
       truncate,
-      sleep
+      sleep,
+      displayName,
+      flagOf
     };
   }
 });
@@ -2481,7 +2559,7 @@ function normalizeStream(raw, server, ctx) {
   const height = Number(raw.height) || 0;
   const quality = raw.quality || util.qualityLabel(height);
   const stream = {
-    title: raw.title || server.name || "",
+    title: util.displayName(server.name, raw.language || "", null, raw.size || "", ""),
     name: server.name || "",
     url: raw.url,
     type,
