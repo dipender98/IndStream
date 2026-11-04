@@ -295,7 +295,7 @@ var require_tmdb = __commonJS({
         for (let i = 0; i < allKeys.length; i += 1) {
           for (let h = 0; h < API_HOSTS.length; h += 1) {
             const url = API_HOSTS[h] + path + "?api_key=" + encodeURIComponent(allKeys[i]) + (suffix ? "&" + suffix : "");
-            const json = yield http2.getJson(url, { timeoutMs: 9e3 });
+            const json = yield http2.getJson(url, { timeoutMs: 3e3 });
             if (json && !json.status_code) return json;
           }
         }
@@ -2473,23 +2473,34 @@ function getStreams(tmdbId, mediaType, season, episode) {
       } : function() {
       }
     };
-    const meta = yield tmdb.fetchMeta(context.tmdbId, type);
+    let meta = null;
+    try {
+      meta = yield http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), 1e4, null);
+    } catch (error) {
+      meta = null;
+    }
     context.meta = meta;
     const wanted = servers.SERVERS.filter(function(server) {
       return s.sources[server.id] !== false;
     });
     if (!wanted.length) return [];
-    const results = yield http.parallelMap(wanted, wanted.length, function(server) {
-      return http.withTimeout(
-        server.resolve(context).then(function(list) {
-          return (list || []).map(function(raw) {
-            return normalizeStream(raw, server, context);
-          }).filter(Boolean);
-        }),
-        server.timeoutMs + 5e3,
-        []
-      );
-    });
+    const perServer = s.requestTimeout * 1e3 + 5e3;
+    const overallMs = Math.min(wanted.length * perServer + 1e4, 6e4);
+    const results = yield http.withTimeout(
+      http.parallelMap(wanted, wanted.length, function(server) {
+        return http.withTimeout(
+          server.resolve(context).then(function(list) {
+            return (list || []).map(function(raw) {
+              return normalizeStream(raw, server, context);
+            }).filter(Boolean);
+          }),
+          perServer,
+          []
+        );
+      }),
+      overallMs,
+      []
+    );
     let streams = [];
     results.forEach(function(list) {
       if (Array.isArray(list)) streams = streams.concat(list);

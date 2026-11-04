@@ -56,6 +56,7 @@ async function probeUnknownQuality(stream, ctx) {
 async function getStreams(tmdbId, mediaType, season, episode) {
   const type = mediaType === 'tv' || mediaType === 'series' ? 'tv' : 'movie';
   const s = settings.getSettings();
+
   const context = {
     tmdbId: safeInt(tmdbId),
     type: type,
@@ -66,7 +67,14 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     log: s.debug ? function (message) { console.log('[IndStream] ' + message); } : function () {},
   };
 
-  const meta = await tmdb.fetchMeta(context.tmdbId, type);
+  // Resolve TMDB metadata first so title-keyed sources (MovieBox, 4KHDHub, FSL)
+  // have a title to search. Vidrift and Bingr work from tmdbId alone.
+  let meta = null;
+  try {
+    meta = await http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), 10000, null);
+  } catch (error) {
+    meta = null;
+  }
   context.meta = meta;
 
   const wanted = servers.SERVERS.filter(function (server) {
@@ -74,17 +82,24 @@ async function getStreams(tmdbId, mediaType, season, episode) {
   });
   if (!wanted.length) return [];
 
-  const results = await http.parallelMap(wanted, wanted.length, function (server) {
-    return http.withTimeout(
-      server.resolve(context).then(function (list) {
-        return (list || []).map(function (raw) {
-          return normalizeStream(raw, server, context);
-        }).filter(Boolean);
-      }),
-      server.timeoutMs + 5000,
-      []
-    );
-  });
+  const perServer = s.requestTimeout * 1000 + 5000;
+  const overallMs = Math.min(wanted.length * perServer + 10000, 60000);
+
+  const results = await http.withTimeout(
+    http.parallelMap(wanted, wanted.length, function (server) {
+      return http.withTimeout(
+        server.resolve(context).then(function (list) {
+          return (list || []).map(function (raw) {
+            return normalizeStream(raw, server, context);
+          }).filter(Boolean);
+        }),
+        perServer,
+        []
+      );
+    }),
+    overallMs,
+    []
+  );
 
   let streams = [];
   results.forEach(function (list) {

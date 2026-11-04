@@ -45,7 +45,7 @@ async function apiGet(path, params) {
         '?api_key=' +
         encodeURIComponent(allKeys[i]) +
         (suffix ? '&' + suffix : '');
-      const json = await http.getJson(url, { timeoutMs: 9000 });
+      const json = await http.getJson(url, { timeoutMs: 3000 });
       if (json && !json.status_code) return json;
     }
   }
