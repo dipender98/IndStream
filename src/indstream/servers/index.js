@@ -5,8 +5,9 @@ const bingr = require('./bingr');
 const moviebox = require('./moviebox');
 const hub4k = require('./hub4k');
 const fsl = require('./fsl');
+const hdhub = require('./hdhub');
 
-const SERVERS = [vidrift, bingr, moviebox, hub4k, fsl];
+const SERVERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
 
 const BY_ID = {};
 SERVERS.forEach(function (server) {

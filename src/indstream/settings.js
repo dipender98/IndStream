@@ -6,6 +6,7 @@ const DEFAULTS = {
   requestTimeout: '15',
   probeQuality: false,
   includeDash: true,
+  sourceHdhub: true,
   sourceVidrift: true,
   sourceBingr: true,
   sourceMoviebox: true,
@@ -76,6 +77,13 @@ const SETTINGS_LAYOUT = [
   },
   {
     type: 'toggle',
+    key: 'sourceHdhub',
+    label: 'HdHub',
+    description: 'Fast aggregator: instant HLS streams plus 4K file links.',
+    defaultValue: true,
+  },
+  {
+    type: 'toggle',
     key: 'sourceVidrift',
     label: 'Vidrift',
     description: 'Embed player with direct HLS/MP4 links.',
@@ -123,6 +131,7 @@ const SETTINGS_LAYOUT = [
 ];
 
 const SOURCE_KEYS = {
+  hdhub: 'sourceHdhub',
   vidrift: 'sourceVidrift',
   bingr: 'sourceBingr',
   moviebox: 'sourceMoviebox',

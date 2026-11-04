@@ -424,6 +424,7 @@ var require_settings = __commonJS({
       requestTimeout: "15",
       probeQuality: false,
       includeDash: true,
+      sourceHdhub: true,
       sourceVidrift: true,
       sourceBingr: true,
       sourceMoviebox: true,
@@ -493,6 +494,13 @@ var require_settings = __commonJS({
       },
       {
         type: "toggle",
+        key: "sourceHdhub",
+        label: "HdHub",
+        description: "Fast aggregator: instant HLS streams plus 4K file links.",
+        defaultValue: true
+      },
+      {
+        type: "toggle",
         key: "sourceVidrift",
         label: "Vidrift",
         description: "Embed player with direct HLS/MP4 links.",
@@ -539,6 +547,7 @@ var require_settings = __commonJS({
       }
     ];
     var SOURCE_KEYS = {
+      hdhub: "sourceHdhub",
       vidrift: "sourceVidrift",
       bingr: "sourceBingr",
       moviebox: "sourceMoviebox",
@@ -2522,6 +2531,80 @@ var require_fsl = __commonJS({
   }
 });
 
+// src/indstream/servers/hdhub.js
+var require_hdhub = __commonJS({
+  "src/indstream/servers/hdhub.js"(exports2, module2) {
+    "use strict";
+    var http2 = require_http();
+    var util2 = require_util();
+    var tmdb2 = require_tmdb();
+    var BASE = "https://hdhub.thevolecitor.qzz.io";
+    module2.exports = {
+      id: "hdhub",
+      name: "HdHub",
+      speed: "very-fast",
+      supports: { movie: true, tv: true },
+      timeoutMs: 8e3,
+      resolve(ctx) {
+        return __async(this, null, function* () {
+          const type = ctx.type;
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          let imdbId = meta && meta.imdbId || ctx.imdbId || "";
+          if (!imdbId && ctx.tmdbId) {
+            imdbId = yield tmdb2.resolveImdbId(ctx.tmdbId, type, meta);
+          }
+          let pathId = "";
+          if (imdbId) {
+            pathId = "tt" + String(imdbId).replace(/^tt/, "");
+            if (type === "tv" || type === "series") {
+              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
+            }
+          } else if (ctx.tmdbId) {
+            pathId = "tmdb:" + ctx.tmdbId;
+            if (type === "tv" || type === "series") {
+              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
+            }
+          }
+          if (!pathId) return [];
+          const kind = type === "tv" || type === "series" ? "series" : "movie";
+          const url = BASE + "/stream/" + kind + "/" + pathId + ".json";
+          const json = yield http2.getJson(url, { timeoutMs: ctx.timeoutMs });
+          if (!json || !Array.isArray(json.streams)) return [];
+          const out = [];
+          const seen = {};
+          json.streams.forEach(function(s) {
+            if (!s || !s.url) return;
+            const name = String(s.name || "");
+            if (/donation|discord/i.test(name)) return;
+            if (/hubdrive\.bar/i.test(s.url)) return;
+            const desc = String(s.description || s.title || "");
+            const height = util2.parseHeight(name + " " + desc);
+            const language = util2.languageLabel(desc) || util2.languageLabel(name) || "";
+            const size = util2.normalizeSizeToken(desc);
+            const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url) || /googleusercontent/i.test(s.url);
+            const entry = {
+              provider: module2.exports.name,
+              url: s.url,
+              type: isHls ? "hls" : "mp4",
+              quality: util2.qualityLabel(height),
+              height,
+              language,
+              size,
+              title: "",
+              headers: { "User-Agent": http2.DEFAULT_UA }
+            };
+            if (seen[entry.url]) return;
+            seen[entry.url] = true;
+            out.push(entry);
+          });
+          ctx.log("hdhub: " + out.length + " streams");
+          return out;
+        });
+      }
+    };
+  }
+});
+
 // src/indstream/servers/index.js
 var require_servers = __commonJS({
   "src/indstream/servers/index.js"(exports2, module2) {
@@ -2531,7 +2614,8 @@ var require_servers = __commonJS({
     var moviebox = require_moviebox();
     var hub4k = require_hub4k();
     var fsl = require_fsl();
-    var SERVERS = [vidrift, bingr, moviebox, hub4k, fsl];
+    var hdhub = require_hdhub();
+    var SERVERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
     var BY_ID = {};
     SERVERS.forEach(function(server) {
       BY_ID[server.id] = server;
@@ -2595,10 +2679,11 @@ function probeUnknownQuality(stream, ctx) {
     return stream;
   });
 }
-var GRACE_MS = 4e3;
+var GRACE_MS = 2e3;
 var OVERALL_MAX_MS = 14e3;
 var TMDB_META_CAP_MS = 6e3;
 var SERVER_CAPS = {
+  hdhub: 5e3,
   vidrift: 5e3,
   bingr: 5e3,
   moviebox: 6e3,

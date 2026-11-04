@@ -53,11 +53,12 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
-const GRACE_MS = 4000;
+const GRACE_MS = 2000;
 const OVERALL_MAX_MS = 14000;
 const TMDB_META_CAP_MS = 6000;
 
 const SERVER_CAPS = {
+  hdhub: 5000,
   vidrift: 5000,
   bingr: 5000,
   moviebox: 6000,
