@@ -1,6 +1,6 @@
 {
   "name": "indstream",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "description": "IndStream — independent stream providers raced by one Nuvio plugin",
   "scripts": {
