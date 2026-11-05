@@ -47,11 +47,11 @@ module.exports = {
       const text =
         srv === 's40' && type === 'tv'
           ? await net.getText(API + '/aphelion-tv/' + id + '/' + (ctx.season || 1) + '/' + (ctx.episode || 1), {
-              timeoutMs: 6000,
+              timeoutMs: 4000,
               headers: { Referer: REFERER },
             })
           : await net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
-              timeoutMs: 6000,
+              timeoutMs: 4000,
               headers: postHeaders,
             });
       if (!text) continue;

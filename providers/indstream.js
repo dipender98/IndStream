@@ -1401,10 +1401,10 @@ var require_bingr = __commonJS({
             const srv = SRVS[i];
             if (out.length >= 6 || Date.now() > deadline) break;
             const text = srv === "s40" && type === "tv" ? yield net.getText(API + "/aphelion-tv/" + id + "/" + (ctx.season || 1) + "/" + (ctx.episode || 1), {
-              timeoutMs: 6e3,
+              timeoutMs: 4e3,
               headers: { Referer: REFERER }
             }) : yield net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
-              timeoutMs: 6e3,
+              timeoutMs: 4e3,
               headers: postHeaders
             });
             if (!text) continue;
