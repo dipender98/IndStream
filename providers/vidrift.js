@@ -1192,7 +1192,7 @@ var require_hdhub = __commonJS({
         return __async(this, null, function* () {
           const net = ctx.http || http;
           const type = ctx.type;
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
           let imdbId = meta && meta.imdbId || ctx.imdbId || "";
           if (!imdbId && ctx.tmdbId) {
             imdbId = yield tmdb.resolveImdbId(ctx.tmdbId, type, meta, ctx);
@@ -1379,7 +1379,7 @@ var require_bingr = __commonJS({
       resolve(ctx) {
         return __async(this, null, function* () {
           const net = ctx.http || http;
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           const type = ctx.type;
@@ -1503,7 +1503,7 @@ var require_moviebox = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
           const title = meta && meta.title ? meta.title : "";
           const type = ctx.type;
           if (!title) {
@@ -1705,7 +1705,7 @@ var require_moviebox = __commonJS({
         });
         add(unwrapData(downloadJson).downloads, false);
         if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-        yield util.sleep(Math.max(0, 1500 - (Date.now() - lastPlayAt)));
+        yield util.sleep(Math.max(0, 500 - (Date.now() - lastPlayAt)));
         if (ctx.deadline && Date.now() >= ctx.deadline) return out;
         lastPlayAt = Date.now();
         const playJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/play?" + params, {
@@ -2134,7 +2134,7 @@ var require_hub4k = __commonJS({
       resolve(ctx) {
         return __async(this, null, function* () {
           const net = ctx.http || http;
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           if (!title) {
@@ -2381,7 +2381,7 @@ var require_fsl = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           if (!title) {
@@ -2679,7 +2679,7 @@ var require_racer = __commonJS({
   "src/indstream/racer.js"(exports2, module2) {
     "use strict";
     var http = require_http();
-    var GRACE_MS = 2e3;
+    var GRACE_MS = 1e3;
     var OVERALL_MAX_MS = 14e3;
     function capOf(provider, settings) {
       const own = Number(provider.raceTimeoutMs) || 12e3;
@@ -2882,7 +2882,7 @@ var require_factory = __commonJS({
     var racer = require_racer();
     var finalize = require_finalize();
     var util = require_util();
-    var TMDB_META_CAP_MS = 6e3;
+    var TMDB_META_CAP_MS = 3e3;
     function safeInt(value) {
       const n = parseInt(value, 10);
       return Number.isFinite(n) ? n : 0;

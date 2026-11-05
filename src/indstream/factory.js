@@ -8,7 +8,7 @@ const racer = require('./racer');
 const finalize = require('./finalize');
 const util = require('./util');
 
-const TMDB_META_CAP_MS = 6000;
+const TMDB_META_CAP_MS = 3000;
 
 function safeInt(value) {
   const n = parseInt(value, 10);

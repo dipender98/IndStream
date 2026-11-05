@@ -2,7 +2,7 @@
 
 const http = require('./http');
 
-const GRACE_MS = 2000;
+const GRACE_MS = 1000;
 const OVERALL_MAX_MS = 14000;
 
 // Each provider owns its race budget; settings set the upper bound.

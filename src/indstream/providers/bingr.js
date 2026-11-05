@@ -21,7 +21,7 @@ module.exports = {
 
   async resolve(ctx) {
     const net = ctx.http || http;
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
     const type = ctx.type;

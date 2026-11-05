@@ -31,7 +31,7 @@ module.exports = {
   },
 
   async resolve(ctx) {
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
     const title = meta && meta.title ? meta.title : '';
     const type = ctx.type;
     if (!title) {
@@ -246,7 +246,7 @@ async function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx
   add(unwrapData(downloadJson).downloads, false);
 
   if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-  await util.sleep(Math.max(0, 1500 - (Date.now() - lastPlayAt)));
+  await util.sleep(Math.max(0, 500 - (Date.now() - lastPlayAt)));
   if (ctx.deadline && Date.now() >= ctx.deadline) return out;
   lastPlayAt = Date.now();
   const playJson = await net.getJson(BASE + '/wefeed-h5api-bff/subject/play?' + params, {

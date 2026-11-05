@@ -21,7 +21,7 @@ module.exports = {
   async resolve(ctx) {
     const net = ctx.http || http;
     const type = ctx.type;
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
+    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
     let imdbId = (meta && meta.imdbId) || ctx.imdbId || '';
     if (!imdbId && ctx.tmdbId) {
       imdbId = await tmdb.resolveImdbId(ctx.tmdbId, type, meta, ctx);
