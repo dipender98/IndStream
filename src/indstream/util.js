@@ -441,6 +441,58 @@ function displayName(serverName, audioLabel, subIndicator, sizeLabel, mediaLabel
   return [named, tagPart, sizePart].filter(Boolean).join(' ');
 }
 
+function streamTitle(provider, raw, ctx) {
+  const providerName = String((provider && (provider.name || provider.id)) || 'IndStream').trim() || 'IndStream';
+  const height = Number(raw && raw.height) || 0;
+  const quality = String((raw && raw.quality) || '').trim();
+  const resolution = quality || (height ? height + 'p' : 'Auto');
+  const is4k = height >= 2160 || /2160|4k|uhd/i.test(quality);
+  const is1080 = height === 1080 || /1080/i.test(quality);
+  const icon = is4k ? '❄️ 4K' : (is1080 ? '🧊 ' + resolution : '🐧 ' + resolution);
+
+  const type = String((raw && raw.type) || '').trim();
+  const streamType = type ? (type === 'hls' ? 'HLS' : type === 'dash' ? 'DASH' : type.toUpperCase()) : 'HLS';
+
+  const size = String((raw && raw.size) || '').trim();
+
+  const langs = [];
+  const audio = (raw && raw.language) || '';
+  if (audio) {
+    audio.split(',').map(function (p) { return p.trim(); }).filter(Boolean).forEach(function (name) {
+      const f = flagOf(name);
+      langs.push(f ? f + ' ' + name : name);
+    });
+  }
+  const langLine = langs.length ? '🎧 Audio: ' + langs.join(', ') : '';
+
+  const subs = Array.isArray(raw && raw.subtitles) ? raw.subtitles : [];
+  const subNames = subs.map(function (s) { return String((s && (s.label || s.name || s.lang)) || '').trim(); }).filter(Boolean);
+  const subLine = subNames.length ? '📝 Subtitles: ' + subNames.join(', ') : '🙊 No included subtitles';
+
+  const meta = (ctx && ctx.meta) || null;
+  const title = (meta && (meta.title || meta.name)) || '';
+  const season = ctx ? (Number(ctx.season) || 0) : 0;
+  const episode = ctx ? (Number(ctx.episode) || 0) : 0;
+  const seasonEpisode = (season > 0 && episode > 0)
+    ? 'S' + String(season).padStart(2, '0') + 'E' + String(episode).padStart(2, '0')
+    : '';
+
+  const lines = [];
+  lines.push('🐧 ' + providerName + ' ' + icon + ' • ' + providerName);
+  lines.push('');
+  if (seasonEpisode) {
+    lines.push('📡 ' + (title || providerName) + ' • ' + seasonEpisode);
+  } else {
+    lines.push('🍿 ' + (title || providerName + ' stream'));
+  }
+  lines.push('🎞️ ' + resolution + ' • ' + streamType);
+  lines.push('🛰️ Source: ' + providerName);
+  if (size) lines.push('💾 ' + size);
+  if (langLine) lines.push(langLine);
+  lines.push(subLine);
+
+  return lines.join('\n');
+}
 function sleep(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, Math.max(0, ms)); });
 }
@@ -469,6 +521,7 @@ module.exports = {
   episodeMatches: episodeMatches,
   seasonPackMatches: seasonPackMatches,
   episodeOrSeason: episodeOrSeason,
+  streamTitle: streamTitle,
   sleep: sleep,
   displayName: displayName,
 };

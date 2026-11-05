@@ -7,7 +7,7 @@ function streamHeight(stream) {
   return Number(stream.height) || util.parseHeight(stream.quality);
 }
 
-function normalizeStream(raw, provider) {
+function normalizeStream(raw, provider, ctx) {
   if (!raw || !raw.url) return null;
   const url = String(raw.url);
   const type = raw.type || (url.indexOf('.m3u8') >= 0 ? 'hls' : url.indexOf('.mpd') >= 0 ? 'dash' : 'mp4');
@@ -15,7 +15,7 @@ function normalizeStream(raw, provider) {
   const quality = raw.quality || util.qualityLabel(declaredHeight);
   const height = declaredHeight || util.parseHeight(quality);
   const stream = {
-    title: util.displayName(provider.name, raw.language || '', null, raw.size || '', ''),
+    title: util.streamTitle(provider, raw, ctx),
     name: provider.name || '',
     url: url,
     type: type,

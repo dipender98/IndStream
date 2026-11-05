@@ -86,7 +86,7 @@ function race(providers, context, normalize) {
         const normalized = [];
         (list || []).forEach(function (raw) {
           try {
-            const stream = normalize(raw, provider);
+            const stream = normalize(raw, provider, context);
             if (stream) normalized.push(stream);
           } catch (error) {
             /* skip malformed entries, keep the rest of the provider's output */

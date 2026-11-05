@@ -1,6 +1,6 @@
 {
   "name": "IndStream",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "IndStream — multiple Nuvio scrapers (one per server) with a single shared settings page.",
   "author": "dipender98",
   "scrapers": [
@@ -8,7 +8,7 @@
       "id": "indstream",
       "name": "IndStream",
       "description": "Combined racer across all servers. Owns the shared settings page.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -39,7 +39,7 @@
       "id": "hdhub",
       "name": "HdHub",
       "description": "Fast aggregator: instant HLS streams plus 4K file links.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -69,7 +69,7 @@
       "id": "vidrift",
       "name": "Vidrift",
       "description": "Embed player with direct HLS/MP4 links.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -99,7 +99,7 @@
       "id": "bingr",
       "name": "Bingr",
       "description": "Multi-server JSON API. Usually the fastest source.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -129,7 +129,7 @@
       "id": "moviebox",
       "name": "MovieBox",
       "description": "Title-keyed catalogue with download and playback renditions.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -159,7 +159,7 @@
       "id": "hub4k",
       "name": "4KHDHub",
       "description": "4K-first release pages resolved through file-host gateways.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -189,7 +189,7 @@
       "id": "fsl",
       "name": "FSL",
       "description": "Fast file links from release blogs. Heaviest source.",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "dipender98",
       "supportedTypes": [
         "movie",

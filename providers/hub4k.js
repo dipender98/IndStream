@@ -1134,6 +1134,53 @@ var require_util = __commonJS({
       const sizePart = String(sizeLabel == null ? "" : sizeLabel).trim();
       return [named, tagPart, sizePart].filter(Boolean).join(" ");
     }
+    function streamTitle(provider, raw, ctx) {
+      const providerName = String(provider && (provider.name || provider.id) || "IndStream").trim() || "IndStream";
+      const height = Number(raw && raw.height) || 0;
+      const quality = String(raw && raw.quality || "").trim();
+      const resolution = quality || (height ? height + "p" : "Auto");
+      const is4k = height >= 2160 || /2160|4k|uhd/i.test(quality);
+      const is1080 = height === 1080 || /1080/i.test(quality);
+      const icon = is4k ? "\u2744\uFE0F 4K" : is1080 ? "\u{1F9CA} " + resolution : "\u{1F427} " + resolution;
+      const type = String(raw && raw.type || "").trim();
+      const streamType = type ? type === "hls" ? "HLS" : type === "dash" ? "DASH" : type.toUpperCase() : "HLS";
+      const size = String(raw && raw.size || "").trim();
+      const langs = [];
+      const audio = raw && raw.language || "";
+      if (audio) {
+        audio.split(",").map(function(p) {
+          return p.trim();
+        }).filter(Boolean).forEach(function(name) {
+          const f = flagOf(name);
+          langs.push(f ? f + " " + name : name);
+        });
+      }
+      const langLine = langs.length ? "\u{1F3A7} Audio: " + langs.join(", ") : "";
+      const subs = Array.isArray(raw && raw.subtitles) ? raw.subtitles : [];
+      const subNames = subs.map(function(s) {
+        return String(s && (s.label || s.name || s.lang) || "").trim();
+      }).filter(Boolean);
+      const subLine = subNames.length ? "\u{1F4DD} Subtitles: " + subNames.join(", ") : "\u{1F64A} No included subtitles";
+      const meta = ctx && ctx.meta || null;
+      const title = meta && (meta.title || meta.name) || "";
+      const season = ctx ? Number(ctx.season) || 0 : 0;
+      const episode = ctx ? Number(ctx.episode) || 0 : 0;
+      const seasonEpisode = season > 0 && episode > 0 ? "S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") : "";
+      const lines = [];
+      lines.push("\u{1F427} " + providerName + " " + icon + " \u2022 " + providerName);
+      lines.push("");
+      if (seasonEpisode) {
+        lines.push("\u{1F4E1} " + (title || providerName) + " \u2022 " + seasonEpisode);
+      } else {
+        lines.push("\u{1F37F} " + (title || providerName + " stream"));
+      }
+      lines.push("\u{1F39E}\uFE0F " + resolution + " \u2022 " + streamType);
+      lines.push("\u{1F6F0}\uFE0F Source: " + providerName);
+      if (size) lines.push("\u{1F4BE} " + size);
+      if (langLine) lines.push(langLine);
+      lines.push(subLine);
+      return lines.join("\n");
+    }
     function sleep(ms) {
       return new Promise(function(resolve) {
         setTimeout(resolve, Math.max(0, ms));
@@ -1163,6 +1210,7 @@ var require_util = __commonJS({
       episodeMatches,
       seasonPackMatches,
       episodeOrSeason,
+      streamTitle,
       sleep,
       displayName
     };
@@ -2749,7 +2797,7 @@ var require_racer = __commonJS({
             const normalized = [];
             (list || []).forEach(function(raw) {
               try {
-                const stream = normalize(raw, provider);
+                const stream = normalize(raw, provider, context);
                 if (stream) normalized.push(stream);
               } catch (error) {
               }
@@ -2782,7 +2830,7 @@ var require_finalize = __commonJS({
       if (!stream) return 0;
       return Number(stream.height) || util.parseHeight(stream.quality);
     }
-    function normalizeStream(raw, provider) {
+    function normalizeStream(raw, provider, ctx) {
       if (!raw || !raw.url) return null;
       const url = String(raw.url);
       const type = raw.type || (url.indexOf(".m3u8") >= 0 ? "hls" : url.indexOf(".mpd") >= 0 ? "dash" : "mp4");
@@ -2790,7 +2838,7 @@ var require_finalize = __commonJS({
       const quality = raw.quality || util.qualityLabel(declaredHeight);
       const height = declaredHeight || util.parseHeight(quality);
       const stream = {
-        title: util.displayName(provider.name, raw.language || "", null, raw.size || "", ""),
+        title: util.streamTitle(provider, raw, ctx),
         name: provider.name || "",
         url,
         type,
