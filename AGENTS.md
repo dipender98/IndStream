@@ -44,6 +44,7 @@ src/indstream/
   http.js         fetch wrapper, timeouts, text/json helpers
   tmdb.js         TMDB metadata + IMDb <-> TMDB resolution
   util.js         quality, language, matching, HLS parsing, dedupe
+  filehost.js     shared gateway/file-host resolver used by providers
   providers/
     index.js      provider registry
     <provider>.js one independent provider

@@ -184,10 +184,6 @@ function originOf(url) {
   return match ? match[0] : '';
 }
 
-function hostOf(url) {
-  return originOf(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '');
-}
-
 function extractBalancedJson(text, startIndex) {
   const source = String(text || '');
   let start = startIndex;
@@ -375,17 +371,6 @@ function episodeOrSeason(list, textOf, type, season, episode) {
   });
 }
 
-function chunk(list, size) {
-  const out = [];
-  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
-  return out;
-}
-
-function truncate(value, length) {
-  const text = String(value == null ? '' : value);
-  return text.length > length ? text.slice(0, length) + '…' : text;
-}
-
 const FLAG_MAP = {
   Hindi: '🇮🇳', English: '🇬🇧', Tamil: '🇮🇳', Telugu: '🇮🇳', Malayalam: '🇮🇳',
   Urdu: '🇵🇰', Bengali: '🇧🇩', Arabic: '🇸🇦', Russian: '🇷🇺', Chinese: '🇨🇳',
@@ -454,10 +439,6 @@ function sleep(ms) {
 }
 
 module.exports = {
-  LANGUAGE_NAMES: LANGUAGE_NAMES,
-  LANGUAGE_CODES: LANGUAGE_CODES,
-  normalizeTitle: normalizeTitle,
-  compactTitle: compactTitle,
   titleYearOf: titleYearOf,
   titleScore: titleScore,
   parseHeight: parseHeight,
@@ -470,7 +451,6 @@ module.exports = {
   stripTags: stripTags,
   resolveUrl: resolveUrl,
   originOf: originOf,
-  hostOf: hostOf,
   extractBalancedJson: extractBalancedJson,
   parseHlsMaster: parseHlsMaster,
   parseDashHeights: parseDashHeights,
@@ -482,9 +462,6 @@ module.exports = {
   episodeMatches: episodeMatches,
   seasonPackMatches: seasonPackMatches,
   episodeOrSeason: episodeOrSeason,
-  chunk: chunk,
-  truncate: truncate,
   sleep: sleep,
   displayName: displayName,
-  flagOf: flagOf,
 };

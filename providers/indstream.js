@@ -29,7 +29,6 @@ var require_http = __commonJS({
   "src/indstream/http.js"(exports2, module2) {
     "use strict";
     var DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-    var MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
     function baseHeaders(extra) {
       const headers = {
         "User-Agent": DEFAULT_UA,
@@ -149,46 +148,6 @@ var require_http = __commonJS({
         return res.ok ? res.text : "";
       });
     }
-    function postForm(url, fields, options) {
-      const opts = options || {};
-      const pairs = [];
-      Object.keys(fields || {}).forEach(function(key) {
-        pairs.push(encodeURIComponent(key) + "=" + encodeURIComponent(fields[key] == null ? "" : fields[key]));
-      });
-      return request(url, {
-        method: "POST",
-        body: pairs.join("&"),
-        timeoutMs: opts.timeoutMs,
-        headers: Object.assign(
-          {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Accept: "application/json, text/plain, */*"
-          },
-          opts.headers || {}
-        )
-      }).then(function(res) {
-        if (!res.ok || !res.text) return null;
-        try {
-          return JSON.parse(res.text);
-        } catch (error) {
-          return null;
-        }
-      });
-    }
-    function parseJson(text) {
-      if (!text) return null;
-      try {
-        return JSON.parse(text);
-      } catch (error) {
-        const start = String(text).search(/[[{]/);
-        if (start < 0) return null;
-        try {
-          return JSON.parse(String(text).slice(start));
-        } catch (inner) {
-          return null;
-        }
-      }
-    }
     function parallelMap(items, limit, worker) {
       const list = items || [];
       const size = Math.max(1, Math.min(limit || 4, list.length || 1));
@@ -241,15 +200,11 @@ var require_http = __commonJS({
     }
     module2.exports = {
       DEFAULT_UA,
-      MOBILE_UA,
-      baseHeaders,
       request,
       getText,
       getJson,
       postJson,
       postText,
-      postForm,
-      parseJson,
       parallelMap,
       withTimeout
     };
@@ -407,42 +362,6 @@ var require_tmdb = __commonJS({
         return imdb;
       });
     }
-    function searchTitle(title, type, year) {
-      return __async(this, null, function* () {
-        if (!title) return [];
-        const kind = type === "tv" || type === "series" ? "tv" : "movie";
-        const params = { query: title };
-        if (year) params.year = year;
-        const raw = yield apiGet("/search/" + kind, params);
-        if (!raw || !Array.isArray(raw.results)) return [];
-        return raw.results.map(function(item) {
-          return normalizeMeta(item, kind);
-        }).filter(Boolean);
-      });
-    }
-    function fetchSeasonEpisodes(tmdbId, season) {
-      return __async(this, null, function* () {
-        const raw = yield apiGet("/tv/" + String(tmdbId) + "/season/" + String(season));
-        if (!raw || !Array.isArray(raw.episodes)) return [];
-        return raw.episodes.map(function(ep) {
-          return { number: ep.episode_number, name: ep.name || "", airDate: ep.air_date || "" };
-        });
-      });
-    }
-    function absoluteToSeason(tmdbId, episodeNumber) {
-      return __async(this, null, function* () {
-        const absolute = Number(episodeNumber) || 0;
-        if (absolute <= 0) return { season: 1, episode: Math.max(1, absolute) };
-        let remaining = absolute;
-        for (let season = 1; season <= 30; season += 1) {
-          const episodes = yield fetchSeasonEpisodes(tmdbId, season);
-          if (!episodes.length) break;
-          if (remaining <= episodes.length) return { season, episode: remaining };
-          remaining -= episodes.length;
-        }
-        return { season: 1, episode: absolute };
-      });
-    }
     module2.exports = {
       normalizeImdbId,
       isImdbId,
@@ -450,10 +369,6 @@ var require_tmdb = __commonJS({
       findMetaByImdb,
       resolveMeta,
       resolveImdbId,
-      searchTitle,
-      fetchSeasonEpisodes,
-      absoluteToSeason,
-      yearOf,
       _test: {
         firstFindResult
       }
@@ -912,9 +827,6 @@ var require_util = __commonJS({
       const match = String(url || "").match(/^https?:\/\/[^/]+/i);
       return match ? match[0] : "";
     }
-    function hostOf(url) {
-      return originOf(url).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
-    }
     function extractBalancedJson(text, startIndex) {
       const source = String(text || "");
       let start = startIndex;
@@ -1092,15 +1004,6 @@ var require_util = __commonJS({
         return seasonPackMatches(textOf(item), season);
       });
     }
-    function chunk(list, size) {
-      const out = [];
-      for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
-      return out;
-    }
-    function truncate(value, length) {
-      const text = String(value == null ? "" : value);
-      return text.length > length ? text.slice(0, length) + "\u2026" : text;
-    }
     var FLAG_MAP = {
       Hindi: "\u{1F1EE}\u{1F1F3}",
       English: "\u{1F1EC}\u{1F1E7}",
@@ -1183,10 +1086,6 @@ var require_util = __commonJS({
       });
     }
     module2.exports = {
-      LANGUAGE_NAMES,
-      LANGUAGE_CODES,
-      normalizeTitle,
-      compactTitle,
       titleYearOf,
       titleScore,
       parseHeight,
@@ -1199,7 +1098,6 @@ var require_util = __commonJS({
       stripTags,
       resolveUrl,
       originOf,
-      hostOf,
       extractBalancedJson,
       parseHlsMaster,
       parseDashHeights,
@@ -1211,11 +1109,8 @@ var require_util = __commonJS({
       episodeMatches,
       seasonPackMatches,
       episodeOrSeason,
-      chunk,
-      truncate,
       sleep,
-      displayName,
-      flagOf
+      displayName
     };
   }
 });
@@ -1913,21 +1808,19 @@ var require_html = __commonJS({
       return util2.stripTags(html);
     }
     module2.exports = {
-      attrMap,
-      hasClass,
-      eachTag,
       blocks,
       anchors,
       orderedTokens,
+      eachTag,
       firstTag,
       textOf
     };
   }
 });
 
-// src/indstream/providers/filehost.js
+// src/indstream/filehost.js
 var require_filehost = __commonJS({
-  "src/indstream/providers/filehost.js"(exports2, module2) {
+  "src/indstream/filehost.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var html = require_html();
@@ -1945,9 +1838,7 @@ var require_filehost = __commonJS({
     var TOKEN_URL_REL_RE = /(?:hubcloud|hubdrive)\.php\?[^"' ]+/;
     var GOOGLE_VIDEO_RE = /(https?:\/\/video-downloads\.googleusercontent\.com\/[^"'\s<>]+)/;
     var PIXELDRAIN_SHORT_RE = /pixeldrain\.[a-z]+\/u\/([a-zA-Z0-9]+)/;
-    var PIXELDRAIN_PAGE_RE = /(https?:\/\/pixeldrain\.[a-z.]+)\/(?:api\/file|u)\/([A-Za-z0-9_\-]+)/i;
     var ARCHIVE_URL_RE = /\.(?:zip|rar|7z|tar|gz)(?:[?#]|$)/i;
-    var VIDEO_EXT_RE = /\.(?:mkv|mp4|m3u8)(?:[?#]|$)/i;
     var BTN_CLASS_RE = /\bbtn\b/;
     function isArchiveUrl(url) {
       return ARCHIVE_URL_RE.test(String(url || ""));
@@ -2013,10 +1904,6 @@ var require_filehost = __commonJS({
         out.push({ url, quality: q > 0 ? q + "p" : headQ > 0 ? headQ + "p" : "", language: util2.languageLabel(a.text) });
       });
       return out;
-    }
-    function pixeldrainDirect(url) {
-      const match = String(url || "").match(PIXELDRAIN_PAGE_RE);
-      return match ? match[1] + "/api/file/" + match[2] : "";
     }
     function hubDriveFiles(driveUrl, referer) {
       return __async(this, null, function* () {
@@ -2126,15 +2013,13 @@ var require_filehost = __commonJS({
       });
     }
     module2.exports = {
-      isArchiveUrl,
       rotatorTarget,
       jsRedirectTarget,
-      hubFileButtons,
-      pixeldrainDirect,
       hubDriveFiles,
-      googleVideoLink,
       vcloudR2Links,
-      VIDEO_EXT_RE
+      _test: {
+        hubFileButtons
+      }
     };
   }
 });

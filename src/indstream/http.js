@@ -3,9 +3,6 @@
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-const MOBILE_UA =
-  'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
-
 function baseHeaders(extra) {
   const headers = {
     'User-Agent': DEFAULT_UA,
@@ -131,48 +128,6 @@ function postText(url, body, options) {
   });
 }
 
-function postForm(url, fields, options) {
-  const opts = options || {};
-  const pairs = [];
-  Object.keys(fields || {}).forEach(function (key) {
-    pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(fields[key] == null ? '' : fields[key]));
-  });
-  return request(url, {
-    method: 'POST',
-    body: pairs.join('&'),
-    timeoutMs: opts.timeoutMs,
-    headers: Object.assign(
-      {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json, text/plain, */*',
-      },
-      opts.headers || {}
-    ),
-  }).then(function (res) {
-    if (!res.ok || !res.text) return null;
-    try {
-      return JSON.parse(res.text);
-    } catch (error) {
-      return null;
-    }
-  });
-}
-
-function parseJson(text) {
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    const start = String(text).search(/[[{]/);
-    if (start < 0) return null;
-    try {
-      return JSON.parse(String(text).slice(start));
-    } catch (inner) {
-      return null;
-    }
-  }
-}
-
 function parallelMap(items, limit, worker) {
   const list = items || [];
   const size = Math.max(1, Math.min(limit || 4, list.length || 1));
@@ -232,15 +187,11 @@ function withTimeout(promise, ms, fallback) {
 
 module.exports = {
   DEFAULT_UA: DEFAULT_UA,
-  MOBILE_UA: MOBILE_UA,
-  baseHeaders: baseHeaders,
   request: request,
   getText: getText,
   getJson: getJson,
   postJson: postJson,
   postText: postText,
-  postForm: postForm,
-  parseJson: parseJson,
   parallelMap: parallelMap,
   withTimeout: withTimeout,
 };

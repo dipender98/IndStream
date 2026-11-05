@@ -161,39 +161,6 @@ async function resolveImdbId(tmdbId, type, meta) {
   return imdb;
 }
 
-async function searchTitle(title, type, year) {
-  if (!title) return [];
-  const kind = type === 'tv' || type === 'series' ? 'tv' : 'movie';
-  const params = { query: title };
-  if (year) params.year = year;
-  const raw = await apiGet('/search/' + kind, params);
-  if (!raw || !Array.isArray(raw.results)) return [];
-  return raw.results.map(function (item) {
-    return normalizeMeta(item, kind);
-  }).filter(Boolean);
-}
-
-async function fetchSeasonEpisodes(tmdbId, season) {
-  const raw = await apiGet('/tv/' + String(tmdbId) + '/season/' + String(season));
-  if (!raw || !Array.isArray(raw.episodes)) return [];
-  return raw.episodes.map(function (ep) {
-    return { number: ep.episode_number, name: ep.name || '', airDate: ep.air_date || '' };
-  });
-}
-
-async function absoluteToSeason(tmdbId, episodeNumber) {
-  const absolute = Number(episodeNumber) || 0;
-  if (absolute <= 0) return { season: 1, episode: Math.max(1, absolute) };
-  let remaining = absolute;
-  for (let season = 1; season <= 30; season += 1) {
-    const episodes = await fetchSeasonEpisodes(tmdbId, season);
-    if (!episodes.length) break;
-    if (remaining <= episodes.length) return { season: season, episode: remaining };
-    remaining -= episodes.length;
-  }
-  return { season: 1, episode: absolute };
-}
-
 module.exports = {
   normalizeImdbId: normalizeImdbId,
   isImdbId: isImdbId,
@@ -201,10 +168,6 @@ module.exports = {
   findMetaByImdb: findMetaByImdb,
   resolveMeta: resolveMeta,
   resolveImdbId: resolveImdbId,
-  searchTitle: searchTitle,
-  fetchSeasonEpisodes: fetchSeasonEpisodes,
-  absoluteToSeason: absoluteToSeason,
-  yearOf: yearOf,
   _test: {
     firstFindResult: firstFindResult,
   },

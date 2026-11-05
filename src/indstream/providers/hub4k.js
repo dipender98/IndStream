@@ -3,7 +3,7 @@
 const http = require('../http');
 const html = require('../html');
 const util = require('../util');
-const filehost = require('./filehost');
+const filehost = require('../filehost');
 
 const BASES = ['https://4khdhub.one', 'https://4khdhub.com'];
 const HUB_LANG_RE = /\b(hindi|english|tamil|telugu|malayalam|kannada|bengali|marathi|punjabi|dual|multi)\b/i;

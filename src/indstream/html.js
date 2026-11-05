@@ -122,12 +122,10 @@ function textOf(html) {
 }
 
 module.exports = {
-  attrMap: attrMap,
-  hasClass: hasClass,
-  eachTag: eachTag,
   blocks: blocks,
   anchors: anchors,
   orderedTokens: orderedTokens,
+  eachTag: eachTag,
   firstTag: firstTag,
   textOf: textOf,
 };

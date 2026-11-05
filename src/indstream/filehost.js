@@ -1,8 +1,8 @@
 'use strict';
 
-const http = require('../http');
-const html = require('../html');
-const util = require('../util');
+const http = require('./http');
+const html = require('./html');
+const util = require('./util');
 
 const ROTATOR_BLOB_RE = /'o'\s*,\s*'([A-Za-z0-9+/=]{16,})[^']*'/;
 const ROTATOR_WP_BLOB_RE = /ck\('_wp_http_\d+','([^']+)'/;
@@ -17,9 +17,7 @@ const TOKEN_URL_ABS_RE = /https?:\/\/[^"' ]*?(?:hubcloud|hubdrive)\.php\?[^"' ]+
 const TOKEN_URL_REL_RE = /(?:hubcloud|hubdrive)\.php\?[^"' ]+/;
 const GOOGLE_VIDEO_RE = /(https?:\/\/video-downloads\.googleusercontent\.com\/[^"'\s<>]+)/;
 const PIXELDRAIN_SHORT_RE = /pixeldrain\.[a-z]+\/u\/([a-zA-Z0-9]+)/;
-const PIXELDRAIN_PAGE_RE = /(https?:\/\/pixeldrain\.[a-z.]+)\/(?:api\/file|u)\/([A-Za-z0-9_\-]+)/i;
 const ARCHIVE_URL_RE = /\.(?:zip|rar|7z|tar|gz)(?:[?#]|$)/i;
-const VIDEO_EXT_RE = /\.(?:mkv|mp4|m3u8)(?:[?#]|$)/i;
 const BTN_CLASS_RE = /\bbtn\b/;
 
 function isArchiveUrl(url) {
@@ -90,11 +88,6 @@ function hubFileButtons(pageHtml) {
     out.push({ url: url, quality: q > 0 ? q + 'p' : headQ > 0 ? headQ + 'p' : '', language: util.languageLabel(a.text) });
   });
   return out;
-}
-
-function pixeldrainDirect(url) {
-  const match = String(url || '').match(PIXELDRAIN_PAGE_RE);
-  return match ? match[1] + '/api/file/' + match[2] : '';
 }
 
 async function hubDriveFiles(driveUrl, referer) {
@@ -211,13 +204,11 @@ async function vcloudR2Links(vcloudUrl, referer, type, season, episode, timeoutM
 }
 
 module.exports = {
-  isArchiveUrl: isArchiveUrl,
   rotatorTarget: rotatorTarget,
   jsRedirectTarget: jsRedirectTarget,
-  hubFileButtons: hubFileButtons,
-  pixeldrainDirect: pixeldrainDirect,
   hubDriveFiles: hubDriveFiles,
-  googleVideoLink: googleVideoLink,
   vcloudR2Links: vcloudR2Links,
-  VIDEO_EXT_RE: VIDEO_EXT_RE,
+  _test: {
+    hubFileButtons: hubFileButtons,
+  },
 };

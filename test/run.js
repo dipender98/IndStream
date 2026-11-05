@@ -13,7 +13,7 @@ const bingr = require('../src/indstream/providers/bingr');
 const moviebox = require('../src/indstream/providers/moviebox');
 const hub4k = require('../src/indstream/providers/hub4k');
 const fsl = require('../src/indstream/providers/fsl');
-const filehost = require('../src/indstream/providers/filehost');
+const filehost = require('../src/indstream/filehost');
 
 const queue = [];
 let passed = 0;
@@ -182,7 +182,7 @@ test('onSettings shape', function () {
   const layout = settings.onSettings();
   assert.ok(Array.isArray(layout));
   const keys = layout.filter(function (item) { return item.key; }).map(function (item) { return item.key; });
-  ['vidrift', 'bingr', 'moviebox', 'hub4k', 'fsl'].forEach(function (id) {
+  ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'fsl'].forEach(function (id) {
     assert.ok(keys.indexOf('source' + id.charAt(0).toUpperCase() + id.slice(1)) >= 0, 'missing source key for ' + id);
   });
 });
@@ -349,13 +349,9 @@ test('hubFileButtons filters non-btn and archive links', function () {
     '<a class="btn" href="https://r2.dev/2.zip">ZIP</a>' +
     '<a class="plain" href="https://drive.workers.dev/3">No btn</a>' +
     '<a class="btn" href="https://pixel.hubcloud.ist/?id=1">Pixel</a>';
-  const buttons = filehost.hubFileButtons(markup);
+  const buttons = filehost._test.hubFileButtons(markup);
   assert.strictEqual(buttons.length, 1);
   assert.strictEqual(buttons[0].url, 'https://drive.workers.dev/1');
-});
-test('pixeldrainDirect', function () {
-  assert.strictEqual(filehost.pixeldrainDirect('https://pixeldrain.com/u/AbCdEf'), 'https://pixeldrain.com/api/file/AbCdEf');
-  assert.strictEqual(filehost.pixeldrainDirect('https://x.com/a'), '');
 });
 
 section('tmdb ids');

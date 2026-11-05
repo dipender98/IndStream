@@ -3,7 +3,7 @@
 const http = require('../http');
 const html = require('../html');
 const util = require('../util');
-const filehost = require('./filehost');
+const filehost = require('../filehost');
 
 const SEEDS = [
   { family: 'vegamovies', seed: 'https://new1.vegamovies.lease', bootstrap: 'https://new2.vegamovies.futbol' },
