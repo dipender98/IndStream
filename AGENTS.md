@@ -13,10 +13,10 @@ Use logic and judgment on every task. If two rules conflict, correctness wins.
 
 ## 2. Architecture
 
-- One plugin only. `manifest.json` exposes exactly one scraper, `indstream`. Providers are internal modules, not separate Nuvio plugins.
+- One repository with multiple independent scrapers. `manifest.json` exposes one scraper per server (hdhub, vidrift, bingr, moviebox, hub4k, fsl), each backed by its own bundle under `providers/`. Providers are independent modules under `src/indstream/providers/`.
 - Check the existing codebase first. Create a new file only when it clearly improves separation; keep related logic together.
-- Settings are plugin-level. Only `src/indstream/index.js` exports `onSettings()`. Nuvio stores settings per scraper id, and there is one id: `indstream`.
-- Providers declare a `toggle` descriptor for the shared settings page. They never expose `onSettings()` and never own a settings screen.
+- Settings are per scraper. Each bundle exports `onSettings()` for its own scraper id; Nuvio stores settings per scraper id.
+- Each scraper runs a single provider. Provider toggles are no longer used.
 - Keep the dependency direction: entry point -> racer/finalize -> providers -> shared libraries. Shared libraries must not import providers.
 
 ```

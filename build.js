@@ -4,48 +4,64 @@ const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
 
-const ENTRY = path.join(__dirname, 'src', 'indstream', 'index.js');
-const OUT = path.join(__dirname, 'providers', 'indstream.js');
+const ROOT = __dirname;
+const ENTRY_DIR = path.join(ROOT, 'src', 'indstream');
+const ENTRIES_DIR = path.join(ENTRY_DIR, 'entries');
+const OUT_DIR = path.join(ROOT, 'providers');
 const EXTERNAL_MODULES = ['cheerio-without-node-native', 'react-native-cheerio', 'cheerio', 'crypto-js', 'axios'];
 
-function logSize() {
-  const stats = fs.statSync(OUT);
-  console.log('Built providers/indstream.js (' + (stats.size / 1024).toFixed(1) + ' KB)');
+function entryList() {
+  const list = [{ entry: path.join(ENTRY_DIR, 'index.js'), out: path.join(OUT_DIR, 'indstream.js') }];
+  if (fs.existsSync(ENTRIES_DIR)) {
+    fs.readdirSync(ENTRIES_DIR).forEach(function (file) {
+      if (file.endsWith('.js')) {
+        const id = file.replace(/\.js$/, '');
+        list.push({ entry: path.join(ENTRIES_DIR, file), out: path.join(OUT_DIR, id + '.js') });
+      }
+    });
+  }
+  return list;
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const options = {
-    entryPoints: [ENTRY],
-    bundle: true,
-    outfile: OUT,
-    format: 'cjs',
-    platform: 'neutral',
-    target: 'es2016',
-    minify: args.includes('--minify'),
-    sourcemap: false,
-    external: EXTERNAL_MODULES,
-    logLevel: 'warning',
-    plugins: [
-      {
-        name: 'size-log',
-        setup: function (build) {
-          build.onEnd(function (result) {
-            if (!result.errors.length) logSize();
-          });
-        },
-      },
-    ],
-  };
+  const jobs = entryList();
 
   if (args.includes('--watch')) {
-    const context = await esbuild.context(options);
+    // Watch the combined entry only; full rebuild via npm run build.
+    const context = await esbuild.context({
+      entryPoints: [jobs[0].entry],
+      bundle: true,
+      outfile: jobs[0].out,
+      format: 'cjs',
+      platform: 'neutral',
+      target: 'es2016',
+      minify: args.includes('--minify'),
+      sourcemap: false,
+      external: EXTERNAL_MODULES,
+      logLevel: 'warning',
+    });
     await context.watch();
-    console.log('Watching src/indstream for changes...');
+    console.log('Watching src/indstream/index.js -> providers/indstream.js');
     return;
   }
 
-  await esbuild.build(options);
+  for (const job of jobs) {
+    await esbuild.build({
+      entryPoints: [job.entry],
+      bundle: true,
+      outfile: job.out,
+      format: 'cjs',
+      platform: 'neutral',
+      target: 'es2016',
+      minify: args.includes('--minify'),
+      sourcemap: false,
+      external: EXTERNAL_MODULES,
+      logLevel: 'warning',
+    });
+    const stats = fs.statSync(job.out);
+    console.log('Built ' + path.relative(ROOT, job.out) + ' (' + (stats.size / 1024).toFixed(1) + ' KB)');
+  }
 }
 
 main().catch(function (err) {

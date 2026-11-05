@@ -1,7 +1,5 @@
 'use strict';
 
-const providers = require('./providers');
-
 const CORE_DEFAULTS = {
   minQuality: '720',
   resultLimit: '40',
@@ -11,40 +9,12 @@ const CORE_DEFAULTS = {
   debug: false,
 };
 
-function toggleKeyOf(provider) {
-  if (provider.toggle && provider.toggle.key) return provider.toggle.key;
-  return 'source' + provider.id.charAt(0).toUpperCase() + provider.id.slice(1);
-}
-
-function toggleDefaultOf(provider) {
-  return provider.toggle && provider.toggle.defaultValue === false ? false : true;
-}
-
-const PROVIDER_SETTINGS = {};
-const PROVIDER_DEFAULTS = {};
-providers.PROVIDERS.forEach(function (provider) {
-  const key = toggleKeyOf(provider);
-  PROVIDER_SETTINGS[provider.id] = key;
-  PROVIDER_DEFAULTS[key] = toggleDefaultOf(provider);
-});
-
-const DEFAULTS = Object.assign({}, CORE_DEFAULTS, PROVIDER_DEFAULTS);
-
-function providerToggle(provider) {
-  const meta = provider.toggle || {};
-  return {
-    type: 'toggle',
-    key: toggleKeyOf(provider),
-    label: meta.label || provider.name || provider.id,
-    description: meta.description || '',
-    defaultValue: toggleDefaultOf(provider),
-  };
-}
+const DEFAULTS = Object.assign({}, CORE_DEFAULTS);
 
 const SETTINGS_LAYOUT = [
   {
     type: 'info',
-    label: 'One settings page for IndStream. Every enabled provider runs independently and only contributes its own streams.',
+    label: 'Shared settings for every IndStream provider. Configure once here; all providers read these values.',
   },
   {
     type: 'header',
@@ -103,11 +73,6 @@ const SETTINGS_LAYOUT = [
   },
   {
     type: 'header',
-    label: 'Providers',
-  },
-].concat(providers.PROVIDERS.map(providerToggle)).concat([
-  {
-    type: 'header',
     label: 'Diagnostics',
   },
   {
@@ -117,7 +82,7 @@ const SETTINGS_LAYOUT = [
     description: 'Logs each source result count and timing. Useful when a source stops working.',
     defaultValue: false,
   },
-]);
+];
 
 function readGlobalSettings() {
   const scope = typeof globalThis !== 'undefined' ? globalThis : {};
@@ -159,9 +124,6 @@ function getSettings() {
     debug: normalizeBool(merged.debug, DEFAULTS.debug),
     sources: {},
   };
-  Object.keys(PROVIDER_SETTINGS).forEach(function (id) {
-    settings.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
-  });
   if (!settings.requestTimeout) settings.requestTimeout = 15;
   return settings;
 }
@@ -170,10 +132,15 @@ function onSettings() {
   return SETTINGS_LAYOUT;
 }
 
+function onSettingsFor() {
+  return SETTINGS_LAYOUT;
+}
+
 module.exports = {
   DEFAULTS: DEFAULTS,
   SETTINGS_LAYOUT: SETTINGS_LAYOUT,
-  PROVIDER_SETTINGS: PROVIDER_SETTINGS,
+  PROVIDER_SETTINGS: {},
   getSettings: getSettings,
   onSettings: onSettings,
+  onSettingsFor: onSettingsFor,
 };

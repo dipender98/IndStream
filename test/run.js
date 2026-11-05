@@ -219,35 +219,27 @@ test('defaults', function () {
   const s = settings.getSettings();
   assert.strictEqual(s.minQuality, 720);
   assert.strictEqual(s.resultLimit, 40);
-  assert.strictEqual(s.sources.vidrift, true);
-  assert.strictEqual(s.sources.fsl, true);
   assert.strictEqual(s.includeDash, true);
 });
 test('override and source disable', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({
     minQuality: '1080',
     resultLimit: '20',
-    sourceFsl: false,
     includeDash: false,
   });
   const s = settings.getSettings();
   assert.strictEqual(s.minQuality, 1080);
   assert.strictEqual(s.resultLimit, 20);
-  assert.strictEqual(s.sources.fsl, false);
-  assert.strictEqual(s.sources.bingr, true);
   assert.strictEqual(s.includeDash, false);
 });
 test('onSettings shape', function () {
   const layout = settings.onSettings();
   assert.ok(Array.isArray(layout));
   const keys = layout.filter(function (item) { return item.key; }).map(function (item) { return item.key; });
-  ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'fsl'].forEach(function (id) {
-    assert.ok(keys.indexOf('source' + id.charAt(0).toUpperCase() + id.slice(1)) >= 0, 'missing source key for ' + id);
+  ['minQuality', 'resultLimit', 'requestTimeout', 'probeQuality', 'includeDash', 'debug'].forEach(function (key) {
+    assert.ok(keys.indexOf(key) >= 0, 'missing key ' + key);
   });
   assert.strictEqual(typeof settings.onSettings, 'function');
-  providers.PROVIDERS.forEach(function (provider) {
-    assert.strictEqual(typeof provider.onSettings, 'undefined', provider.id + ' must not own settings');
-  });
 });
 
 section('http');
@@ -499,20 +491,13 @@ test('registry contract', function () {
     assert.strictEqual(providers.BY_ID[provider.id], provider);
   });
 });
-test('settings cover every provider', function () {
-  const layoutKeys = settings.SETTINGS_LAYOUT.filter(function (item) {
-    return item.key;
-  }).map(function (item) {
-    return item.key;
+test('settings are shared (no per-provider toggles)', function () {
+  const layout = settings.onSettings();
+  const providerToggleKeys = layout.filter(function (item) {
+    return item.key && /^source[A-Z]/.test(item.key);
   });
-  assert.strictEqual(Object.keys(settings.PROVIDER_SETTINGS).length, providers.PROVIDERS.length);
-  providers.PROVIDERS.forEach(function (provider) {
-    const key = settings.PROVIDER_SETTINGS[provider.id];
-    assert.ok(key, 'missing settings key for ' + provider.id);
-    assert.strictEqual(key, provider.toggle.key);
-    assert.ok(layoutKeys.indexOf(key) >= 0, 'missing layout control for ' + key);
-    assert.ok(settings.DEFAULTS[key] === true, 'missing default for ' + key);
-  });
+  assert.strictEqual(providerToggleKeys.length, 0);
+  assert.strictEqual(Object.keys(settings.PROVIDER_SETTINGS).length, 0);
 });
 test('enabled filters by source toggle and media type', function () {
   const fake = [

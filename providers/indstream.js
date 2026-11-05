@@ -316,7 +316,7 @@ var require_http = __commonJS({
 var require_tmdb = __commonJS({
   "src/indstream/tmdb.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
+    var http = require_http();
     var PUBLIC_KEYS = ["e6333b32409e02a4a6eba6fb7ff866bb", "a721dd910292becd0d78ed436463db21"];
     var API_HOSTS = ["https://api.themoviedb.org/3", "https://api.tmdb.org/3"];
     var metaCache = {};
@@ -356,7 +356,7 @@ var require_tmdb = __commonJS({
             if (options.deadline && Date.now() >= options.deadline) return null;
             if (options.signal && options.signal.aborted) return null;
             const url = API_HOSTS[h] + path + "?api_key=" + encodeURIComponent(allKeys[i]) + (suffix ? "&" + suffix : "");
-            const json = yield http2.getJson(url, {
+            const json = yield http.getJson(url, {
               timeoutMs: 3e3,
               deadline: options.deadline,
               signal: options.signal
@@ -480,6 +480,147 @@ var require_tmdb = __commonJS({
       _test: {
         firstFindResult
       }
+    };
+  }
+});
+
+// src/indstream/settings.js
+var require_settings = __commonJS({
+  "src/indstream/settings.js"(exports2, module2) {
+    "use strict";
+    var CORE_DEFAULTS = {
+      minQuality: "720",
+      resultLimit: "40",
+      requestTimeout: "15",
+      probeQuality: false,
+      includeDash: true,
+      debug: false
+    };
+    var DEFAULTS = Object.assign({}, CORE_DEFAULTS);
+    var SETTINGS_LAYOUT = [
+      {
+        type: "info",
+        label: "Shared settings for every IndStream provider. Configure once here; all providers read these values."
+      },
+      {
+        type: "header",
+        label: "Playback"
+      },
+      {
+        type: "select",
+        key: "minQuality",
+        label: "Minimum quality",
+        description: "Streams whose height is known and below this are dropped. Unknown heights are kept.",
+        defaultValue: "720",
+        options: [
+          { label: "720p", value: "720" },
+          { label: "1080p", value: "1080" },
+          { label: "Best available", value: "0" }
+        ]
+      },
+      {
+        type: "select",
+        key: "resultLimit",
+        label: "Maximum results",
+        description: "Caps how many streams are returned per request.",
+        defaultValue: "40",
+        options: [
+          { label: "20", value: "20" },
+          { label: "40", value: "40" },
+          { label: "80", value: "80" },
+          { label: "No limit", value: "0" }
+        ]
+      },
+      {
+        type: "select",
+        key: "requestTimeout",
+        label: "Provider timeout",
+        description: "Upper bound for a single provider. Providers that finish sooner still return first.",
+        defaultValue: "15",
+        options: [
+          { label: "10 seconds", value: "10" },
+          { label: "15 seconds", value: "15" },
+          { label: "25 seconds", value: "25" }
+        ]
+      },
+      {
+        type: "toggle",
+        key: "probeQuality",
+        label: "Probe unknown quality",
+        description: "Reads HLS/DASH manifests to detect the real height. Slower, but labels more streams.",
+        defaultValue: false
+      },
+      {
+        type: "toggle",
+        key: "includeDash",
+        label: "Include DASH streams",
+        description: "Adds DASH manifests, which not every player supports. Turn off if playback fails.",
+        defaultValue: true
+      },
+      {
+        type: "header",
+        label: "Diagnostics"
+      },
+      {
+        type: "toggle",
+        key: "debug",
+        label: "Verbose logging",
+        description: "Logs each source result count and timing. Useful when a source stops working.",
+        defaultValue: false
+      }
+    ];
+    function readGlobalSettings() {
+      const scope = typeof globalThis !== "undefined" ? globalThis : {};
+      let raw = scope.SCRAPER_SETTINGS;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch (error) {
+          raw = null;
+        }
+      }
+      return raw && typeof raw === "object" ? raw : {};
+    }
+    function normalizeBool(value, fallback) {
+      if (value === true || value === "true" || value === 1 || value === "1") return true;
+      if (value === false || value === "false" || value === 0 || value === "0") return false;
+      return fallback;
+    }
+    function pick(value, allowed, fallback) {
+      const text = value == null ? "" : String(value);
+      return allowed.indexOf(text) >= 0 ? text : fallback;
+    }
+    function getSettings() {
+      const raw = readGlobalSettings();
+      const merged = Object.assign({}, DEFAULTS);
+      Object.keys(raw).forEach(function(key) {
+        if (raw[key] != null) merged[key] = raw[key];
+      });
+      const settings = {
+        minQuality: Number(pick(merged.minQuality, ["0", "720", "1080"], DEFAULTS.minQuality)),
+        resultLimit: Number(pick(merged.resultLimit, ["0", "20", "40", "80"], DEFAULTS.resultLimit)),
+        requestTimeout: Number(pick(merged.requestTimeout, ["10", "15", "25"], DEFAULTS.requestTimeout)),
+        probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
+        includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
+        debug: normalizeBool(merged.debug, DEFAULTS.debug),
+        sources: {}
+      };
+      if (!settings.requestTimeout) settings.requestTimeout = 15;
+      return settings;
+    }
+    function onSettings() {
+      return SETTINGS_LAYOUT;
+    }
+    function onSettingsFor() {
+      return SETTINGS_LAYOUT;
+    }
+    module2.exports = {
+      DEFAULTS,
+      SETTINGS_LAYOUT,
+      PROVIDER_SETTINGS: {},
+      getSettings,
+      onSettings,
+      onSettingsFor
     };
   }
 });
@@ -1032,9 +1173,9 @@ var require_util = __commonJS({
 var require_hdhub = __commonJS({
   "src/indstream/providers/hdhub.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
-    var util2 = require_util();
-    var tmdb2 = require_tmdb();
+    var http = require_http();
+    var util = require_util();
+    var tmdb = require_tmdb();
     var BASE = "https://hdhub.thevolecitor.qzz.io";
     module2.exports = {
       id: "hdhub",
@@ -1049,12 +1190,12 @@ var require_hdhub = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const net = ctx.http || http2;
+          const net = ctx.http || http;
           const type = ctx.type;
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           let imdbId = meta && meta.imdbId || ctx.imdbId || "";
           if (!imdbId && ctx.tmdbId) {
-            imdbId = yield tmdb2.resolveImdbId(ctx.tmdbId, type, meta, ctx);
+            imdbId = yield tmdb.resolveImdbId(ctx.tmdbId, type, meta, ctx);
           }
           let pathId = "";
           if (imdbId) {
@@ -1081,20 +1222,20 @@ var require_hdhub = __commonJS({
             if (/donation|discord/i.test(name)) return;
             if (/hubdrive\.bar/i.test(s.url)) return;
             const desc = String(s.description || s.title || "");
-            const height = util2.parseHeight(name + " " + desc);
-            const language = util2.languageLabel(desc) || util2.languageLabel(name) || "";
-            const size = util2.normalizeSizeToken(desc);
+            const height = util.parseHeight(name + " " + desc);
+            const language = util.languageLabel(desc) || util.languageLabel(name) || "";
+            const size = util.normalizeSizeToken(desc);
             const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url) || /googleusercontent/i.test(s.url);
             const entry = {
               provider: module2.exports.name,
               url: s.url,
               type: isHls ? "hls" : "mp4",
-              quality: util2.qualityLabel(height),
+              quality: util.qualityLabel(height),
               height,
               language,
               size,
               title: "",
-              headers: { "User-Agent": http2.DEFAULT_UA }
+              headers: { "User-Agent": http.DEFAULT_UA }
             };
             if (seen[entry.url]) return;
             seen[entry.url] = true;
@@ -1112,8 +1253,8 @@ var require_hdhub = __commonJS({
 var require_vidrift = __commonJS({
   "src/indstream/providers/vidrift.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
-    var util2 = require_util();
+    var http = require_http();
+    var util = require_util();
     var BASE = "https://embed.vidrift.net";
     module2.exports = {
       id: "vidrift",
@@ -1128,7 +1269,7 @@ var require_vidrift = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const net = ctx.http || http2;
+          const net = ctx.http || http;
           const type = ctx.type;
           const season = Number(ctx.season) || 0;
           const episode = Number(ctx.episode) || 0;
@@ -1161,7 +1302,7 @@ var require_vidrift = __commonJS({
               language: label || "",
               size: "",
               title: "",
-              headers: { "User-Agent": http2.DEFAULT_UA, Referer: BASE + "/" }
+              headers: { "User-Agent": http.DEFAULT_UA, Referer: BASE + "/" }
             });
           });
           if (!out.length) {
@@ -1176,7 +1317,7 @@ var require_vidrift = __commonJS({
     function vidriftStreams(html) {
       const mi = html.indexOf("var embedMeta");
       const brace = mi >= 0 ? html.indexOf("{", mi) : -1;
-      const json = brace >= 0 ? util2.extractBalancedJson(html, brace) : "";
+      const json = brace >= 0 ? util.extractBalancedJson(html, brace) : "";
       let meta = null;
       try {
         meta = json ? JSON.parse(json) : null;
@@ -1219,8 +1360,8 @@ var require_vidrift = __commonJS({
 var require_bingr = __commonJS({
   "src/indstream/providers/bingr.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
-    var util2 = require_util();
+    var http = require_http();
+    var util = require_util();
     var API = "https://api.bingr.one/api/stream";
     var REFERER = "https://bingr.one/";
     var SRVS = ["s40", "s70", "s80", "s81", "s62", "s63", "s30", "s60", "s61", "s31", "s3"];
@@ -1237,8 +1378,8 @@ var require_bingr = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const net = ctx.http || http2;
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const net = ctx.http || http;
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           const type = ctx.type;
@@ -1251,7 +1392,7 @@ var require_bingr = __commonJS({
             "Content-Type": "application/json",
             Origin: "https://bingr.one",
             Referer: REFERER,
-            "User-Agent": http2.DEFAULT_UA
+            "User-Agent": http.DEFAULT_UA
           };
           const out = [];
           const seen = {};
@@ -1280,12 +1421,12 @@ var require_bingr = __commonJS({
                 provider: module2.exports.name,
                 url: s.url,
                 type: isDash ? "dash" : isHls ? "hls" : "mp4",
-                quality: util2.qualityLabel(util2.parseHeight(s.quality || s.label)),
-                height: util2.parseHeight(s.quality || s.label),
+                quality: util.qualityLabel(util.parseHeight(s.quality || s.label)),
+                height: util.parseHeight(s.quality || s.label),
                 language: s.language || "",
                 size: "",
                 title: "",
-                headers: { Referer: REFERER, "User-Agent": http2.DEFAULT_UA }
+                headers: { Referer: REFERER, "User-Agent": http.DEFAULT_UA }
               });
             });
           }
@@ -1336,8 +1477,8 @@ var require_bingr = __commonJS({
 var require_moviebox = __commonJS({
   "src/indstream/providers/moviebox.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
-    var util2 = require_util();
+    var http = require_http();
+    var util = require_util();
     var HOST = "h5-api.aoneroom.com";
     var BASE = "https://" + HOST;
     var REFERER = "https://movieboxonline.net/";
@@ -1362,7 +1503,7 @@ var require_moviebox = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const type = ctx.type;
           if (!title) {
@@ -1413,7 +1554,7 @@ var require_moviebox = __commonJS({
     };
     function searchItems(baseHeaders, title, subjectType, ctx) {
       return __async(this, null, function* () {
-        const net = ctx.http || http2;
+        const net = ctx.http || http;
         const json = yield net.postJson(BASE + "/wefeed-h5api-bff/subject/search", {
           keyword: title,
           page: 1,
@@ -1437,13 +1578,13 @@ var require_moviebox = __commonJS({
         Host: HOST,
         Connection: "keep-alive",
         Authorization: "Bearer " + token,
-        "User-Agent": http2.DEFAULT_UA
+        "User-Agent": http.DEFAULT_UA
       };
     }
     function fetchBearer(forceRefresh, ctx) {
       return __async(this, null, function* () {
         if (!forceRefresh && tokenCache && Date.now() - tokenAt < TOKEN_TTL_MS) return tokenCache;
-        const net = ctx && ctx.http || http2;
+        const net = ctx && ctx.http || http;
         const res = yield net.request(BASE + "/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox", {
           timeoutMs: 8e3
         });
@@ -1497,7 +1638,7 @@ var require_moviebox = __commonJS({
     }
     function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx) {
       return __async(this, null, function* () {
-        const net = ctx.http || http2;
+        const net = ctx.http || http;
         let detailPath = ref.detailPath;
         if (!detailPath) {
           const json = yield net.getJson(BASE + "/wefeed-h5-bff/web/post/list/subject?id=" + ref.id, {
@@ -1542,14 +1683,14 @@ var require_moviebox = __commonJS({
             if (seen[finalUrl]) return;
             seen[finalUrl] = true;
             const resolution = parseInt(s.resolutions, 10) || parseInt(s.resolution, 10) || 0;
-            const headers = { Referer: REFERER, "User-Agent": http2.DEFAULT_UA };
+            const headers = { Referer: REFERER, "User-Agent": http.DEFAULT_UA };
             if (cookie) headers.Cookie = cookie;
             const isMpd = isDashEntry || finalUrl.indexOf(".mpd") >= 0;
             out.push({
               provider: module2.exports.name,
               url: finalUrl,
               type: isMpd ? "dash" : finalUrl.indexOf(".m3u8") >= 0 ? "hls" : "mp4",
-              quality: util2.qualityLabel(resolution),
+              quality: util.qualityLabel(resolution),
               height: resolution,
               language: "",
               size: "",
@@ -1564,7 +1705,7 @@ var require_moviebox = __commonJS({
         });
         add(unwrapData(downloadJson).downloads, false);
         if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-        yield util2.sleep(Math.max(0, 1500 - (Date.now() - lastPlayAt)));
+        yield util.sleep(Math.max(0, 1500 - (Date.now() - lastPlayAt)));
         if (ctx.deadline && Date.now() >= ctx.deadline) return out;
         lastPlayAt = Date.now();
         const playJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/play?" + params, {
@@ -1605,7 +1746,7 @@ var require_moviebox = __commonJS({
       if (!stripped || stripped.indexOf("=") >= 0 || stripped.length % 4 === 1) return "";
       const pad = (4 - stripped.length % 4) % 4;
       std = stripped + "====".slice(0, pad);
-      const json = util2.b64decode(std);
+      const json = util.b64decode(std);
       if (!json) return "";
       let resource = "";
       try {
@@ -1633,7 +1774,7 @@ var require_moviebox = __commonJS({
 var require_html = __commonJS({
   "src/indstream/html.js"(exports2, module2) {
     "use strict";
-    var util2 = require_util();
+    var util = require_util();
     function attrMap(tagText) {
       const out = {};
       const source = String(tagText || "");
@@ -1642,7 +1783,7 @@ var require_html = __commonJS({
       while (match = re.exec(source)) {
         const name = match[1].toLowerCase();
         const value = match[2] != null ? match[2] : match[3] != null ? match[3] : match[4];
-        out[name] = util2.decodeEntities(value || "");
+        out[name] = util.decodeEntities(value || "");
       }
       return out;
     }
@@ -1714,7 +1855,7 @@ var require_html = __commonJS({
       while (match = re.exec(String(html || ""))) {
         const attrs = attrMap(match[1]);
         if (!attrs.href) continue;
-        out.push({ href: attrs.href, text: util2.stripTags(match[2]), attrs });
+        out.push({ href: attrs.href, text: util.stripTags(match[2]), attrs });
       }
       return out;
     }
@@ -1725,12 +1866,12 @@ var require_html = __commonJS({
       let match;
       while (match = re.exec(source)) {
         if (match[1]) {
-          const text = util2.stripTags(match[2]);
+          const text = util.stripTags(match[2]);
           if (text) out.push({ kind: "heading", text });
         } else {
           const attrs = attrMap(match[3]);
           if (!attrs.href) continue;
-          out.push({ kind: "anchor", href: attrs.href, text: util2.stripTags(match[4]), attrs });
+          out.push({ kind: "anchor", href: attrs.href, text: util.stripTags(match[4]), attrs });
         }
       }
       return out;
@@ -1743,7 +1884,7 @@ var require_html = __commonJS({
       return null;
     }
     function textOf(html) {
-      return util2.stripTags(html);
+      return util.stripTags(html);
     }
     module2.exports = {
       blocks,
@@ -1760,9 +1901,9 @@ var require_html = __commonJS({
 var require_filehost = __commonJS({
   "src/indstream/filehost.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
+    var http = require_http();
     var html = require_html();
-    var util2 = require_util();
+    var util = require_util();
     var ROTATOR_BLOB_RE = /'o'\s*,\s*'([A-Za-z0-9+/=]{16,})[^']*'/;
     var ROTATOR_WP_BLOB_RE = /ck\('_wp_http_\d+','([^']+)'/;
     var ROTATOR_O_TOKEN_RE = /"o"\s*:\s*"([A-Za-z0-9+/=]{10,})/;
@@ -1784,18 +1925,18 @@ var require_filehost = __commonJS({
     function rotatorTarget(pageHtml) {
       const blob = (pageHtml.match(ROTATOR_BLOB_RE) || [])[1] || (pageHtml.match(ROTATOR_WP_BLOB_RE) || [])[1];
       if (!blob) return "";
-      const l1 = util2.b64decode(blob);
+      const l1 = util.b64decode(blob);
       if (!l1) return "";
-      const l2 = util2.b64decode(l1);
+      const l2 = util.b64decode(l1);
       if (!l2) return "";
-      const jsonText = util2.b64decode(util2.rot13(l2));
+      const jsonText = util.b64decode(util.rot13(l2));
       if (!jsonText) return "";
       const oToken = (jsonText.match(ROTATOR_O_TOKEN_RE) || [])[1];
       let wrapped = null;
       try {
         wrapped = JSON.parse(jsonText);
       } catch (error) {
-        if (oToken && util2.b64decode(oToken).indexOf("http") === 0) {
+        if (oToken && util.b64decode(oToken).indexOf("http") === 0) {
           try {
             wrapped = JSON.parse('{"o":"' + oToken + '"}');
           } catch (inner) {
@@ -1804,7 +1945,7 @@ var require_filehost = __commonJS({
         }
       }
       if (!wrapped || typeof wrapped !== "object") return "";
-      const url = util2.b64decode(wrapped.o || "").trim();
+      const url = util.b64decode(wrapped.o || "").trim();
       return url.indexOf("http") === 0 ? url : "";
     }
     function jsRedirectTarget(pageHtml) {
@@ -1816,7 +1957,7 @@ var require_filehost = __commonJS({
       if (!stored) return "";
       let payload = stored;
       for (let i = 0; i < 6; i += 1) {
-        const decoded = util2.b64decode(payload);
+        const decoded = util.b64decode(payload);
         if (!decoded) return "";
         const direct = decoded.match(DIRECT_URL_RE);
         if (direct) return direct[0];
@@ -1825,7 +1966,7 @@ var require_filehost = __commonJS({
       return "";
     }
     function hubFileButtons(pageHtml) {
-      const headQ = util2.parseHeight((html.firstTag(pageHtml, "div", "card-header") || {}).inner || "");
+      const headQ = util.parseHeight((html.firstTag(pageHtml, "div", "card-header") || {}).inner || "");
       const out = [];
       const seen = {};
       html.anchors(pageHtml).forEach(function(a) {
@@ -1838,24 +1979,24 @@ var require_filehost = __commonJS({
         if (pixel) url = url.replace("/u/" + pixel[1], "/api/file/" + pixel[1]);
         if (seen[url]) return;
         seen[url] = true;
-        const q = util2.parseHeight(a.text);
-        out.push({ url, quality: q > 0 ? q + "p" : headQ > 0 ? headQ + "p" : "", language: util2.languageLabel(a.text) });
+        const q = util.parseHeight(a.text);
+        out.push({ url, quality: q > 0 ? q + "p" : headQ > 0 ? headQ + "p" : "", language: util.languageLabel(a.text) });
       });
       return out;
     }
     function hubDriveFiles(driveUrl, referer, client) {
       return __async(this, null, function* () {
-        const net = client || http2;
+        const net = client || http;
         const url = String(driveUrl || "");
         if (/hubdrive\.|hubcdn\./i.test(url)) {
           const index = yield net.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
           if (!index) return [];
           const reurl = (index.match(REURL_VAR_RE) || [])[1];
           if (reurl) {
-            const direct = util2.b64decode(reurl.slice(reurl.indexOf("r=") + 2).replace(/-/g, "+").replace(/_/g, "/"));
+            const direct = util.b64decode(reurl.slice(reurl.indexOf("r=") + 2).replace(/-/g, "+").replace(/_/g, "/"));
             if (direct) {
               const link = direct.slice(direct.indexOf("link=") + 5);
-              if (link.indexOf("http") === 0) return [{ url: link, quality: util2.qualityText(link), language: "" }];
+              if (link.indexOf("http") === 0) return [{ url: link, quality: util.qualityText(link), language: "" }];
             }
           }
           const next = (index.match(HUB_DRIVE_NEXT_RE) || [])[0];
@@ -1864,11 +2005,11 @@ var require_filehost = __commonJS({
         const page = yield net.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
         if (!page) return [];
         const google = googleVideoLink(page, url);
-        if (google) return [{ url: google, quality: util2.qualityText(page), language: "" }];
+        if (google) return [{ url: google, quality: util.qualityText(page), language: "" }];
         const tokenAbs = (page.match(TOKEN_URL_ABS_RE) || [])[0];
         const tokenRel = (page.match(TOKEN_URL_REL_RE) || [])[0];
         if (!tokenAbs && !tokenRel) return [];
-        const origin = util2.originOf(url);
+        const origin = util.originOf(url);
         const tokenUrl = tokenAbs || origin + "/" + tokenRel;
         const tokenPage = yield net.getText(tokenUrl, { timeoutMs: 1e4, headers: { Referer: url } });
         if (!tokenPage) return [];
@@ -1899,17 +2040,17 @@ var require_filehost = __commonJS({
     var HTML_TITLE_RE = /<title>([^<]+)<\/title>/i;
     var ARCHIVE_TITLE_RE = /archive(?:\.org)?|web\.archive|\.zip|\.rar|\.7z|\.tar|\.gz/i;
     function vcloudDoubleAtob(blob) {
-      const inner = util2.b64decode(blob.trim());
+      const inner = util.b64decode(blob.trim());
       if (!inner) return "";
-      return util2.b64decode(inner.trim());
+      return util.b64decode(inner.trim());
     }
     function vcloudPageMatchesEpisode(pageTitle, type, season, episode) {
       if (type !== "tv" || !season || !episode) return true;
-      return !VCLOUD_EPISODE_TAG_RE.test(pageTitle) || util2.episodeMatches(pageTitle, season, episode);
+      return !VCLOUD_EPISODE_TAG_RE.test(pageTitle) || util.episodeMatches(pageTitle, season, episode);
     }
     function vcloudR2Links(vcloudUrl, referer, type, season, episode, ctx) {
       return __async(this, null, function* () {
-        const net = ctx && ctx.http ? ctx.http : http2;
+        const net = ctx && ctx.http ? ctx.http : http;
         const timeoutMs = typeof ctx === "number" ? ctx : ctx && ctx.timeoutMs || 15e3;
         const page = yield net.getText(vcloudUrl, { timeoutMs, headers: { Referer: referer } });
         if (!page) return [];
@@ -1924,7 +2065,7 @@ var require_filehost = __commonJS({
         if (!token) return [];
         const out = [];
         const seen = {};
-        const origin = util2.originOf(tokenUrl);
+        const origin = util.originOf(tokenUrl);
         let match;
         VCLOUD_BTN_RE.lastIndex = 0;
         while (match = VCLOUD_BTN_RE.exec(token)) {
@@ -1968,9 +2109,9 @@ var require_filehost = __commonJS({
 var require_hub4k = __commonJS({
   "src/indstream/providers/hub4k.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
+    var http = require_http();
     var html = require_html();
-    var util2 = require_util();
+    var util = require_util();
     var filehost = require_filehost();
     var BASES = ["https://4khdhub.one", "https://4khdhub.com"];
     var HUB_LANG_RE = /\b(hindi|english|tamil|telugu|malayalam|kannada|bengali|marathi|punjabi|dual|multi)\b/i;
@@ -1992,8 +2133,8 @@ var require_hub4k = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const net = ctx.http || http2;
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const net = ctx.http || http;
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           if (!title) {
@@ -2027,7 +2168,7 @@ var require_hub4k = __commonJS({
           const cards = hubParseCards(searchHtml, base);
           if (!cards.length) return [];
           const ranked = cards.map(function(card) {
-            return { card, score: util2.titleScore(title, card.title, year, util2.titleYearOf(card.title)) };
+            return { card, score: util.titleScore(title, card.title, year, util.titleYearOf(card.title)) };
           }).sort(function(a, b) {
             return b.score - a.score;
           }).slice(0, 3);
@@ -2043,15 +2184,15 @@ var require_hub4k = __commonJS({
             });
             if (!post) continue;
             if (!hubPostYearOk(post, year)) continue;
-            const items = util2.episodeOrSeason(hub4kItems(post), function(it) {
+            const items = util.episodeOrSeason(hub4kItems(post), function(it) {
               return it.title;
             }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
             for (let j = 0; j < items.length; j += 1) {
               if (Date.now() > deadline) break;
               const item = items[j];
-              const langNames = util2.languageNames(item.languages);
+              const langNames = util.languageNames(item.languages);
               const lang = langNames.join(", ");
-              const audioLang = util2.languageLabel(item.languages) || lang;
+              const audioLang = util.languageLabel(item.languages) || lang;
               const priority = hubLangOf(item.languages);
               for (let g = 0; g < item.gatewayUrls.length; g += 1) {
                 if (Date.now() > deadline) break;
@@ -2063,7 +2204,7 @@ var require_hub4k = __commonJS({
                 if (!gwPage) continue;
                 let resolvedDrive = "";
                 [filehost.rotatorTarget(gwPage), filehost.jsRedirectTarget(gwPage)].forEach(function(target) {
-                  if (target && !resolvedDrive) resolvedDrive = util2.resolveUrl(gateway, target);
+                  if (target && !resolvedDrive) resolvedDrive = util.resolveUrl(gateway, target);
                 });
                 if (!resolvedDrive) continue;
                 let finalDrive = resolvedDrive;
@@ -2075,18 +2216,18 @@ var require_hub4k = __commonJS({
                   if (!innerPage) continue;
                   let mirror = "";
                   html.anchors(innerPage).forEach(function(a) {
-                    if (!mirror && /hubcloud/i.test(a.href)) mirror = util2.resolveUrl(resolvedDrive, a.href);
+                    if (!mirror && /hubcloud/i.test(a.href)) mirror = util.resolveUrl(resolvedDrive, a.href);
                   });
                   if (!mirror || mirror.indexOf("http") !== 0) continue;
                   finalDrive = mirror;
                 }
-                const referer = util2.originOf(finalDrive) || "https://hubcloud.ist/";
+                const referer = util.originOf(finalDrive) || "https://hubcloud.ist/";
                 const files = yield filehost.hubDriveFiles(finalDrive, card.url, net);
                 for (let f = 0; f < files.length; f += 1) {
                   if (Date.now() > deadline) break;
                   const file = files[f];
                   const qText = file.quality || (item.title.match(HUB_QUALITY_RE) || [])[0] || "";
-                  const fileAudio = util2.languageLabel(file.language);
+                  const fileAudio = util.languageLabel(file.language);
                   const audio = fileAudio || audioLang || lang;
                   if (seen[file.url]) continue;
                   seen[file.url] = true;
@@ -2094,12 +2235,12 @@ var require_hub4k = __commonJS({
                     provider: module2.exports.name,
                     url: file.url,
                     type: file.url.indexOf(".m3u8") >= 0 ? "hls" : file.url.indexOf(".mpd") >= 0 ? "dash" : "mp4",
-                    quality: util2.qualityLabel(util2.parseHeight(qText || item.title)),
-                    height: util2.parseHeight(qText || item.title),
+                    quality: util.qualityLabel(util.parseHeight(qText || item.title)),
+                    height: util.parseHeight(qText || item.title),
                     language: audio,
                     size: item.size,
                     title: (module2.exports.name + " " + qText).trim(),
-                    headers: { Referer: referer, "User-Agent": http2.DEFAULT_UA }
+                    headers: { Referer: referer, "User-Agent": http.DEFAULT_UA }
                   });
                   if (out.length >= 6) break;
                 }
@@ -2118,7 +2259,7 @@ var require_hub4k = __commonJS({
       const seen = {};
       html.anchors(htmlText).forEach(function(a) {
         if (!/movie-card/.test(a.attrs.class || "")) return;
-        const href = util2.resolveUrl(base, a.href).trim();
+        const href = util.resolveUrl(base, a.href).trim();
         if (href.indexOf("http") !== 0) return;
         const title = String(a.attrs["aria-label"] || "").replace(/ details$/i, "").trim() || a.text.trim();
         if (!title || seen[href]) return;
@@ -2164,7 +2305,7 @@ var require_hub4k = __commonJS({
       }
       let size = "";
       badges.forEach(function(badge) {
-        const tok = util2.normalizeSizeToken(badge);
+        const tok = util.normalizeSizeToken(badge);
         if (tok && !size) {
           size = tok;
         }
@@ -2194,7 +2335,7 @@ var require_hub4k = __commonJS({
       const s = String(languages || "").toLowerCase();
       if (s.indexOf("hindi") >= 0 && HUB_OTHER_LANG_RE.test(s)) return "Multi";
       if (s.indexOf("hindi") >= 0) return "Hindi";
-      return util2.languageLabel(languages);
+      return util.languageLabel(languages);
     }
     module2.exports._test = {
       hubParseCards,
@@ -2209,9 +2350,9 @@ var require_hub4k = __commonJS({
 var require_fsl = __commonJS({
   "src/indstream/providers/fsl.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
+    var http = require_http();
     var html = require_html();
-    var util2 = require_util();
+    var util = require_util();
     var filehost = require_filehost();
     var SEEDS = [
       { family: "vegamovies", seed: "https://new1.vegamovies.lease", bootstrap: "https://new2.vegamovies.futbol" },
@@ -2240,7 +2381,7 @@ var require_fsl = __commonJS({
       },
       resolve(ctx) {
         return __async(this, null, function* () {
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
           if (!title) {
@@ -2260,18 +2401,18 @@ var require_fsl = __commonJS({
             const hits = fslSearchHits(json);
             if (!hits.length) continue;
             const ranked = hits.map(function(hit) {
-              return { hit, score: util2.titleScore(title, hit.title, year, util2.titleYearOf(hit.title)) };
+              return { hit, score: util.titleScore(title, hit.title, year, util.titleYearOf(hit.title)) };
             }).filter(function(row) {
-              return !year || !util2.titleYearOf(row.hit.title) || row.score > 0.5;
+              return !year || !util.titleYearOf(row.hit.title) || row.score > 0.5;
             }).sort(function(a, b) {
               return b.score - a.score;
             }).slice(0, 2);
             for (let r = 0; r < ranked.length; r += 1) {
               if (Date.now() > deadline) break;
-              const permalink = util2.resolveUrl(base, ranked[r].hit.permalink);
+              const permalink = util.resolveUrl(base, ranked[r].hit.permalink);
               const post = yield fslGet(permalink, base, 1e4, ctx);
               if (!post) continue;
-              const groups = util2.episodeOrSeason(fslGroups(post), function(g) {
+              const groups = util.episodeOrSeason(fslGroups(post), function(g) {
                 return g.heading;
               }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
               for (let g = 0; g < groups.length; g += 1) {
@@ -2279,7 +2420,7 @@ var require_fsl = __commonJS({
                 const group = groups[g];
                 const size = headingSizeOf(group.heading);
                 const priorityLang = releaseLanguageOf(group.heading);
-                const lang = util2.languageLabel(group.heading) || priorityLang;
+                const lang = util.languageLabel(group.heading) || priorityLang;
                 const qText = (group.heading.match(/\b(2160p|1440p|1080p|720p|480p)\b/i) || [])[0] || "";
                 let perGroup = 0;
                 for (let gw = 0; gw < group.gateways.length; gw += 1) {
@@ -2307,12 +2448,12 @@ var require_fsl = __commonJS({
                         provider: module2.exports.name,
                         url: link.url,
                         type: link.url.indexOf(".m3u8") >= 0 ? "hls" : link.url.indexOf(".mpd") >= 0 ? "dash" : "mp4",
-                        quality: util2.qualityLabel(util2.parseHeight(qText || group.heading)),
-                        height: util2.parseHeight(qText || group.heading),
+                        quality: util.qualityLabel(util.parseHeight(qText || group.heading)),
+                        height: util.parseHeight(qText || group.heading),
                         language: lang,
                         size,
                         title: serverName,
-                        headers: { Referer: util2.originOf(link.url), "User-Agent": http2.DEFAULT_UA }
+                        headers: { Referer: util.originOf(link.url), "User-Agent": http.DEFAULT_UA }
                       });
                       perGroup += 1;
                       if (perGroup >= 2) break;
@@ -2333,7 +2474,7 @@ var require_fsl = __commonJS({
     };
     function fslGet(url, referer, timeoutMs, ctx) {
       return __async(this, null, function* () {
-        const net = ctx && ctx.http || http2;
+        const net = ctx && ctx.http || http;
         const maxTimeout = ctx && ctx.timeoutMs || 3e4;
         const t = Math.min(timeoutMs || 12e3, maxTimeout);
         const res = yield net.request(url, { timeoutMs: t, headers: { Referer: referer || url } });
@@ -2346,7 +2487,7 @@ var require_fsl = __commonJS({
         if (cached && Date.now() - cached.at < 30 * 60 * 1e3) return cached.base;
         const live = yield fslLive(seed, ctx);
         if (!live) return "";
-        const liveBase = fslDomainPick(live.html, seed.family) || util2.originOf(live.url);
+        const liveBase = fslDomainPick(live.html, seed.family) || util.originOf(live.url);
         baseCache[seed.family] = { base: liveBase, at: Date.now() };
         return liveBase;
       });
@@ -2361,7 +2502,7 @@ var require_fsl = __commonJS({
         }
         if (!html0) return null;
         if (!fslIsLanding(html0)) return { html: html0, url: url0 };
-        const origin = util2.originOf(url0);
+        const origin = util.originOf(url0);
         if (!origin) return null;
         const probed = yield fslGet(origin + FSL_LANDING_PROBE, origin, 12e3, ctx);
         if (!probed || fslIsLanding(probed)) return null;
@@ -2448,8 +2589,8 @@ var require_fsl = __commonJS({
     }
     function headingSizeOf(heading) {
       const match = heading.match(HEADING_SIZE_RE);
-      if (match) return util2.normalizeSizeToken(match[1]).replace("/ZIP", "");
-      return util2.normalizeSizeToken(heading);
+      if (match) return util.normalizeSizeToken(match[1]).replace("/ZIP", "");
+      return util.normalizeSizeToken(heading);
     }
     function releaseLanguageOf(text) {
       const upper = String(text || "").toUpperCase();
@@ -2463,7 +2604,7 @@ var require_fsl = __commonJS({
     function fslServerLabel(tag, fallback) {
       const label = String(tag == null ? "" : tag).trim();
       if (!label) return fallback;
-      if (util2.languageLabel(label)) return fallback;
+      if (util.languageLabel(label)) return fallback;
       if (SERVER_LABEL_ACTION_RE.test(label)) return fallback;
       if (QUALITY_TEXT_RE.test(label)) return fallback;
       return label.replace(SERVER_LABEL_TRAILING_RE, "").trim() || fallback;
@@ -2533,191 +2674,21 @@ var require_providers = __commonJS({
   }
 });
 
-// src/indstream/settings.js
-var require_settings = __commonJS({
-  "src/indstream/settings.js"(exports2, module2) {
-    "use strict";
-    var providers2 = require_providers();
-    var CORE_DEFAULTS = {
-      minQuality: "720",
-      resultLimit: "40",
-      requestTimeout: "15",
-      probeQuality: false,
-      includeDash: true,
-      debug: false
-    };
-    function toggleKeyOf(provider) {
-      if (provider.toggle && provider.toggle.key) return provider.toggle.key;
-      return "source" + provider.id.charAt(0).toUpperCase() + provider.id.slice(1);
-    }
-    function toggleDefaultOf(provider) {
-      return provider.toggle && provider.toggle.defaultValue === false ? false : true;
-    }
-    var PROVIDER_SETTINGS = {};
-    var PROVIDER_DEFAULTS = {};
-    providers2.PROVIDERS.forEach(function(provider) {
-      const key = toggleKeyOf(provider);
-      PROVIDER_SETTINGS[provider.id] = key;
-      PROVIDER_DEFAULTS[key] = toggleDefaultOf(provider);
-    });
-    var DEFAULTS = Object.assign({}, CORE_DEFAULTS, PROVIDER_DEFAULTS);
-    function providerToggle(provider) {
-      const meta = provider.toggle || {};
-      return {
-        type: "toggle",
-        key: toggleKeyOf(provider),
-        label: meta.label || provider.name || provider.id,
-        description: meta.description || "",
-        defaultValue: toggleDefaultOf(provider)
-      };
-    }
-    var SETTINGS_LAYOUT = [
-      {
-        type: "info",
-        label: "One settings page for IndStream. Every enabled provider runs independently and only contributes its own streams."
-      },
-      {
-        type: "header",
-        label: "Playback"
-      },
-      {
-        type: "select",
-        key: "minQuality",
-        label: "Minimum quality",
-        description: "Streams whose height is known and below this are dropped. Unknown heights are kept.",
-        defaultValue: "720",
-        options: [
-          { label: "720p", value: "720" },
-          { label: "1080p", value: "1080" },
-          { label: "Best available", value: "0" }
-        ]
-      },
-      {
-        type: "select",
-        key: "resultLimit",
-        label: "Maximum results",
-        description: "Caps how many streams are returned per request.",
-        defaultValue: "40",
-        options: [
-          { label: "20", value: "20" },
-          { label: "40", value: "40" },
-          { label: "80", value: "80" },
-          { label: "No limit", value: "0" }
-        ]
-      },
-      {
-        type: "select",
-        key: "requestTimeout",
-        label: "Provider timeout",
-        description: "Upper bound for a single provider. Providers that finish sooner still return first.",
-        defaultValue: "15",
-        options: [
-          { label: "10 seconds", value: "10" },
-          { label: "15 seconds", value: "15" },
-          { label: "25 seconds", value: "25" }
-        ]
-      },
-      {
-        type: "toggle",
-        key: "probeQuality",
-        label: "Probe unknown quality",
-        description: "Reads HLS/DASH manifests to detect the real height. Slower, but labels more streams.",
-        defaultValue: false
-      },
-      {
-        type: "toggle",
-        key: "includeDash",
-        label: "Include DASH streams",
-        description: "Adds DASH manifests, which not every player supports. Turn off if playback fails.",
-        defaultValue: true
-      },
-      {
-        type: "header",
-        label: "Providers"
-      }
-    ].concat(providers2.PROVIDERS.map(providerToggle)).concat([
-      {
-        type: "header",
-        label: "Diagnostics"
-      },
-      {
-        type: "toggle",
-        key: "debug",
-        label: "Verbose logging",
-        description: "Logs each source result count and timing. Useful when a source stops working.",
-        defaultValue: false
-      }
-    ]);
-    function readGlobalSettings() {
-      const scope = typeof globalThis !== "undefined" ? globalThis : {};
-      let raw = scope.SCRAPER_SETTINGS;
-      if (typeof raw === "string") {
-        try {
-          raw = JSON.parse(raw);
-        } catch (error) {
-          raw = null;
-        }
-      }
-      return raw && typeof raw === "object" ? raw : {};
-    }
-    function normalizeBool(value, fallback) {
-      if (value === true || value === "true" || value === 1 || value === "1") return true;
-      if (value === false || value === "false" || value === 0 || value === "0") return false;
-      return fallback;
-    }
-    function pick(value, allowed, fallback) {
-      const text = value == null ? "" : String(value);
-      return allowed.indexOf(text) >= 0 ? text : fallback;
-    }
-    function getSettings() {
-      const raw = readGlobalSettings();
-      const merged = Object.assign({}, DEFAULTS);
-      Object.keys(raw).forEach(function(key) {
-        if (raw[key] != null) merged[key] = raw[key];
-      });
-      const settings2 = {
-        minQuality: Number(pick(merged.minQuality, ["0", "720", "1080"], DEFAULTS.minQuality)),
-        resultLimit: Number(pick(merged.resultLimit, ["0", "20", "40", "80"], DEFAULTS.resultLimit)),
-        requestTimeout: Number(pick(merged.requestTimeout, ["10", "15", "25"], DEFAULTS.requestTimeout)),
-        probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
-        includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
-        debug: normalizeBool(merged.debug, DEFAULTS.debug),
-        sources: {}
-      };
-      Object.keys(PROVIDER_SETTINGS).forEach(function(id) {
-        settings2.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
-      });
-      if (!settings2.requestTimeout) settings2.requestTimeout = 15;
-      return settings2;
-    }
-    function onSettings2() {
-      return SETTINGS_LAYOUT;
-    }
-    module2.exports = {
-      DEFAULTS,
-      SETTINGS_LAYOUT,
-      PROVIDER_SETTINGS,
-      getSettings,
-      onSettings: onSettings2
-    };
-  }
-});
-
 // src/indstream/racer.js
 var require_racer = __commonJS({
   "src/indstream/racer.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
+    var http = require_http();
     var GRACE_MS = 2e3;
     var OVERALL_MAX_MS = 14e3;
-    function capOf(provider, settings2) {
+    function capOf(provider, settings) {
       const own = Number(provider.raceTimeoutMs) || 12e3;
-      const ceiling = (Number(settings2.requestTimeout) || 15) * 1e3 + 5e3;
+      const ceiling = (Number(settings.requestTimeout) || 15) * 1e3 + 5e3;
       return Math.min(own, ceiling);
     }
-    function race(providers2, context, normalize) {
+    function race(providers, context, normalize) {
       return new Promise(function(resolve) {
-        const total = providers2.length;
+        const total = providers.length;
         const collected = [];
         const guards = [];
         const controllers = [];
@@ -2728,7 +2699,7 @@ var require_racer = __commonJS({
           resolve(collected);
           return;
         }
-        const caps = providers2.map(function(provider) {
+        const caps = providers.map(function(provider) {
           return capOf(provider, context.settings);
         });
         const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9e3);
@@ -2742,7 +2713,7 @@ var require_racer = __commonJS({
             if (guard && typeof guard.cancel === "function") guard.cancel();
           });
           controllers.forEach(function(controller) {
-            http2.abort(controller);
+            http.abort(controller);
           });
           context.log("done: " + collected.length + " streams from " + settled + "/" + total + " providers");
           resolve(collected.slice());
@@ -2755,22 +2726,22 @@ var require_racer = __commonJS({
           settled += 1;
           if (settled >= total) finish();
         }
-        providers2.forEach(function(provider, i) {
+        providers.forEach(function(provider, i) {
           const cap = caps[i];
-          const controller = http2.createAbortController();
+          const controller = http.createAbortController();
           if (controller) controllers.push(controller);
           const scope = Object.assign({}, context, {
             deadline: Date.now() + cap - 1e3,
             timeoutMs: Math.max(1e3, cap - 1e3),
             signal: controller ? controller.signal : void 0
           });
-          scope.http = http2.scope(scope);
+          scope.http = http.scope(scope);
           const startedAt = Date.now();
           const work = Promise.resolve().then(function() {
             return provider.resolve(scope);
           });
-          const guard = http2.withTimeout(work, cap, [], function() {
-            http2.abort(controller);
+          const guard = http.withTimeout(work, cap, [], function() {
+            http.abort(controller);
           });
           guards.push(guard);
           guard.then(function(list) {
@@ -2806,20 +2777,20 @@ var require_racer = __commonJS({
 var require_finalize = __commonJS({
   "src/indstream/finalize.js"(exports2, module2) {
     "use strict";
-    var util2 = require_util();
+    var util = require_util();
     function streamHeight(stream) {
       if (!stream) return 0;
-      return Number(stream.height) || util2.parseHeight(stream.quality);
+      return Number(stream.height) || util.parseHeight(stream.quality);
     }
     function normalizeStream(raw, provider) {
       if (!raw || !raw.url) return null;
       const url = String(raw.url);
       const type = raw.type || (url.indexOf(".m3u8") >= 0 ? "hls" : url.indexOf(".mpd") >= 0 ? "dash" : "mp4");
       const declaredHeight = Number(raw.height) || 0;
-      const quality = raw.quality || util2.qualityLabel(declaredHeight);
-      const height = declaredHeight || util2.parseHeight(quality);
+      const quality = raw.quality || util.qualityLabel(declaredHeight);
+      const height = declaredHeight || util.parseHeight(quality);
       const stream = {
-        title: util2.displayName(provider.name, raw.language || "", null, raw.size || "", ""),
+        title: util.displayName(provider.name, raw.language || "", null, raw.size || "", ""),
         name: provider.name || "",
         url,
         type,
@@ -2836,10 +2807,10 @@ var require_finalize = __commonJS({
       }
       return stream;
     }
-    function rankMaps(providers2) {
+    function rankMaps(providers) {
       const byId = {};
       const byName = {};
-      (providers2 || []).forEach(function(provider, index) {
+      (providers || []).forEach(function(provider, index) {
         if (provider.id) byId[provider.id] = index;
         if (provider.name) byName[provider.name] = index;
       });
@@ -2858,8 +2829,8 @@ var require_finalize = __commonJS({
       const ha = streamHeight(a);
       const hb = streamHeight(b);
       if (hb !== ha) return hb - ha;
-      const la = util2.languagePriority(a.language);
-      const lb = util2.languagePriority(b.language);
+      const la = util.languagePriority(a.language);
+      const lb = util.languagePriority(b.language);
       if (lb !== la) return lb - la;
       const ra = rankOf(a, ranks);
       const rb = rankOf(b, ranks);
@@ -2877,9 +2848,9 @@ var require_finalize = __commonJS({
       const filtered = (streams || []).filter(function(stream) {
         if (!stream || !stream.url) return false;
         if (!includeDash && stream.type === "dash") return false;
-        return !util2.isKnownBelowFloor(streamHeight(stream), opts.minQuality);
+        return !util.isKnownBelowFloor(streamHeight(stream), opts.minQuality);
       });
-      const deduped = util2.dedupeStreams(filtered, function(a, b) {
+      const deduped = util.dedupeStreams(filtered, function(a, b) {
         return compareStreams(a, b, ranks);
       });
       deduped.sort(function(a, b) {
@@ -2900,121 +2871,145 @@ var require_finalize = __commonJS({
   }
 });
 
-// src/indstream/index.js
-var http = require_http();
-var tmdb = require_tmdb();
-var settings = require_settings();
-var providers = require_providers();
-var racer = require_racer();
-var finalize = require_finalize();
-var util = require_util();
-var TMDB_META_CAP_MS = 6e3;
-function safeInt(value) {
-  const n = parseInt(value, 10);
-  return Number.isFinite(n) ? n : 0;
-}
-function probeUnknownQuality(stream, ctx) {
-  return __async(this, null, function* () {
-    if (!ctx.settings.probeQuality) return stream;
-    if (finalize.streamHeight(stream)) return stream;
-    const url = stream.url;
-    if (url.indexOf(".m3u8") < 0 && url.indexOf(".mpd") < 0) return stream;
-    const text = yield http.getText(url, {
-      timeoutMs: 4e3,
-      headers: stream.headers || {}
-    });
-    if (!text) return stream;
-    let result = { height: 0, languages: [] };
-    if (url.indexOf(".mpd") >= 0) result = util.parseDashHeights(text);
-    else if (text.indexOf("#EXTM3U") >= 0) result = util.parseHlsMaster(text);
-    if (result.height > 0) {
-      stream.height = result.height;
-      stream.quality = util.qualityLabel(result.height);
+// src/indstream/factory.js
+var require_factory = __commonJS({
+  "src/indstream/factory.js"(exports2, module2) {
+    "use strict";
+    var http = require_http();
+    var tmdb = require_tmdb();
+    var settings = require_settings();
+    var providers = require_providers();
+    var racer = require_racer();
+    var finalize = require_finalize();
+    var util = require_util();
+    var TMDB_META_CAP_MS = 6e3;
+    function safeInt(value) {
+      const n = parseInt(value, 10);
+      return Number.isFinite(n) ? n : 0;
     }
-    return stream;
-  });
-}
-function getStreams(mediaId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
-    const s = settings.getSettings();
-    const inputId = String(mediaId == null ? "" : mediaId).trim();
-    const inputImdbId = tmdb.normalizeImdbId(inputId);
-    const inputTmdbId = inputImdbId ? 0 : safeInt(inputId);
-    const context = {
-      inputId,
-      tmdbId: inputTmdbId,
-      imdbId: inputImdbId,
-      type,
-      season: safeInt(season),
-      episode: safeInt(episode),
-      settings: s,
-      timeoutMs: s.requestTimeout * 1e3,
-      log: s.debug ? function(message) {
-        console.log("[IndStream] " + message);
-      } : function() {
-      }
-    };
-    if (!context.tmdbId && !context.imdbId) return [];
-    const metaController = http.createAbortController();
-    const metaPromise = http.withTimeout(
-      tmdb.resolveMeta(inputId, type, {
-        deadline: Date.now() + TMDB_META_CAP_MS,
-        signal: metaController ? metaController.signal : void 0
-      }),
-      TMDB_META_CAP_MS,
-      null,
-      function() {
-        http.abort(metaController);
-      }
-    ).catch(function() {
-      return null;
-    }).then(function(meta) {
-      if (meta) {
-        context.meta = meta;
-        if (!context.tmdbId && Number(meta.id)) context.tmdbId = Number(meta.id);
-        if (!context.imdbId && meta.imdbId) context.imdbId = meta.imdbId;
-      }
-      context.log(
-        "lookup: " + inputId + " -> " + (meta && meta.title ? '"' + meta.title + '" (' + (meta.year || "?") + ")" : "metadata unavailable") + (context.tmdbId ? " [tmdb:" + context.tmdbId + "]" : "") + (context.imdbId ? " [imdb:" + context.imdbId + "]" : "")
-      );
-      return meta;
-    });
-    context.metaPromise = metaPromise;
-    context.meta = null;
-    if (inputImdbId) yield metaPromise;
-    const wanted = providers.enabled(s.sources, type);
-    if (!wanted.length) return [];
-    let streams = yield racer.race(wanted, context, finalize.normalizeStream);
-    if (s.probeQuality) {
-      streams = yield http.parallelMap(streams, 4, function(stream) {
-        return probeUnknownQuality(stream, context);
+    function probeUnknownQuality(stream, ctx) {
+      return __async(this, null, function* () {
+        if (!ctx.settings.probeQuality) return stream;
+        if (finalize.streamHeight(stream)) return stream;
+        const url = stream.url;
+        if (url.indexOf(".m3u8") < 0 && url.indexOf(".mpd") < 0) return stream;
+        const text = yield http.getText(url, {
+          timeoutMs: 4e3,
+          headers: stream.headers || {}
+        });
+        if (!text) return stream;
+        let result = { height: 0, languages: [] };
+        if (url.indexOf(".mpd") >= 0) result = util.parseDashHeights(text);
+        else if (text.indexOf("#EXTM3U") >= 0) result = util.parseHlsMaster(text);
+        if (result.height > 0) {
+          stream.height = result.height;
+          stream.quality = util.qualityLabel(result.height);
+        }
+        return stream;
       });
     }
-    return finalize.finalizeStreams(streams, {
-      minQuality: s.minQuality,
-      includeDash: s.includeDash,
-      resultLimit: s.resultLimit,
-      providers: providers.PROVIDERS
-    });
-  });
-}
-function onSettings() {
-  return __async(this, null, function* () {
-    return settings.onSettings();
-  });
-}
-var api = {
-  getStreams,
-  onSettings
-};
+    function createPlugin(providerId) {
+      const singleProvider = providerId ? providers.BY_ID[providerId] : null;
+      function getStreams(mediaId, mediaType, season, episode) {
+        return __async(this, null, function* () {
+          const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
+          const s = settings.getSettings();
+          const inputId = String(mediaId == null ? "" : mediaId).trim();
+          const inputImdbId = tmdb.normalizeImdbId(inputId);
+          const inputTmdbId = inputImdbId ? 0 : safeInt(inputId);
+          const context = {
+            inputId,
+            tmdbId: inputTmdbId,
+            imdbId: inputImdbId,
+            type,
+            season: safeInt(season),
+            episode: safeInt(episode),
+            settings: s,
+            timeoutMs: s.requestTimeout * 1e3,
+            log: s.debug ? function(message) {
+              console.log("[IndStream] " + message);
+            } : function() {
+            }
+          };
+          if (!context.tmdbId && !context.imdbId) return [];
+          const metaController = http.createAbortController();
+          const metaPromise = http.withTimeout(
+            tmdb.resolveMeta(inputId, type, {
+              deadline: Date.now() + TMDB_META_CAP_MS,
+              signal: metaController ? metaController.signal : void 0
+            }),
+            TMDB_META_CAP_MS,
+            null,
+            function() {
+              http.abort(metaController);
+            }
+          ).catch(function() {
+            return null;
+          }).then(function(meta) {
+            if (meta) {
+              context.meta = meta;
+              if (!context.tmdbId && Number(meta.id)) context.tmdbId = Number(meta.id);
+              if (!context.imdbId && meta.imdbId) context.imdbId = meta.imdbId;
+            }
+            context.log(
+              "lookup: " + inputId + " -> " + (meta && meta.title ? '"' + meta.title + '" (' + (meta.year || "?") + ")" : "metadata unavailable") + (context.tmdbId ? " [tmdb:" + context.tmdbId + "]" : "") + (context.imdbId ? " [imdb:" + context.imdbId + "]" : "")
+            );
+            return meta;
+          });
+          context.metaPromise = metaPromise;
+          context.meta = null;
+          if (inputImdbId) yield metaPromise;
+          let wanted;
+          if (singleProvider) {
+            wanted = providers.enabled(s.sources, type, [singleProvider]);
+          } else {
+            wanted = providers.enabled(s.sources, type);
+          }
+          if (!wanted.length) return [];
+          let streams = yield racer.race(wanted, context, finalize.normalizeStream);
+          if (s.probeQuality) {
+            streams = yield http.parallelMap(streams, 4, function(stream) {
+              return probeUnknownQuality(stream, context);
+            });
+          }
+          return finalize.finalizeStreams(streams, {
+            minQuality: s.minQuality,
+            includeDash: s.includeDash,
+            resultLimit: s.resultLimit,
+            providers: singleProvider ? [singleProvider] : providers.PROVIDERS
+          });
+        });
+      }
+      function onSettings() {
+        return __async(this, null, function* () {
+          if (singleProvider) {
+            return settings.onSettingsFor([providerId]);
+          }
+          return settings.onSettings();
+        });
+      }
+      const api2 = {
+        getStreams,
+        onSettings
+      };
+      return api2;
+    }
+    module2.exports = {
+      createPlugin
+    };
+  }
+});
+
+// src/indstream/index.js
+var factory = require_factory();
+var api = factory.createPlugin(null);
 if (typeof module !== "undefined" && module.exports) {
   module.exports = api;
 }
 if (typeof globalThis !== "undefined") {
-  globalThis.getStreams = getStreams;
-  globalThis.onSettings = onSettings;
+  globalThis.getStreams = api.getStreams;
+  globalThis.onSettings = api.onSettings;
 } else if (typeof global !== "undefined") {
-  global.getStreams = getStreams;
-  global.onSettings = onSettings;
+  global.getStreams = api.getStreams;
+  global.onSettings = api.onSettings;
 }

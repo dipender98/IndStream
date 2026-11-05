@@ -14,7 +14,7 @@ https://raw.githubusercontent.com/dipender98/IndStream/main/manifest.json
 
 ## Architecture
 
-One repository, one Nuvio plugin entry (`indstream`), one settings page.
+One repository, multiple Nuvio scrapers (one per server).
 
 Each provider under `src/indstream/providers/` is an independent module. It
 knows nothing about the other providers, declares one race budget, and returns
