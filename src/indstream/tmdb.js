@@ -7,6 +7,9 @@ const API_HOSTS = ['https://api.themoviedb.org/3', 'https://api.tmdb.org/3'];
 
 const metaCache = {};
 const imdbCache = {};
+const findCache = {};
+
+const IMDB_ID_RE = /\btt(\d{7,10})\b/i;
 
 function runtimeKey() {
   const scope = typeof globalThis !== 'undefined' ? globalThis : {};
@@ -50,6 +53,16 @@ async function apiGet(path, params) {
     }
   }
   return null;
+}
+
+// Accepts a bare IMDb id or any text containing one (for example an IMDb URL).
+function normalizeImdbId(value) {
+  const match = String(value == null ? '' : value).match(IMDB_ID_RE);
+  return match ? 'tt' + match[1].toLowerCase() : '';
+}
+
+function isImdbId(value) {
+  return !!normalizeImdbId(value);
 }
 
 function yearOf(meta) {
@@ -99,6 +112,37 @@ async function fetchMeta(tmdbId, type) {
   const meta = normalizeMeta(raw, kind);
   if (meta) metaCache[cacheKey] = meta;
   return meta;
+}
+
+function firstFindResult(raw, type) {
+  if (!raw) return null;
+  const kind = type === 'tv' || type === 'series' ? 'tv' : 'movie';
+  const list = kind === 'tv' ? raw.tv_results : raw.movie_results;
+  return Array.isArray(list) && list.length ? list[0] : null;
+}
+
+async function findMetaByImdb(imdbId, type) {
+  const id = normalizeImdbId(imdbId);
+  if (!id) return null;
+  const kind = type === 'tv' || type === 'series' ? 'tv' : 'movie';
+  const cacheKey = kind + ':' + id;
+  if (findCache[cacheKey]) return findCache[cacheKey];
+  const raw = await apiGet('/find/' + id, { external_source: 'imdb_id' });
+  const item = firstFindResult(raw, kind);
+  if (!item) return null;
+  const meta = normalizeMeta(item, kind);
+  if (!meta) return null;
+  meta.imdbId = id;
+  findCache[cacheKey] = meta;
+  if (meta.id) metaCache[kind + ':' + meta.id] = meta;
+  return meta;
+}
+
+// Resolves either a numeric TMDB id or an IMDb id (including IMDb URLs).
+async function resolveMeta(value, type) {
+  const imdbId = normalizeImdbId(value);
+  if (imdbId) return findMetaByImdb(imdbId, type);
+  return fetchMeta(String(value == null ? '' : value).trim(), type);
 }
 
 async function resolveImdbId(tmdbId, type, meta) {
@@ -151,10 +195,17 @@ async function absoluteToSeason(tmdbId, episodeNumber) {
 }
 
 module.exports = {
+  normalizeImdbId: normalizeImdbId,
+  isImdbId: isImdbId,
   fetchMeta: fetchMeta,
+  findMetaByImdb: findMetaByImdb,
+  resolveMeta: resolveMeta,
   resolveImdbId: resolveImdbId,
   searchTitle: searchTitle,
   fetchSeasonEpisodes: fetchSeasonEpisodes,
   absoluteToSeason: absoluteToSeason,
   yearOf: yearOf,
+  _test: {
+    firstFindResult: firstFindResult,
+  },
 };

@@ -5,28 +5,50 @@ const assert = require('assert');
 const util = require('../src/indstream/util');
 const html = require('../src/indstream/html');
 const settings = require('../src/indstream/settings');
-const vidrift = require('../src/indstream/servers/vidrift');
-const bingr = require('../src/indstream/servers/bingr');
-const moviebox = require('../src/indstream/servers/moviebox');
-const hub4k = require('../src/indstream/servers/hub4k');
-const fsl = require('../src/indstream/servers/fsl');
-const filehost = require('../src/indstream/servers/filehost');
+const tmdb = require('../src/indstream/tmdb');
+const providers = require('../src/indstream/providers');
+const racer = require('../src/indstream/racer');
+const vidrift = require('../src/indstream/providers/vidrift');
+const bingr = require('../src/indstream/providers/bingr');
+const moviebox = require('../src/indstream/providers/moviebox');
+const hub4k = require('../src/indstream/providers/hub4k');
+const fsl = require('../src/indstream/providers/fsl');
+const filehost = require('../src/indstream/providers/filehost');
 
+const queue = [];
 let passed = 0;
 let failed = 0;
 
-function test(name, fn) {
-  try {
-    fn();
-    passed += 1;
-    console.log('  ok ' + name);
-  } catch (error) {
-    failed += 1;
-    console.log('  FAIL ' + name + ': ' + error.message);
-  }
+function section(name) {
+  queue.push({ section: name });
 }
 
-console.log('util');
+function test(name, fn) {
+  queue.push({ name: name, fn: fn });
+}
+
+async function main() {
+  for (let i = 0; i < queue.length; i += 1) {
+    const item = queue[i];
+    if (item.section) {
+      console.log(item.section);
+      continue;
+    }
+    try {
+      await item.fn();
+      passed += 1;
+      console.log('  ok ' + item.name);
+    } catch (error) {
+      failed += 1;
+      console.log('  FAIL ' + item.name + ': ' + error.message);
+    }
+  }
+  console.log('');
+  console.log(passed + ' passed, ' + failed + ' failed');
+  process.exitCode = failed > 0 ? 1 : 0;
+}
+
+section('util');
 test('parseHeight basics', function () {
   assert.strictEqual(util.parseHeight('1080p'), 1080);
   assert.strictEqual(util.parseHeight('4K'), 2160);
@@ -104,7 +126,7 @@ test('episodeMatches/episodeOrSeason', function () {
   assert.strictEqual(movie.length, 3);
 });
 
-console.log('html');
+section('html');
 test('blocks extracts nested download-item blocks', function () {
   const markup =
     '<div class="download-item">' +
@@ -132,7 +154,7 @@ test('orderedTokens keeps document order', function () {
   assert.strictEqual(tokens[1].kind, 'anchor');
 });
 
-console.log('settings');
+section('settings');
 test('defaults', function () {
   globalThis.SCRAPER_SETTINGS = undefined;
   const s = settings.getSettings();
@@ -165,7 +187,7 @@ test('onSettings shape', function () {
   });
 });
 
-console.log('vidrift');
+section('vidrift');
 test('vidriftStreams parses orionStreams', function () {
   const fixture =
     '<script>var embedMeta = {"orionStreams":[{"name":"Hindi","url":"https://cdn.example.com/hi.m3u8"},' +
@@ -181,7 +203,7 @@ test('vidriftStreams falls back to evionUrl', function () {
   assert.strictEqual(out[0][0], 'https://cdn.example.com/master.m3u8');
 });
 
-console.log('bingr');
+section('bingr');
 test('bingrBody shape', function () {
   const body = bingr._test.bingrBody('s40', 'tv', '1399', 'Game of Thrones', '2011', 1, 5);
   assert.strictEqual(body.srv, 's40');
@@ -205,7 +227,7 @@ test('isChallengeHtml rejects cloudflare pages', function () {
   assert.strictEqual(bingr._test.bingrSources(cf).length, 0);
 });
 
-console.log('moviebox');
+section('moviebox');
 test('seasonEndOf', function () {
   assert.strictEqual(moviebox._test.seasonEndOf('Show S1'), 1);
   assert.strictEqual(moviebox._test.seasonEndOf('Show S1-S2'), 2);
@@ -236,7 +258,7 @@ test('isNoticeUrl', function () {
   assert.strictEqual(moviebox._test.isNoticeUrl('https://cdn.example.com/v.mpd'), false);
 });
 
-console.log('hub4k');
+section('hub4k');
 test('hubParseCards', function () {
   const markup =
     '<div class="card-grid"><a href="/inception-movie-509/" class="movie-card" aria-label="Inception details">' +
@@ -267,7 +289,7 @@ test('hubLangOf', function () {
   assert.strictEqual(hub4k._test.hubLangOf('Tamil'), 'Tamil');
 });
 
-console.log('fsl');
+section('fsl');
 test('fslIsLanding', function () {
   assert.strictEqual(fsl._test.fslIsLanding('<script src="https://qikly.pro/host"></script>'), true);
   assert.strictEqual(fsl._test.fslIsLanding('<div id="stx"></div>'), true);
@@ -314,7 +336,7 @@ test('fslServerLabel', function () {
   assert.strictEqual(fsl._test.fslServerLabel('Mirror 1 Server', 'FSL'), 'Mirror 1');
 });
 
-console.log('filehost');
+section('filehost');
 test('rotatorTarget decodes gateway blob', function () {
   const blob = 'Y214WE0xWjNZbXRhVUdwMmIxQldObFo2ZFRCeFZVOXRRbmxxYVV0UU9XRndla2w1YjNveGFYRlVPV3h3YkRWM1RERnFhVzVVT1dkTlNtdDFiM3BGZVhCNWFtbFdkbXAyYjJ4V05sWjZVMVpJZDA5M1JsSXdNa2RWZURWdk1rVkxSbnBuZDI5S2FteEtlVm94YmtsNVRFWkxUVzV2U210dFNubGFORnBTTlRaSlIwbENSVk5JYWtkaFkwMWFlRFV6UTBjd2RuTkVQVDA9';
   const page = "<script>s('o','" + blob + "');</script>";
@@ -336,6 +358,90 @@ test('pixeldrainDirect', function () {
   assert.strictEqual(filehost.pixeldrainDirect('https://x.com/a'), '');
 });
 
-console.log('');
-console.log((passed + ' passed, ' + failed + ' failed'));
-process.exitCode = failed > 0 ? 1 : 0;
+section('tmdb ids');
+test('normalizeImdbId accepts bare ids and urls', function () {
+  assert.strictEqual(tmdb.normalizeImdbId('tt1375666'), 'tt1375666');
+  assert.strictEqual(tmdb.normalizeImdbId(' TT1375666 '), 'tt1375666');
+  assert.strictEqual(tmdb.normalizeImdbId('https://www.imdb.com/title/tt1375666/'), 'tt1375666');
+  assert.strictEqual(tmdb.normalizeImdbId('27205'), '');
+  assert.strictEqual(tmdb.normalizeImdbId(''), '');
+});
+test('isImdbId distinguishes id formats', function () {
+  assert.strictEqual(tmdb.isImdbId('tt1375666'), true);
+  assert.strictEqual(tmdb.isImdbId('27205'), false);
+  assert.strictEqual(tmdb.isImdbId('tt12'), false);
+});
+test('firstFindResult picks the requested media type', function () {
+  const raw = {
+    movie_results: [{ id: 27205, title: 'Inception', release_date: '2010-07-15' }],
+    tv_results: [{ id: 1399, name: 'Game of Thrones', first_air_date: '2011-04-17' }],
+  };
+  assert.strictEqual(tmdb._test.firstFindResult(raw, 'movie').id, 27205);
+  assert.strictEqual(tmdb._test.firstFindResult(raw, 'tv').id, 1399);
+  assert.strictEqual(tmdb._test.firstFindResult(null, 'movie'), null);
+});
+
+section('providers');
+test('registry contract', function () {
+  const ids = {};
+  providers.PROVIDERS.forEach(function (provider) {
+    assert.ok(provider.id, 'missing id');
+    assert.ok(!ids[provider.id], 'duplicate id ' + provider.id);
+    ids[provider.id] = true;
+    assert.ok(provider.name, provider.id + ' missing name');
+    assert.strictEqual(typeof provider.resolve, 'function', provider.id + ' missing resolve');
+    assert.ok(Number(provider.raceTimeoutMs) > 0, provider.id + ' missing raceTimeoutMs');
+    assert.ok(provider.supports && provider.supports.movie && provider.supports.tv, provider.id + ' missing supports');
+    assert.strictEqual(providers.BY_ID[provider.id], provider);
+  });
+});
+test('settings cover every provider', function () {
+  const layoutKeys = settings.SETTINGS_LAYOUT.filter(function (item) {
+    return item.key;
+  }).map(function (item) {
+    return item.key;
+  });
+  assert.strictEqual(Object.keys(settings.PROVIDER_SETTINGS).length, providers.PROVIDERS.length);
+  providers.PROVIDERS.forEach(function (provider) {
+    const key = settings.PROVIDER_SETTINGS[provider.id];
+    assert.ok(key, 'missing settings key for ' + provider.id);
+    assert.ok(layoutKeys.indexOf(key) >= 0, 'missing layout control for ' + key);
+  });
+});
+test('racer returns fast results and isolates failures', async function () {
+  const logs = [];
+  const out = await racer.race(
+    [
+      {
+        id: 'fast',
+        name: 'Fast',
+        raceTimeoutMs: 1000,
+        resolve: async function () { return [{ url: 'https://example.com/1.m3u8' }]; },
+      },
+      {
+        id: 'bad',
+        name: 'Bad',
+        raceTimeoutMs: 300,
+        resolve: async function () { throw new Error('boom'); },
+      },
+      {
+        id: 'slow',
+        name: 'Slow',
+        raceTimeoutMs: 300,
+        resolve: function () { return new Promise(function () {}); },
+      },
+    ],
+    {
+      settings: { requestTimeout: 10 },
+      log: function (message) { logs.push(message); },
+    },
+    function (raw, provider) {
+      return { url: raw.url, provider: provider.name };
+    }
+  );
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].provider, 'Fast');
+  assert.ok(logs.some(function (message) { return message.indexOf('done:') >= 0; }));
+});
+
+main();

@@ -1,20 +1,20 @@
 {
-  "name": "Indflix Nuvio",
-  "version": "1.0.4",
-  "description": "IndStream — one Nuvio provider that races multiple stream servers, labels multi-language audio, and keeps a 720p quality floor.",
+  "name": "IndStream",
+  "version": "1.1.0",
+  "description": "IndStream — one Nuvio plugin that races independent stream providers, labels multi-language audio, and keeps a 720p quality floor.",
   "author": "dipender98",
   "scrapers": [
     {
       "id": "indstream",
       "name": "IndStream",
-      "description": "Races independent stream servers for movies and series. Multi-language audio labels, 720p quality floor, no torrents.",
-      "version": "1.0.4",
+      "description": "One plugin, one settings page. Independent providers race for movies and series. Multi-language audio labels, 720p quality floor, no torrents.",
+      "version": "1.1.0",
       "author": "dipender98",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/indstream.js",
       "enabled": true,
       "hasSettings": true,
-      "logo": "https://raw.githubusercontent.com/dipender98/IndflixNuvio/main/assets/indstream.png",
+      "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": ["hi", "en", "ta", "te", "ml", "kn", "bn"],
       "formats": ["mp4", "mkv", "m3u8", "mpd"],
       "supportsExternalPlayer": true

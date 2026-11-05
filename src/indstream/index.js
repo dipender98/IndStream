@@ -3,28 +3,31 @@
 const http = require('./http');
 const tmdb = require('./tmdb');
 const settings = require('./settings');
-const servers = require('./servers');
+const providers = require('./providers');
+const racer = require('./racer');
 const util = require('./util');
+
+const TMDB_META_CAP_MS = 6000;
 
 function safeInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeStream(raw, server, ctx) {
+function normalizeStream(raw, provider) {
   if (!raw || !raw.url) return null;
   const type = raw.type || (raw.url.indexOf('.m3u8') >= 0 ? 'hls' : raw.url.indexOf('.mpd') >= 0 ? 'dash' : 'mp4');
   const height = Number(raw.height) || 0;
   const quality = raw.quality || util.qualityLabel(height);
   const stream = {
-    title: util.displayName(server.name, raw.language || '', null, raw.size || '', ''),
-    name: server.name || '',
+    title: util.displayName(provider.name, raw.language || '', null, raw.size || '', ''),
+    name: provider.name || '',
     url: raw.url,
     type: type,
     quality: quality,
     size: raw.size || '',
     language: raw.language || '',
-    provider: server.name || '',
+    provider: provider.name || '',
     headers: raw.headers || {},
   };
   if (Array.isArray(raw.subtitles) && raw.subtitles.length) {
@@ -53,78 +56,18 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
-const GRACE_MS = 2000;
-const OVERALL_MAX_MS = 14000;
-const TMDB_META_CAP_MS = 6000;
-
-const SERVER_CAPS = {
-  hdhub: 5000,
-  vidrift: 5000,
-  bingr: 5000,
-  moviebox: 6000,
-  hub4k: 7000,
-  fsl: 6000,
-};
-
-// Runs all sources concurrently. Resolves as soon as one of these happens:
-// - every source has settled, or
-// - at least one stream arrived and the grace window has elapsed, or
-// - the overall deadline passed.
-function runSources(wanted, context) {
-  return new Promise(function (resolve) {
-    const total = wanted.length;
-    const collected = [];
-    let settled = 0;
-    let finished = false;
-    let graceTimer = null;
-
-    const caps = wanted.map(function (server) {
-      return Math.min(SERVER_CAPS[server.id] || 15000, context.settings.requestTimeout * 1000 + 5000);
-    });
-    const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9000);
-    const overallTimer = setTimeout(finish, overallMs);
-
-    function finish() {
-      if (finished) return;
-      finished = true;
-      clearTimeout(overallTimer);
-      if (graceTimer) clearTimeout(graceTimer);
-      context.log('done: ' + collected.length + ' streams from ' + settled + '/' + total + ' sources');
-      resolve(collected.slice());
-    }
-
-    function onFirstStream() {
-      if (graceTimer) return;
-      graceTimer = setTimeout(finish, GRACE_MS);
-    }
-
-    function consider() {
-      if (settled >= total) finish();
-    }
-
-    wanted.forEach(function (server, i) {
-      const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1000 });
-      const startedAt = Date.now();
-      http.withTimeout(server.resolve(scope), caps[i], []).then(function (list) {
-        const normalized = (list || []).map(function (raw) {
-          return normalizeStream(raw, server, context);
-        }).filter(Boolean);
-        context.log(server.name + ': ' + normalized.length + ' streams in ' + (Date.now() - startedAt) + 'ms');
-        if (normalized.length && !graceTimer) onFirstStream();
-        Array.prototype.push.apply(collected, normalized);
-        settled += 1;
-        consider();
-      });
-    });
-  });
-}
-
-async function getStreams(tmdbId, mediaType, season, episode) {
+async function getStreams(mediaId, mediaType, season, episode) {
   const type = mediaType === 'tv' || mediaType === 'series' ? 'tv' : 'movie';
   const s = settings.getSettings();
 
+  const inputId = String(mediaId == null ? '' : mediaId).trim();
+  const inputImdbId = tmdb.normalizeImdbId(inputId);
+  const inputTmdbId = inputImdbId ? 0 : safeInt(inputId);
+
   const context = {
-    tmdbId: safeInt(tmdbId),
+    inputId: inputId,
+    tmdbId: inputTmdbId,
+    imdbId: inputImdbId,
     type: type,
     season: safeInt(season),
     episode: safeInt(episode),
@@ -133,22 +76,42 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     log: s.debug ? function (message) { console.log('[IndStream] ' + message); } : function () {},
   };
 
-  // Start TMDB metadata resolution immediately. Sources that only need the
-  // tmdbId (Vidrift) run right away; title-keyed sources wait on this promise.
-  const metaPromise = http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), TMDB_META_CAP_MS, null)
-    .catch(function () { return null; });
-  metaPromise.then(function (m) {
-    context.log('tmdb: ' + (m && m.title ? '"' + m.title + '" (' + (m.year || '?') + ')' : 'metadata unavailable'));
-  });
+  if (!context.tmdbId && !context.imdbId) return [];
+
+  // Start metadata resolution immediately. Providers that only need the
+  // tmdbId run right away; title-keyed providers wait on this promise.
+  // Both TMDB ids and IMDb ids/URLs are accepted as input.
+  const metaPromise = http.withTimeout(tmdb.resolveMeta(inputId, type), TMDB_META_CAP_MS, null)
+    .catch(function () { return null; })
+    .then(function (meta) {
+      if (meta) {
+        context.meta = meta;
+        if (!context.tmdbId && Number(meta.id)) context.tmdbId = Number(meta.id);
+        if (!context.imdbId && meta.imdbId) context.imdbId = meta.imdbId;
+      }
+      context.log(
+        'lookup: ' + inputId + ' -> ' +
+        (meta && meta.title ? '"' + meta.title + '" (' + (meta.year || '?') + ')' : 'metadata unavailable') +
+        (context.tmdbId ? ' [tmdb:' + context.tmdbId + ']' : '') +
+        (context.imdbId ? ' [imdb:' + context.imdbId + ']' : '')
+      );
+      return meta;
+    });
   context.metaPromise = metaPromise;
   context.meta = null;
 
-  const wanted = servers.SERVERS.filter(function (server) {
-    return s.sources[server.id] !== false;
+  // An IMDb input has to be mapped before providers that need a TMDB id can
+  // start. TMDB input still races metadata and providers concurrently.
+  if (inputImdbId) await metaPromise;
+
+  const wanted = providers.PROVIDERS.filter(function (provider) {
+    if (s.sources[provider.id] === false) return false;
+    if (provider.supports && provider.supports[type] === false) return false;
+    return true;
   });
   if (!wanted.length) return [];
 
-  let streams = await runSources(wanted, context);
+  let streams = await racer.race(wanted, context, normalizeStream);
 
   const includeDash = s.includeDash;
   streams = streams.filter(function (stream) {

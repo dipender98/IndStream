@@ -18,6 +18,7 @@ module.exports = {
   name: '4KHDHub',
   speed: 'slow',
   supports: { movie: true, tv: true },
+  raceTimeoutMs: 7000,
   timeoutMs: 25000,
 
   async resolve(ctx) {

@@ -1,9 +1,9 @@
-Indflix Nuvio
+IndStream
 
-This repository bundles a Nuvio provider named IndStream. The provider code is
-ported from the public Indflix project and is distributed under the GNU General
-Public License v3.0. See LICENSE for the full license text.
+This repository bundles a Nuvio plugin named IndStream. The provider code is
+distributed under the GNU General Public License v3.0. See LICENSE for the full
+license text.
 
 All trademarks, service marks, and product names referenced here belong to their
 respective owners. This project is not affiliated with or endorsed by Nuvio or
-any of the stream sources it queries.
+any of the stream providers it queries.

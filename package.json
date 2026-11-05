@@ -1,8 +1,8 @@
 {
-  "name": "indflix-nuvio",
-  "version": "1.0.4",
+  "name": "indstream",
+  "version": "1.1.0",
   "private": true,
-  "description": "IndStream provider for Nuvio",
+  "description": "IndStream — independent stream providers raced by one Nuvio plugin",
   "scripts": {
     "build": "node build.js",
     "build:watch": "node build.js --watch",

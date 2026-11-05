@@ -10,12 +10,17 @@ module.exports = {
   name: 'Vidrift',
   speed: 'fast',
   supports: { movie: true, tv: true },
+  raceTimeoutMs: 5000,
   timeoutMs: 12000,
 
   async resolve(ctx) {
     const type = ctx.type;
     const season = Number(ctx.season) || 0;
     const episode = Number(ctx.episode) || 0;
+    if (!ctx.tmdbId) {
+      ctx.log('vidrift: missing tmdb id, skipping');
+      return [];
+    }
     if (type === 'tv' && (season <= 0 || episode <= 0)) return [];
 
     const page = type === 'movie' ? BASE + '/embed/movie/' + ctx.tmdbId : BASE + '/embed/tv/' + ctx.tmdbId + '/' + season + '/' + episode;

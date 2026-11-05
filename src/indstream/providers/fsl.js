@@ -27,6 +27,7 @@ module.exports = {
   name: 'FSL',
   speed: 'slow',
   supports: { movie: true, tv: true },
+  raceTimeoutMs: 6000,
   timeoutMs: 30000,
 
   async resolve(ctx) {

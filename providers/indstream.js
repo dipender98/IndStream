@@ -265,6 +265,8 @@ var require_tmdb = __commonJS({
     var API_HOSTS = ["https://api.themoviedb.org/3", "https://api.tmdb.org/3"];
     var metaCache = {};
     var imdbCache = {};
+    var findCache = {};
+    var IMDB_ID_RE = /\btt(\d{7,10})\b/i;
     function runtimeKey() {
       const scope = typeof globalThis !== "undefined" ? globalThis : {};
       const key = scope.TMDB_API_KEY;
@@ -301,6 +303,13 @@ var require_tmdb = __commonJS({
         }
         return null;
       });
+    }
+    function normalizeImdbId(value) {
+      const match = String(value == null ? "" : value).match(IMDB_ID_RE);
+      return match ? "tt" + match[1].toLowerCase() : "";
+    }
+    function isImdbId(value) {
+      return !!normalizeImdbId(value);
     }
     function yearOf(meta) {
       const raw = String(
@@ -348,6 +357,37 @@ var require_tmdb = __commonJS({
         const meta = normalizeMeta(raw, kind);
         if (meta) metaCache[cacheKey] = meta;
         return meta;
+      });
+    }
+    function firstFindResult(raw, type) {
+      if (!raw) return null;
+      const kind = type === "tv" || type === "series" ? "tv" : "movie";
+      const list = kind === "tv" ? raw.tv_results : raw.movie_results;
+      return Array.isArray(list) && list.length ? list[0] : null;
+    }
+    function findMetaByImdb(imdbId, type) {
+      return __async(this, null, function* () {
+        const id = normalizeImdbId(imdbId);
+        if (!id) return null;
+        const kind = type === "tv" || type === "series" ? "tv" : "movie";
+        const cacheKey = kind + ":" + id;
+        if (findCache[cacheKey]) return findCache[cacheKey];
+        const raw = yield apiGet("/find/" + id, { external_source: "imdb_id" });
+        const item = firstFindResult(raw, kind);
+        if (!item) return null;
+        const meta = normalizeMeta(item, kind);
+        if (!meta) return null;
+        meta.imdbId = id;
+        findCache[cacheKey] = meta;
+        if (meta.id) metaCache[kind + ":" + meta.id] = meta;
+        return meta;
+      });
+    }
+    function resolveMeta(value, type) {
+      return __async(this, null, function* () {
+        const imdbId = normalizeImdbId(value);
+        if (imdbId) return findMetaByImdb(imdbId, type);
+        return fetchMeta(String(value == null ? "" : value).trim(), type);
       });
     }
     function resolveImdbId(tmdbId, type, meta) {
@@ -404,12 +444,19 @@ var require_tmdb = __commonJS({
       });
     }
     module2.exports = {
+      normalizeImdbId,
+      isImdbId,
       fetchMeta,
+      findMetaByImdb,
+      resolveMeta,
       resolveImdbId,
       searchTitle,
       fetchSeasonEpisodes,
       absoluteToSeason,
-      yearOf
+      yearOf,
+      _test: {
+        firstFindResult
+      }
     };
   }
 });
@@ -433,6 +480,10 @@ var require_settings = __commonJS({
       debug: false
     };
     var SETTINGS_LAYOUT = [
+      {
+        type: "info",
+        label: "One settings page for IndStream. Every enabled provider runs independently and only contributes its own streams."
+      },
       {
         type: "header",
         label: "Playback"
@@ -465,8 +516,8 @@ var require_settings = __commonJS({
       {
         type: "select",
         key: "requestTimeout",
-        label: "Source timeout",
-        description: "Upper bound for a single source. Sources that finish sooner still return first.",
+        label: "Provider timeout",
+        description: "Upper bound for a single provider. Providers that finish sooner still return first.",
         defaultValue: "15",
         options: [
           { label: "10 seconds", value: "10" },
@@ -490,7 +541,7 @@ var require_settings = __commonJS({
       },
       {
         type: "header",
-        label: "Sources"
+        label: "Providers"
       },
       {
         type: "toggle",
@@ -546,7 +597,7 @@ var require_settings = __commonJS({
         defaultValue: false
       }
     ];
-    var SOURCE_KEYS = {
+    var PROVIDER_SETTINGS = {
       hdhub: "sourceHdhub",
       vidrift: "sourceVidrift",
       bingr: "sourceBingr",
@@ -590,8 +641,8 @@ var require_settings = __commonJS({
         debug: normalizeBool(merged.debug, DEFAULTS.debug),
         sources: {}
       };
-      Object.keys(SOURCE_KEYS).forEach(function(id) {
-        settings2.sources[id] = normalizeBool(merged[SOURCE_KEYS[id]], DEFAULTS[SOURCE_KEYS[id]]);
+      Object.keys(PROVIDER_SETTINGS).forEach(function(id) {
+        settings2.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
       });
       if (!settings2.minQuality) settings2.minQuality = 0;
       if (!settings2.requestTimeout) settings2.requestTimeout = 15;
@@ -603,7 +654,7 @@ var require_settings = __commonJS({
     module2.exports = {
       DEFAULTS,
       SETTINGS_LAYOUT,
-      SOURCE_KEYS,
+      PROVIDER_SETTINGS,
       getSettings,
       onSettings: onSettings2
     };
@@ -1169,9 +1220,84 @@ var require_util = __commonJS({
   }
 });
 
-// src/indstream/servers/vidrift.js
+// src/indstream/providers/hdhub.js
+var require_hdhub = __commonJS({
+  "src/indstream/providers/hdhub.js"(exports2, module2) {
+    "use strict";
+    var http2 = require_http();
+    var util2 = require_util();
+    var tmdb2 = require_tmdb();
+    var BASE = "https://hdhub.thevolecitor.qzz.io";
+    module2.exports = {
+      id: "hdhub",
+      name: "HdHub",
+      speed: "very-fast",
+      supports: { movie: true, tv: true },
+      raceTimeoutMs: 5e3,
+      timeoutMs: 8e3,
+      resolve(ctx) {
+        return __async(this, null, function* () {
+          const type = ctx.type;
+          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
+          let imdbId = meta && meta.imdbId || ctx.imdbId || "";
+          if (!imdbId && ctx.tmdbId) {
+            imdbId = yield tmdb2.resolveImdbId(ctx.tmdbId, type, meta);
+          }
+          let pathId = "";
+          if (imdbId) {
+            pathId = "tt" + String(imdbId).replace(/^tt/, "");
+            if (type === "tv" || type === "series") {
+              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
+            }
+          } else if (ctx.tmdbId) {
+            pathId = "tmdb:" + ctx.tmdbId;
+            if (type === "tv" || type === "series") {
+              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
+            }
+          }
+          if (!pathId) return [];
+          const kind = type === "tv" || type === "series" ? "series" : "movie";
+          const url = BASE + "/stream/" + kind + "/" + pathId + ".json";
+          const json = yield http2.getJson(url, { timeoutMs: ctx.timeoutMs });
+          if (!json || !Array.isArray(json.streams)) return [];
+          const out = [];
+          const seen = {};
+          json.streams.forEach(function(s) {
+            if (!s || !s.url) return;
+            const name = String(s.name || "");
+            if (/donation|discord/i.test(name)) return;
+            if (/hubdrive\.bar/i.test(s.url)) return;
+            const desc = String(s.description || s.title || "");
+            const height = util2.parseHeight(name + " " + desc);
+            const language = util2.languageLabel(desc) || util2.languageLabel(name) || "";
+            const size = util2.normalizeSizeToken(desc);
+            const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url) || /googleusercontent/i.test(s.url);
+            const entry = {
+              provider: module2.exports.name,
+              url: s.url,
+              type: isHls ? "hls" : "mp4",
+              quality: util2.qualityLabel(height),
+              height,
+              language,
+              size,
+              title: "",
+              headers: { "User-Agent": http2.DEFAULT_UA }
+            };
+            if (seen[entry.url]) return;
+            seen[entry.url] = true;
+            out.push(entry);
+          });
+          ctx.log("hdhub: " + out.length + " streams");
+          return out;
+        });
+      }
+    };
+  }
+});
+
+// src/indstream/providers/vidrift.js
 var require_vidrift = __commonJS({
-  "src/indstream/servers/vidrift.js"(exports2, module2) {
+  "src/indstream/providers/vidrift.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var util2 = require_util();
@@ -1181,12 +1307,17 @@ var require_vidrift = __commonJS({
       name: "Vidrift",
       speed: "fast",
       supports: { movie: true, tv: true },
+      raceTimeoutMs: 5e3,
       timeoutMs: 12e3,
       resolve(ctx) {
         return __async(this, null, function* () {
           const type = ctx.type;
           const season = Number(ctx.season) || 0;
           const episode = Number(ctx.episode) || 0;
+          if (!ctx.tmdbId) {
+            ctx.log("vidrift: missing tmdb id, skipping");
+            return [];
+          }
           if (type === "tv" && (season <= 0 || episode <= 0)) return [];
           const page = type === "movie" ? BASE + "/embed/movie/" + ctx.tmdbId : BASE + "/embed/tv/" + ctx.tmdbId + "/" + season + "/" + episode;
           const html = yield http2.getText(page, {
@@ -1265,9 +1396,9 @@ var require_vidrift = __commonJS({
   }
 });
 
-// src/indstream/servers/bingr.js
+// src/indstream/providers/bingr.js
 var require_bingr = __commonJS({
-  "src/indstream/servers/bingr.js"(exports2, module2) {
+  "src/indstream/providers/bingr.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var util2 = require_util();
@@ -1279,6 +1410,7 @@ var require_bingr = __commonJS({
       name: "Bingr",
       speed: "very-fast",
       supports: { movie: true, tv: true },
+      raceTimeoutMs: 5e3,
       timeoutMs: 15e3,
       resolve(ctx) {
         return __async(this, null, function* () {
@@ -1376,9 +1508,9 @@ var require_bingr = __commonJS({
   }
 });
 
-// src/indstream/servers/moviebox.js
+// src/indstream/providers/moviebox.js
 var require_moviebox = __commonJS({
-  "src/indstream/servers/moviebox.js"(exports2, module2) {
+  "src/indstream/providers/moviebox.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var util2 = require_util();
@@ -1398,6 +1530,7 @@ var require_moviebox = __commonJS({
       name: "MovieBox",
       speed: "normal",
       supports: { movie: true, tv: true },
+      raceTimeoutMs: 6e3,
       timeoutMs: 2e4,
       resolve(ctx) {
         return __async(this, null, function* () {
@@ -1792,9 +1925,9 @@ var require_html = __commonJS({
   }
 });
 
-// src/indstream/servers/filehost.js
+// src/indstream/providers/filehost.js
 var require_filehost = __commonJS({
-  "src/indstream/servers/filehost.js"(exports2, module2) {
+  "src/indstream/providers/filehost.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var html = require_html();
@@ -2006,9 +2139,9 @@ var require_filehost = __commonJS({
   }
 });
 
-// src/indstream/servers/hub4k.js
+// src/indstream/providers/hub4k.js
 var require_hub4k = __commonJS({
-  "src/indstream/servers/hub4k.js"(exports2, module2) {
+  "src/indstream/providers/hub4k.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var html = require_html();
@@ -2026,6 +2159,7 @@ var require_hub4k = __commonJS({
       name: "4KHDHub",
       speed: "slow",
       supports: { movie: true, tv: true },
+      raceTimeoutMs: 7e3,
       timeoutMs: 25e3,
       resolve(ctx) {
         return __async(this, null, function* () {
@@ -2240,9 +2374,9 @@ var require_hub4k = __commonJS({
   }
 });
 
-// src/indstream/servers/fsl.js
+// src/indstream/providers/fsl.js
 var require_fsl = __commonJS({
-  "src/indstream/servers/fsl.js"(exports2, module2) {
+  "src/indstream/providers/fsl.js"(exports2, module2) {
     "use strict";
     var http2 = require_http();
     var html = require_html();
@@ -2267,6 +2401,7 @@ var require_fsl = __commonJS({
       name: "FSL",
       speed: "slow",
       supports: { movie: true, tv: true },
+      raceTimeoutMs: 6e3,
       timeoutMs: 3e4,
       resolve(ctx) {
         return __async(this, null, function* () {
@@ -2531,98 +2666,102 @@ var require_fsl = __commonJS({
   }
 });
 
-// src/indstream/servers/hdhub.js
-var require_hdhub = __commonJS({
-  "src/indstream/servers/hdhub.js"(exports2, module2) {
+// src/indstream/providers/index.js
+var require_providers = __commonJS({
+  "src/indstream/providers/index.js"(exports2, module2) {
     "use strict";
-    var http2 = require_http();
-    var util2 = require_util();
-    var tmdb2 = require_tmdb();
-    var BASE = "https://hdhub.thevolecitor.qzz.io";
-    module2.exports = {
-      id: "hdhub",
-      name: "HdHub",
-      speed: "very-fast",
-      supports: { movie: true, tv: true },
-      timeoutMs: 8e3,
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const type = ctx.type;
-          const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
-          let imdbId = meta && meta.imdbId || ctx.imdbId || "";
-          if (!imdbId && ctx.tmdbId) {
-            imdbId = yield tmdb2.resolveImdbId(ctx.tmdbId, type, meta);
-          }
-          let pathId = "";
-          if (imdbId) {
-            pathId = "tt" + String(imdbId).replace(/^tt/, "");
-            if (type === "tv" || type === "series") {
-              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
-            }
-          } else if (ctx.tmdbId) {
-            pathId = "tmdb:" + ctx.tmdbId;
-            if (type === "tv" || type === "series") {
-              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
-            }
-          }
-          if (!pathId) return [];
-          const kind = type === "tv" || type === "series" ? "series" : "movie";
-          const url = BASE + "/stream/" + kind + "/" + pathId + ".json";
-          const json = yield http2.getJson(url, { timeoutMs: ctx.timeoutMs });
-          if (!json || !Array.isArray(json.streams)) return [];
-          const out = [];
-          const seen = {};
-          json.streams.forEach(function(s) {
-            if (!s || !s.url) return;
-            const name = String(s.name || "");
-            if (/donation|discord/i.test(name)) return;
-            if (/hubdrive\.bar/i.test(s.url)) return;
-            const desc = String(s.description || s.title || "");
-            const height = util2.parseHeight(name + " " + desc);
-            const language = util2.languageLabel(desc) || util2.languageLabel(name) || "";
-            const size = util2.normalizeSizeToken(desc);
-            const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url) || /googleusercontent/i.test(s.url);
-            const entry = {
-              provider: module2.exports.name,
-              url: s.url,
-              type: isHls ? "hls" : "mp4",
-              quality: util2.qualityLabel(height),
-              height,
-              language,
-              size,
-              title: "",
-              headers: { "User-Agent": http2.DEFAULT_UA }
-            };
-            if (seen[entry.url]) return;
-            seen[entry.url] = true;
-            out.push(entry);
-          });
-          ctx.log("hdhub: " + out.length + " streams");
-          return out;
-        });
-      }
-    };
-  }
-});
-
-// src/indstream/servers/index.js
-var require_servers = __commonJS({
-  "src/indstream/servers/index.js"(exports2, module2) {
-    "use strict";
+    var hdhub = require_hdhub();
     var vidrift = require_vidrift();
     var bingr = require_bingr();
     var moviebox = require_moviebox();
     var hub4k = require_hub4k();
     var fsl = require_fsl();
-    var hdhub = require_hdhub();
-    var SERVERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
+    var PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
     var BY_ID = {};
-    SERVERS.forEach(function(server) {
-      BY_ID[server.id] = server;
+    PROVIDERS.forEach(function(provider) {
+      BY_ID[provider.id] = provider;
     });
     module2.exports = {
-      SERVERS,
+      PROVIDERS,
       BY_ID
+    };
+  }
+});
+
+// src/indstream/racer.js
+var require_racer = __commonJS({
+  "src/indstream/racer.js"(exports2, module2) {
+    "use strict";
+    var http2 = require_http();
+    var GRACE_MS = 2e3;
+    var OVERALL_MAX_MS = 14e3;
+    function capOf(provider, settings2) {
+      const own = Number(provider.raceTimeoutMs) || Number(provider.timeoutMs) || 12e3;
+      const ceiling = (Number(settings2.requestTimeout) || 15) * 1e3 + 5e3;
+      return Math.min(own, ceiling);
+    }
+    function race(providers2, context, normalize) {
+      return new Promise(function(resolve) {
+        const total = providers2.length;
+        const collected = [];
+        let settled = 0;
+        let finished = false;
+        let graceTimer = null;
+        if (!total) {
+          resolve(collected);
+          return;
+        }
+        const caps = providers2.map(function(provider) {
+          return capOf(provider, context.settings);
+        });
+        const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9e3);
+        const overallTimer = setTimeout(finish, overallMs);
+        function finish() {
+          if (finished) return;
+          finished = true;
+          clearTimeout(overallTimer);
+          if (graceTimer) clearTimeout(graceTimer);
+          context.log("done: " + collected.length + " streams from " + settled + "/" + total + " providers");
+          resolve(collected.slice());
+        }
+        function onFirstStream() {
+          if (graceTimer) return;
+          graceTimer = setTimeout(finish, GRACE_MS);
+        }
+        function settle() {
+          settled += 1;
+          if (settled >= total) finish();
+        }
+        providers2.forEach(function(provider, i) {
+          const startedAt = Date.now();
+          const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1e3 });
+          const work = Promise.resolve().then(function() {
+            return provider.resolve(scope);
+          });
+          http2.withTimeout(work, caps[i], []).then(function(list) {
+            const normalized = [];
+            (list || []).forEach(function(raw) {
+              try {
+                const stream = normalize(raw, provider);
+                if (stream) normalized.push(stream);
+              } catch (error) {
+              }
+            });
+            context.log(provider.name + ": " + normalized.length + " streams in " + (Date.now() - startedAt) + "ms");
+            if (normalized.length) {
+              Array.prototype.push.apply(collected, normalized);
+              onFirstStream();
+            }
+            settle();
+          });
+        });
+      });
+    }
+    module2.exports = {
+      GRACE_MS,
+      OVERALL_MAX_MS,
+      capOf,
+      race
     };
   }
 });
@@ -2631,26 +2770,28 @@ var require_servers = __commonJS({
 var http = require_http();
 var tmdb = require_tmdb();
 var settings = require_settings();
-var servers = require_servers();
+var providers = require_providers();
+var racer = require_racer();
 var util = require_util();
+var TMDB_META_CAP_MS = 6e3;
 function safeInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) ? n : 0;
 }
-function normalizeStream(raw, server, ctx) {
+function normalizeStream(raw, provider) {
   if (!raw || !raw.url) return null;
   const type = raw.type || (raw.url.indexOf(".m3u8") >= 0 ? "hls" : raw.url.indexOf(".mpd") >= 0 ? "dash" : "mp4");
   const height = Number(raw.height) || 0;
   const quality = raw.quality || util.qualityLabel(height);
   const stream = {
-    title: util.displayName(server.name, raw.language || "", null, raw.size || "", ""),
-    name: server.name || "",
+    title: util.displayName(provider.name, raw.language || "", null, raw.size || "", ""),
+    name: provider.name || "",
     url: raw.url,
     type,
     quality,
     size: raw.size || "",
     language: raw.language || "",
-    provider: server.name || "",
+    provider: provider.name || "",
     headers: raw.headers || {}
   };
   if (Array.isArray(raw.subtitles) && raw.subtitles.length) {
@@ -2679,66 +2820,17 @@ function probeUnknownQuality(stream, ctx) {
     return stream;
   });
 }
-var GRACE_MS = 2e3;
-var OVERALL_MAX_MS = 14e3;
-var TMDB_META_CAP_MS = 6e3;
-var SERVER_CAPS = {
-  hdhub: 5e3,
-  vidrift: 5e3,
-  bingr: 5e3,
-  moviebox: 6e3,
-  hub4k: 7e3,
-  fsl: 6e3
-};
-function runSources(wanted, context) {
-  return new Promise(function(resolve) {
-    const total = wanted.length;
-    const collected = [];
-    let settled = 0;
-    let finished = false;
-    let graceTimer = null;
-    const caps = wanted.map(function(server) {
-      return Math.min(SERVER_CAPS[server.id] || 15e3, context.settings.requestTimeout * 1e3 + 5e3);
-    });
-    const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9e3);
-    const overallTimer = setTimeout(finish, overallMs);
-    function finish() {
-      if (finished) return;
-      finished = true;
-      clearTimeout(overallTimer);
-      if (graceTimer) clearTimeout(graceTimer);
-      context.log("done: " + collected.length + " streams from " + settled + "/" + total + " sources");
-      resolve(collected.slice());
-    }
-    function onFirstStream() {
-      if (graceTimer) return;
-      graceTimer = setTimeout(finish, GRACE_MS);
-    }
-    function consider() {
-      if (settled >= total) finish();
-    }
-    wanted.forEach(function(server, i) {
-      const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1e3 });
-      const startedAt = Date.now();
-      http.withTimeout(server.resolve(scope), caps[i], []).then(function(list) {
-        const normalized = (list || []).map(function(raw) {
-          return normalizeStream(raw, server, context);
-        }).filter(Boolean);
-        context.log(server.name + ": " + normalized.length + " streams in " + (Date.now() - startedAt) + "ms");
-        if (normalized.length && !graceTimer) onFirstStream();
-        Array.prototype.push.apply(collected, normalized);
-        settled += 1;
-        consider();
-      });
-    });
-  });
-}
-function getStreams(tmdbId, mediaType, season, episode) {
+function getStreams(mediaId, mediaType, season, episode) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
     const s = settings.getSettings();
+    const inputId = String(mediaId == null ? "" : mediaId).trim();
+    const inputImdbId = tmdb.normalizeImdbId(inputId);
+    const inputTmdbId = inputImdbId ? 0 : safeInt(inputId);
     const context = {
-      tmdbId: safeInt(tmdbId),
+      inputId,
+      tmdbId: inputTmdbId,
+      imdbId: inputImdbId,
       type,
       season: safeInt(season),
       episode: safeInt(episode),
@@ -2749,19 +2841,30 @@ function getStreams(tmdbId, mediaType, season, episode) {
       } : function() {
       }
     };
-    const metaPromise = http.withTimeout(tmdb.fetchMeta(context.tmdbId, type), TMDB_META_CAP_MS, null).catch(function() {
+    if (!context.tmdbId && !context.imdbId) return [];
+    const metaPromise = http.withTimeout(tmdb.resolveMeta(inputId, type), TMDB_META_CAP_MS, null).catch(function() {
       return null;
-    });
-    metaPromise.then(function(m) {
-      context.log("tmdb: " + (m && m.title ? '"' + m.title + '" (' + (m.year || "?") + ")" : "metadata unavailable"));
+    }).then(function(meta) {
+      if (meta) {
+        context.meta = meta;
+        if (!context.tmdbId && Number(meta.id)) context.tmdbId = Number(meta.id);
+        if (!context.imdbId && meta.imdbId) context.imdbId = meta.imdbId;
+      }
+      context.log(
+        "lookup: " + inputId + " -> " + (meta && meta.title ? '"' + meta.title + '" (' + (meta.year || "?") + ")" : "metadata unavailable") + (context.tmdbId ? " [tmdb:" + context.tmdbId + "]" : "") + (context.imdbId ? " [imdb:" + context.imdbId + "]" : "")
+      );
+      return meta;
     });
     context.metaPromise = metaPromise;
     context.meta = null;
-    const wanted = servers.SERVERS.filter(function(server) {
-      return s.sources[server.id] !== false;
+    if (inputImdbId) yield metaPromise;
+    const wanted = providers.PROVIDERS.filter(function(provider) {
+      if (s.sources[provider.id] === false) return false;
+      if (provider.supports && provider.supports[type] === false) return false;
+      return true;
     });
     if (!wanted.length) return [];
-    let streams = yield runSources(wanted, context);
+    let streams = yield racer.race(wanted, context, normalizeStream);
     const includeDash = s.includeDash;
     streams = streams.filter(function(stream) {
       if (!includeDash && stream.type === "dash") return false;

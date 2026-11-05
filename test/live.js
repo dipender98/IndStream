@@ -10,7 +10,9 @@ const TMDB = {
 async function run() {
   const args = process.argv.slice(2);
   const mode = args[0] || 'movie';
-  console.log('IndStream live smoke (' + mode + ')');
+  const idArg = args[1] || '';
+  const input = idArg || (mode === 'movie' ? TMDB.inception : TMDB.got.id);
+  console.log('IndStream live smoke (' + mode + ', id ' + input + ')');
 
   globalThis.SCRAPER_SETTINGS = JSON.stringify({
     minQuality: '720',
@@ -23,9 +25,9 @@ async function run() {
   let streams = [];
   const started = Date.now();
   if (mode === 'movie') {
-    streams = await plugin.getStreams(TMDB.inception, 'movie', null, null);
+    streams = await plugin.getStreams(input, 'movie', null, null);
   } else {
-    streams = await plugin.getStreams(TMDB.got.id, 'tv', TMDB.got.season, TMDB.got.episode);
+    streams = await plugin.getStreams(input, 'tv', TMDB.got.season, TMDB.got.episode);
   }
   const elapsed = Date.now() - started;
   console.log('elapsed: ' + elapsed + 'ms');

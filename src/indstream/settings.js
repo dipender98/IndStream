@@ -17,6 +17,10 @@ const DEFAULTS = {
 
 const SETTINGS_LAYOUT = [
   {
+    type: 'info',
+    label: 'One settings page for IndStream. Every enabled provider runs independently and only contributes its own streams.',
+  },
+  {
     type: 'header',
     label: 'Playback',
   },
@@ -48,8 +52,8 @@ const SETTINGS_LAYOUT = [
   {
     type: 'select',
     key: 'requestTimeout',
-    label: 'Source timeout',
-    description: 'Upper bound for a single source. Sources that finish sooner still return first.',
+    label: 'Provider timeout',
+    description: 'Upper bound for a single provider. Providers that finish sooner still return first.',
     defaultValue: '15',
     options: [
       { label: '10 seconds', value: '10' },
@@ -73,7 +77,7 @@ const SETTINGS_LAYOUT = [
   },
   {
     type: 'header',
-    label: 'Sources',
+    label: 'Providers',
   },
   {
     type: 'toggle',
@@ -130,7 +134,9 @@ const SETTINGS_LAYOUT = [
   },
 ];
 
-const SOURCE_KEYS = {
+// Provider toggles live on the single IndStream settings page so users do not
+// have to configure every provider separately.
+const PROVIDER_SETTINGS = {
   hdhub: 'sourceHdhub',
   vidrift: 'sourceVidrift',
   bingr: 'sourceBingr',
@@ -179,8 +185,8 @@ function getSettings() {
     debug: normalizeBool(merged.debug, DEFAULTS.debug),
     sources: {},
   };
-  Object.keys(SOURCE_KEYS).forEach(function (id) {
-    settings.sources[id] = normalizeBool(merged[SOURCE_KEYS[id]], DEFAULTS[SOURCE_KEYS[id]]);
+  Object.keys(PROVIDER_SETTINGS).forEach(function (id) {
+    settings.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
   });
   if (!settings.minQuality) settings.minQuality = 0;
   if (!settings.requestTimeout) settings.requestTimeout = 15;
@@ -194,7 +200,7 @@ function onSettings() {
 module.exports = {
   DEFAULTS: DEFAULTS,
   SETTINGS_LAYOUT: SETTINGS_LAYOUT,
-  SOURCE_KEYS: SOURCE_KEYS,
+  PROVIDER_SETTINGS: PROVIDER_SETTINGS,
   getSettings: getSettings,
   onSettings: onSettings,
 };

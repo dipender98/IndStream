@@ -12,6 +12,7 @@ module.exports = {
   name: 'Bingr',
   speed: 'very-fast',
   supports: { movie: true, tv: true },
+  raceTimeoutMs: 5000,
   timeoutMs: 15000,
 
   async resolve(ctx) {

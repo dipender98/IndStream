@@ -23,6 +23,7 @@ module.exports = {
   name: 'MovieBox',
   speed: 'normal',
   supports: { movie: true, tv: true },
+  raceTimeoutMs: 6000,
   timeoutMs: 20000,
 
   async resolve(ctx) {
