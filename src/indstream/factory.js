@@ -35,10 +35,14 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
-function createPlugin(providerId) {
+function createPlugin(providerId, options) {
+  const opts = options || {};
+  const settingsOnly = !!opts.settingsOnly;
   const singleProvider = providerId ? providers.BY_ID[providerId] : null;
 
   async function getStreams(mediaId, mediaType, season, episode) {
+    if (settingsOnly) return [];
+    // rest...
     const type = mediaType === 'tv' || mediaType === 'series' ? 'tv' : 'movie';
     const s = settings.getSettings();
 

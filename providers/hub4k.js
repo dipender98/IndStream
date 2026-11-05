@@ -2908,10 +2908,13 @@ var require_factory = __commonJS({
         return stream;
       });
     }
-    function createPlugin(providerId) {
+    function createPlugin(providerId, options) {
+      const opts = options || {};
+      const settingsOnly = !!opts.settingsOnly;
       const singleProvider = providerId ? providers.BY_ID[providerId] : null;
       function getStreams(mediaId, mediaType, season, episode) {
         return __async(this, null, function* () {
+          if (settingsOnly) return [];
           const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
           const s = settings.getSettings();
           const inputId = String(mediaId == null ? "" : mediaId).trim();

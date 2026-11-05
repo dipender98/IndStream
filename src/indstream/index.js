@@ -1,7 +1,7 @@
 'use strict';
 
 const factory = require('./factory');
-const api = factory.createPlugin(null);
+const api = factory.createPlugin(null, { settingsOnly: true });
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = api;
