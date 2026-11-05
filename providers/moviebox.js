@@ -1495,7 +1495,7 @@ var require_moviebox = __commonJS({
       name: "MovieBox",
       speed: "normal",
       supports: { movie: true, tv: true },
-      raceTimeoutMs: 6e3,
+      raceTimeoutMs: 4e3,
       toggle: {
         key: "sourceMoviebox",
         label: "MovieBox",
@@ -2125,7 +2125,7 @@ var require_hub4k = __commonJS({
       name: "4KHDHub",
       speed: "slow",
       supports: { movie: true, tv: true },
-      raceTimeoutMs: 7e3,
+      raceTimeoutMs: 5e3,
       toggle: {
         key: "sourceHub4k",
         label: "4KHDHub",
@@ -2149,7 +2149,7 @@ var require_hub4k = __commonJS({
             if (Date.now() > deadline) break;
             const candidate = BASES[i];
             const h = yield net.getText(candidate + "/?s=" + encodeURIComponent(title), {
-              timeoutMs: 8e3,
+              timeoutMs: 5e3,
               headers: { Referer: candidate + "/" }
             });
             if (!h) continue;
@@ -2179,7 +2179,7 @@ var require_hub4k = __commonJS({
             if (Date.now() > deadline) break;
             const card = ranked[i].card;
             const post = yield net.getText(card.url, {
-              timeoutMs: 8e3,
+              timeoutMs: 5e3,
               headers: { Referer: base + "/" }
             });
             if (!post) continue;
@@ -2198,7 +2198,7 @@ var require_hub4k = __commonJS({
                 if (Date.now() > deadline) break;
                 const gateway = item.gatewayUrls[g];
                 const gwPage = yield net.getText(gateway, {
-                  timeoutMs: 1e4,
+                  timeoutMs: 6e3,
                   headers: { Referer: card.url }
                 });
                 if (!gwPage) continue;
@@ -2210,7 +2210,7 @@ var require_hub4k = __commonJS({
                 let finalDrive = resolvedDrive;
                 if (/hubdrive\./i.test(resolvedDrive)) {
                   const innerPage = yield net.getText(resolvedDrive, {
-                    timeoutMs: 8e3,
+                    timeoutMs: 5e3,
                     headers: { Referer: card.url }
                   });
                   if (!innerPage) continue;
@@ -2373,7 +2373,7 @@ var require_fsl = __commonJS({
       name: "FSL",
       speed: "slow",
       supports: { movie: true, tv: true },
-      raceTimeoutMs: 6e3,
+      raceTimeoutMs: 4e3,
       toggle: {
         key: "sourceFsl",
         label: "FSL",
@@ -2396,7 +2396,7 @@ var require_fsl = __commonJS({
             const seed = SEEDS[s];
             const base = yield fslBase(seed, ctx);
             if (!base) continue;
-            const json = yield fslGet(base + "/ts-search.php?q=" + encodeURIComponent(title) + "&page=1", base, 8e3, ctx);
+            const json = yield fslGet(base + "/ts-search.php?q=" + encodeURIComponent(title) + "&page=1", base, 5e3, ctx);
             if (!json) continue;
             const hits = fslSearchHits(json);
             if (!hits.length) continue;
@@ -2410,7 +2410,7 @@ var require_fsl = __commonJS({
             for (let r = 0; r < ranked.length; r += 1) {
               if (Date.now() > deadline) break;
               const permalink = util.resolveUrl(base, ranked[r].hit.permalink);
-              const post = yield fslGet(permalink, base, 1e4, ctx);
+              const post = yield fslGet(permalink, base, 6e3, ctx);
               if (!post) continue;
               const groups = util.episodeOrSeason(fslGroups(post), function(g) {
                 return g.heading;
@@ -2430,7 +2430,7 @@ var require_fsl = __commonJS({
                   if (/vcloud\./i.test(gateway)) {
                     cloudLinks = [gateway];
                   } else {
-                    const expanded = yield fslGet(gateway, base, 15e3, ctx);
+                    const expanded = yield fslGet(gateway, base, 8e3, ctx);
                     if (!expanded) continue;
                     cloudLinks = gatewayLinksOf(expanded).cloud;
                   }
@@ -2494,10 +2494,10 @@ var require_fsl = __commonJS({
     }
     function fslLive(seed, ctx) {
       return __async(this, null, function* () {
-        let html0 = yield fslGet(seed.seed, seed.seed, 1e4, ctx);
+        let html0 = yield fslGet(seed.seed, seed.seed, 6e3, ctx);
         let url0 = seed.seed;
         if (!html0 && seed.bootstrap) {
-          html0 = yield fslGet(seed.bootstrap, seed.bootstrap, 1e4, ctx);
+          html0 = yield fslGet(seed.bootstrap, seed.bootstrap, 6e3, ctx);
           url0 = seed.bootstrap || url0;
         }
         if (!html0) return null;

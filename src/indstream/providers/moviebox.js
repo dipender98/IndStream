@@ -23,7 +23,7 @@ module.exports = {
   name: 'MovieBox',
   speed: 'normal',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 6000,
+  raceTimeoutMs: 4000,
   toggle: {
     key: 'sourceMoviebox',
     label: 'MovieBox',

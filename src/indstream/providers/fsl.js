@@ -27,7 +27,7 @@ module.exports = {
   name: 'FSL',
   speed: 'slow',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 6000,
+  raceTimeoutMs: 4000,
   toggle: {
     key: 'sourceFsl',
     label: 'FSL',
@@ -52,7 +52,7 @@ module.exports = {
       const seed = SEEDS[s];
       const base = await fslBase(seed, ctx);
       if (!base) continue;
-      const json = await fslGet(base + '/ts-search.php?q=' + encodeURIComponent(title) + '&page=1', base, 8000, ctx);
+      const json = await fslGet(base + '/ts-search.php?q=' + encodeURIComponent(title) + '&page=1', base, 5000, ctx);
       if (!json) continue;
       const hits = fslSearchHits(json);
       if (!hits.length) continue;
@@ -64,7 +64,7 @@ module.exports = {
       for (let r = 0; r < ranked.length; r += 1) {
         if (Date.now() > deadline) break;
         const permalink = util.resolveUrl(base, ranked[r].hit.permalink);
-        const post = await fslGet(permalink, base, 10000, ctx);
+        const post = await fslGet(permalink, base, 6000, ctx);
         if (!post) continue;
         const groups = util.episodeOrSeason(fslGroups(post), function (g) { return g.heading; }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
         for (let g = 0; g < groups.length; g += 1) {
@@ -82,7 +82,7 @@ module.exports = {
             if (/vcloud\./i.test(gateway)) {
               cloudLinks = [gateway];
             } else {
-              const expanded = await fslGet(gateway, base, 15000, ctx);
+              const expanded = await fslGet(gateway, base, 8000, ctx);
               if (!expanded) continue;
               cloudLinks = gatewayLinksOf(expanded).cloud;
             }
@@ -143,10 +143,10 @@ async function fslBase(seed, ctx) {
 }
 
 async function fslLive(seed, ctx) {
-  let html0 = await fslGet(seed.seed, seed.seed, 10000, ctx);
+  let html0 = await fslGet(seed.seed, seed.seed, 6000, ctx);
   let url0 = seed.seed;
   if (!html0 && seed.bootstrap) {
-    html0 = await fslGet(seed.bootstrap, seed.bootstrap, 10000, ctx);
+    html0 = await fslGet(seed.bootstrap, seed.bootstrap, 6000, ctx);
     url0 = seed.bootstrap || url0;
   }
   if (!html0) return null;

@@ -18,7 +18,7 @@ module.exports = {
   name: '4KHDHub',
   speed: 'slow',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 7000,
+  raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceHub4k',
     label: '4KHDHub',
@@ -44,7 +44,7 @@ module.exports = {
       if (Date.now() > deadline) break;
       const candidate = BASES[i];
       const h = await net.getText(candidate + '/?s=' + encodeURIComponent(title), {
-        timeoutMs: 8000,
+        timeoutMs: 5000,
         headers: { Referer: candidate + '/' },
       });
       if (!h) continue;
@@ -75,7 +75,7 @@ module.exports = {
       if (Date.now() > deadline) break;
       const card = ranked[i].card;
       const post = await net.getText(card.url, {
-        timeoutMs: 8000,
+        timeoutMs: 5000,
         headers: { Referer: base + '/' },
       });
       if (!post) continue;
@@ -94,7 +94,7 @@ module.exports = {
           if (Date.now() > deadline) break;
           const gateway = item.gatewayUrls[g];
           const gwPage = await net.getText(gateway, {
-            timeoutMs: 10000,
+            timeoutMs: 6000,
             headers: { Referer: card.url },
           });
           if (!gwPage) continue;
@@ -107,7 +107,7 @@ module.exports = {
           let finalDrive = resolvedDrive;
           if (/hubdrive\./i.test(resolvedDrive)) {
             const innerPage = await net.getText(resolvedDrive, {
-              timeoutMs: 8000,
+              timeoutMs: 5000,
               headers: { Referer: card.url },
             });
             if (!innerPage) continue;
