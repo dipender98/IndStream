@@ -17,14 +17,14 @@ https://raw.githubusercontent.com/dipender98/IndStream/main/manifest.json
 One repository, one Nuvio plugin entry (`indstream`), one settings page.
 
 Each provider under `src/indstream/providers/` is an independent module. It
-knows nothing about the other providers, declares its own race budget, and
-returns raw stream entries. The racer runs every enabled provider concurrently
-and returns as soon as results settle or the grace window elapses. A provider
-that fails, rejects or times out contributes an empty result; it never fails the
-request.
+knows nothing about the other providers, declares one race budget, and returns
+raw stream entries. The racer runs every enabled provider concurrently and
+returns as soon as results settle or the grace window elapses. A provider that
+fails, rejects or times out contributes an empty result; it never fails the
+request. When the race finishes, unfinished providers are aborted.
 
-The engine then applies the shared 720p floor, deduplicates by URL, and sorts
-the combined result.
+The engine then normalizes the results, applies the shared floor, deduplicates,
+sorts with stable tie-breakers, and applies the result limit.
 
 ## IDs
 
@@ -52,18 +52,20 @@ providers are fast; the scrapers are slower and run with their own timeouts.
   minimum are dropped. Unknown heights are kept and labelled as-is.
 - **Honest languages** — an audio language is only shown when the provider
   declares it. Nothing is inferred from titles.
-- **Deterministic** — results are deduplicated by URL and sorted by height.
-- **Settings** — minimum quality, result cap, provider timeout, provider
-  toggles, DASH inclusion, quality probing, verbose logging.
+- **Deterministic** — duplicates are resolved by quality, language, provider
+  order and URL; the final sort uses the same stable keys.
+- **Settings** — one plugin-level page: minimum quality, result cap, provider
+  timeout, provider toggles, DASH inclusion, quality probing, verbose logging.
 - **Resilience** — concurrent racing, per-provider budgets, partial results.
 
 ## Development
 
 ```
 npm install
-npm run build     # bundles src/indstream -> providers/indstream.js
-npm test          # offline logic tests
-npm run smoke     # live probe (network; optional)
+npm run build       # bundles src/indstream -> providers/indstream.js
+npm run build:watch # rebuilds on change
+npm test            # offline logic tests
+npm run smoke       # live probe (network; optional)
 ```
 
 The plugin runs inside Nuvio's QuickJS sandbox. No Node built-ins, no DOM,

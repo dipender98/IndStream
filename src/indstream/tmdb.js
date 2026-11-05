@@ -37,18 +37,25 @@ function query(params) {
   return pairs.join('&');
 }
 
-async function apiGet(path, params) {
+async function apiGet(path, params, opts) {
   const allKeys = keys();
   const suffix = query(Object.assign({}, params || {}));
+  const options = opts || {};
   for (let i = 0; i < allKeys.length; i += 1) {
     for (let h = 0; h < API_HOSTS.length; h += 1) {
+      if (options.deadline && Date.now() >= options.deadline) return null;
+      if (options.signal && options.signal.aborted) return null;
       const url =
         API_HOSTS[h] +
         path +
         '?api_key=' +
         encodeURIComponent(allKeys[i]) +
         (suffix ? '&' + suffix : '');
-      const json = await http.getJson(url, { timeoutMs: 3000 });
+      const json = await http.getJson(url, {
+        timeoutMs: 3000,
+        deadline: options.deadline,
+        signal: options.signal,
+      });
       if (json && !json.status_code) return json;
     }
   }
@@ -101,13 +108,13 @@ function normalizeMeta(raw, type) {
   };
 }
 
-async function fetchMeta(tmdbId, type) {
+async function fetchMeta(tmdbId, type, opts) {
   const id = String(tmdbId || '').trim();
   if (!id) return null;
   const kind = type === 'tv' || type === 'series' ? 'tv' : 'movie';
   const cacheKey = kind + ':' + id;
   if (metaCache[cacheKey]) return metaCache[cacheKey];
-  const raw = await apiGet('/' + kind + '/' + id, { append_to_response: 'external_ids' });
+  const raw = await apiGet('/' + kind + '/' + id, { append_to_response: 'external_ids' }, opts);
   if (!raw) return null;
   const meta = normalizeMeta(raw, kind);
   if (meta) metaCache[cacheKey] = meta;
@@ -121,13 +128,13 @@ function firstFindResult(raw, type) {
   return Array.isArray(list) && list.length ? list[0] : null;
 }
 
-async function findMetaByImdb(imdbId, type) {
+async function findMetaByImdb(imdbId, type, opts) {
   const id = normalizeImdbId(imdbId);
   if (!id) return null;
   const kind = type === 'tv' || type === 'series' ? 'tv' : 'movie';
   const cacheKey = kind + ':' + id;
   if (findCache[cacheKey]) return findCache[cacheKey];
-  const raw = await apiGet('/find/' + id, { external_source: 'imdb_id' });
+  const raw = await apiGet('/find/' + id, { external_source: 'imdb_id' }, opts);
   const item = firstFindResult(raw, kind);
   if (!item) return null;
   const meta = normalizeMeta(item, kind);
@@ -139,13 +146,13 @@ async function findMetaByImdb(imdbId, type) {
 }
 
 // Resolves either a numeric TMDB id or an IMDb id (including IMDb URLs).
-async function resolveMeta(value, type) {
+async function resolveMeta(value, type, opts) {
   const imdbId = normalizeImdbId(value);
-  if (imdbId) return findMetaByImdb(imdbId, type);
-  return fetchMeta(String(value == null ? '' : value).trim(), type);
+  if (imdbId) return findMetaByImdb(imdbId, type, opts);
+  return fetchMeta(String(value == null ? '' : value).trim(), type, opts);
 }
 
-async function resolveImdbId(tmdbId, type, meta) {
+async function resolveImdbId(tmdbId, type, meta, opts) {
   const id = String(tmdbId || '').trim();
   if (!id) return '';
   const kind = type === 'tv' || type === 'series' ? 'tv' : 'movie';
@@ -155,7 +162,7 @@ async function resolveImdbId(tmdbId, type, meta) {
     imdbCache[cacheKey] = meta.imdbId;
     return meta.imdbId;
   }
-  const raw = await apiGet('/' + kind + '/' + id + '/external_ids');
+  const raw = await apiGet('/' + kind + '/' + id + '/external_ids', null, opts);
   const imdb = raw && raw.imdb_id ? String(raw.imdb_id) : '';
   if (imdb) imdbCache[cacheKey] = imdb;
   return imdb;

@@ -12,14 +12,19 @@ module.exports = {
   speed: 'very-fast',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 5000,
-  timeoutMs: 8000,
+  toggle: {
+    key: 'sourceHdhub',
+    label: 'HdHub',
+    description: 'Fast aggregator: instant HLS streams plus 4K file links.',
+  },
 
   async resolve(ctx) {
+    const net = ctx.http || http;
     const type = ctx.type;
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
     let imdbId = (meta && meta.imdbId) || ctx.imdbId || '';
     if (!imdbId && ctx.tmdbId) {
-      imdbId = await tmdb.resolveImdbId(ctx.tmdbId, type, meta);
+      imdbId = await tmdb.resolveImdbId(ctx.tmdbId, type, meta, ctx);
     }
 
     let pathId = '';
@@ -38,7 +43,7 @@ module.exports = {
 
     const kind = type === 'tv' || type === 'series' ? 'series' : 'movie';
     const url = BASE + '/stream/' + kind + '/' + pathId + '.json';
-    const json = await http.getJson(url, { timeoutMs: ctx.timeoutMs });
+    const json = await net.getJson(url, { timeoutMs: ctx.timeoutMs });
     if (!json || !Array.isArray(json.streams)) return [];
 
     const out = [];

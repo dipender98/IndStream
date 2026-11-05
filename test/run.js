@@ -4,6 +4,8 @@ const assert = require('assert');
 
 const util = require('../src/indstream/util');
 const html = require('../src/indstream/html');
+const http = require('../src/indstream/http');
+const finalize = require('../src/indstream/finalize');
 const settings = require('../src/indstream/settings');
 const tmdb = require('../src/indstream/tmdb');
 const providers = require('../src/indstream/providers');
@@ -68,6 +70,7 @@ test('isKnownBelowFloor', function () {
   assert.strictEqual(util.isKnownBelowFloor(720, 720), false);
   assert.strictEqual(util.isKnownBelowFloor(1080, 720), false);
   assert.strictEqual(util.isKnownBelowFloor(0, 720), false);
+  assert.strictEqual(util.isKnownBelowFloor(480, 0), false);
 });
 test('languageNames/languageLabel - source-declared only', function () {
   assert.deepStrictEqual(util.languageNames('Hindi, English'), ['Hindi', 'English']);
@@ -82,14 +85,18 @@ test('titleScore', function () {
   assert.ok(util.titleScore('Inception', 'Inception 2010 Hindi Dual Audio', '2010', '2010') >= 0.8);
   assert.ok(util.titleScore('Inception', 'Titanic', '2010', '1997') < 0.4);
 });
-test('dedupeStreams by url and host', function () {
+test('dedupeStreams strips query and keeps the best duplicate', function () {
   const streams = [
-    { url: 'https://a.com/1?x=1' },
-    { url: 'https://a.com/1' },
-    { url: 'https://a.com/2' },
+    { url: 'https://a.com/1?x=1', height: 720 },
+    { url: 'https://a.com/1', height: 1080 },
+    { url: 'https://a.com/2', height: 720 },
   ];
-  const out = util.dedupeStreams(streams);
-  assert.strictEqual(out.length, 2);
+  assert.strictEqual(util.dedupeStreams(streams).length, 2);
+  const best = util.dedupeStreams(streams, function (a, b) {
+    return (b.height || 0) - (a.height || 0);
+  });
+  assert.strictEqual(best.length, 2);
+  assert.strictEqual(best[0].height, 1080);
 });
 test('b64decode + rot13', function () {
   assert.strictEqual(util.b64decode('aGVsbG8='), 'hello');
@@ -124,6 +131,58 @@ test('episodeMatches/episodeOrSeason', function () {
   assert.strictEqual(tv[0].heading, 'S01E05 720p');
   const movie = util.episodeOrSeason(groups, function (g) { return g.heading; }, 'movie', 0, 0);
   assert.strictEqual(movie.length, 3);
+});
+
+section('finalize');
+const FAKE_PROVIDERS = [
+  { id: 'alpha', name: 'Alpha' },
+  { id: 'beta', name: 'Beta' },
+];
+function fakeStream(overrides) {
+  return Object.assign(
+    { url: '', type: 'mp4', quality: '', height: 0, language: '', provider: 'Alpha', providerId: 'alpha' },
+    overrides
+  );
+}
+test('floor and dash filtering', function () {
+  const out = finalize.finalizeStreams([
+    fakeStream({ url: 'https://x/480', quality: '480p', height: 480 }),
+    fakeStream({ url: 'https://x/720', quality: '720p', height: 720 }),
+    fakeStream({ url: 'https://x/unknown', quality: '' }),
+    fakeStream({ url: 'https://x/dash.mpd', type: 'dash', quality: '1080p', height: 1080 }),
+  ], { minQuality: 720, includeDash: false, providers: FAKE_PROVIDERS });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720', 'https://x/unknown']);
+});
+test('dedupe keeps the best duplicate regardless of arrival order', function () {
+  const low = fakeStream({ url: 'https://x/1?token=a', height: 720, provider: 'Beta', providerId: 'beta' });
+  const high = fakeStream({ url: 'https://x/1?token=b', height: 1080, provider: 'Alpha', providerId: 'alpha' });
+  const one = finalize.finalizeStreams([low, high], { minQuality: 720, providers: FAKE_PROVIDERS });
+  const two = finalize.finalizeStreams([high, low], { minQuality: 720, providers: FAKE_PROVIDERS });
+  assert.strictEqual(one.length, 1);
+  assert.strictEqual(one[0].url, high.url);
+  assert.deepStrictEqual(one, two);
+});
+test('sort uses height, language, provider rank and url', function () {
+  const out = finalize.finalizeStreams([
+    fakeStream({ url: 'https://x/720', height: 720, language: 'Hindi' }),
+    fakeStream({ url: 'https://x/4k', height: 2160, language: 'English' }),
+    fakeStream({ url: 'https://x/1080b', height: 1080, language: 'Hindi', provider: 'Beta', providerId: 'beta' }),
+    fakeStream({ url: 'https://x/1080a', height: 1080, language: 'Hindi', provider: 'Alpha', providerId: 'alpha' }),
+  ], { minQuality: 720, providers: FAKE_PROVIDERS });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), [
+    'https://x/4k',
+    'https://x/1080a',
+    'https://x/1080b',
+    'https://x/720',
+  ]);
+});
+test('result limit applies after sorting', function () {
+  const out = finalize.finalizeStreams([
+    fakeStream({ url: 'https://x/720', height: 720 }),
+    fakeStream({ url: 'https://x/1080', height: 1080 }),
+  ], { minQuality: 720, resultLimit: 1, providers: FAKE_PROVIDERS });
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].url, 'https://x/1080');
 });
 
 section('html');
@@ -185,6 +244,53 @@ test('onSettings shape', function () {
   ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'fsl'].forEach(function (id) {
     assert.ok(keys.indexOf('source' + id.charAt(0).toUpperCase() + id.slice(1)) >= 0, 'missing source key for ' + id);
   });
+  assert.strictEqual(typeof settings.onSettings, 'function');
+  providers.PROVIDERS.forEach(function (provider) {
+    assert.strictEqual(typeof provider.onSettings, 'undefined', provider.id + ' must not own settings');
+  });
+});
+
+section('http');
+test('request honors its deadline', async function () {
+  const original = globalThis.fetch;
+  globalThis.fetch = function (url, init) {
+    return new Promise(function (resolve, reject) {
+      if (init && init.signal && typeof init.signal.addEventListener === 'function') {
+        init.signal.addEventListener('abort', function () {
+          reject(new Error('aborted'));
+        });
+      }
+    });
+  };
+  try {
+    const res = await http.request('https://example.invalid', { timeoutMs: 30 });
+    assert.strictEqual(res.ok, false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test('external abort signal cancels a request', async function () {
+  const original = globalThis.fetch;
+  globalThis.fetch = function (url, init) {
+    return new Promise(function (resolve, reject) {
+      if (init && init.signal && typeof init.signal.addEventListener === 'function') {
+        init.signal.addEventListener('abort', function () {
+          reject(new Error('aborted'));
+        });
+      }
+    });
+  };
+  const controller = new AbortController();
+  try {
+    const pending = http.request('https://example.invalid', { timeoutMs: 5000, signal: controller.signal });
+    setTimeout(function () {
+      controller.abort();
+    }, 10);
+    const res = await pending;
+    assert.strictEqual(res.ok, false);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 section('vidrift');
@@ -387,7 +493,9 @@ test('registry contract', function () {
     assert.ok(provider.name, provider.id + ' missing name');
     assert.strictEqual(typeof provider.resolve, 'function', provider.id + ' missing resolve');
     assert.ok(Number(provider.raceTimeoutMs) > 0, provider.id + ' missing raceTimeoutMs');
+    assert.strictEqual(provider.timeoutMs, undefined, provider.id + ' must use one race budget');
     assert.ok(provider.supports && provider.supports.movie && provider.supports.tv, provider.id + ' missing supports');
+    assert.ok(provider.toggle && provider.toggle.key, provider.id + ' missing toggle metadata');
     assert.strictEqual(providers.BY_ID[provider.id], provider);
   });
 });
@@ -401,8 +509,24 @@ test('settings cover every provider', function () {
   providers.PROVIDERS.forEach(function (provider) {
     const key = settings.PROVIDER_SETTINGS[provider.id];
     assert.ok(key, 'missing settings key for ' + provider.id);
+    assert.strictEqual(key, provider.toggle.key);
     assert.ok(layoutKeys.indexOf(key) >= 0, 'missing layout control for ' + key);
+    assert.ok(settings.DEFAULTS[key] === true, 'missing default for ' + key);
   });
+});
+test('enabled filters by source toggle and media type', function () {
+  const fake = [
+    { id: 'movie-only', supports: { movie: true, tv: false } },
+    { id: 'both', supports: { movie: true, tv: true } },
+  ];
+  assert.deepStrictEqual(
+    providers.enabled({}, 'tv', fake).map(function (provider) { return provider.id; }),
+    ['both']
+  );
+  assert.deepStrictEqual(
+    providers.enabled({ both: false }, 'movie', fake).map(function (provider) { return provider.id; }),
+    ['movie-only']
+  );
 });
 test('racer returns fast results and isolates failures', async function () {
   const logs = [];
@@ -438,6 +562,43 @@ test('racer returns fast results and isolates failures', async function () {
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].provider, 'Fast');
   assert.ok(logs.some(function (message) { return message.indexOf('done:') >= 0; }));
+});
+test('racer aborts unfinished providers when it finishes', async function () {
+  let aborted = false;
+  const out = await racer.race(
+    [
+      {
+        id: 'fast',
+        name: 'Fast',
+        raceTimeoutMs: 1000,
+        resolve: async function () { return [{ url: 'https://example.com/1.m3u8' }]; },
+      },
+      {
+        id: 'slow',
+        name: 'Slow',
+        raceTimeoutMs: 5000,
+        resolve: function (ctx) {
+          return new Promise(function () {
+            if (ctx.signal) {
+              ctx.signal.addEventListener('abort', function () {
+                aborted = true;
+              });
+            }
+          });
+        },
+      },
+    ],
+    {
+      settings: { requestTimeout: 10 },
+      log: function () {},
+    },
+    function (raw, provider) {
+      return { url: raw.url, provider: provider.name };
+    }
+  );
+  await new Promise(function (resolve) { setTimeout(resolve, 50); });
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(aborted, true);
 });
 
 main();

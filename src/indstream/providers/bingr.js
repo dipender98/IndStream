@@ -13,9 +13,14 @@ module.exports = {
   speed: 'very-fast',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 5000,
-  timeoutMs: 15000,
+  toggle: {
+    key: 'sourceBingr',
+    label: 'Bingr',
+    description: 'Multi-server JSON API. Usually the fastest source.',
+  },
 
   async resolve(ctx) {
+    const net = ctx.http || http;
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
@@ -41,11 +46,11 @@ module.exports = {
       if (out.length >= 6 || Date.now() > deadline) break;
       const text =
         srv === 's40' && type === 'tv'
-          ? await http.getText(API + '/aphelion-tv/' + id + '/' + (ctx.season || 1) + '/' + (ctx.episode || 1), {
+          ? await net.getText(API + '/aphelion-tv/' + id + '/' + (ctx.season || 1) + '/' + (ctx.episode || 1), {
               timeoutMs: 6000,
               headers: { Referer: REFERER },
             })
-          : await http.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
+          : await net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
               timeoutMs: 6000,
               headers: postHeaders,
             });

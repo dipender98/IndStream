@@ -11,12 +11,18 @@ module.exports = {
   speed: 'fast',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 5000,
-  timeoutMs: 12000,
+  toggle: {
+    key: 'sourceVidrift',
+    label: 'Vidrift',
+    description: 'Embed player with direct HLS/MP4 links.',
+  },
 
   async resolve(ctx) {
+    const net = ctx.http || http;
     const type = ctx.type;
     const season = Number(ctx.season) || 0;
     const episode = Number(ctx.episode) || 0;
+    if (ctx.deadline && Date.now() >= ctx.deadline) return [];
     if (!ctx.tmdbId) {
       ctx.log('vidrift: missing tmdb id, skipping');
       return [];
@@ -24,7 +30,7 @@ module.exports = {
     if (type === 'tv' && (season <= 0 || episode <= 0)) return [];
 
     const page = type === 'movie' ? BASE + '/embed/movie/' + ctx.tmdbId : BASE + '/embed/tv/' + ctx.tmdbId + '/' + season + '/' + episode;
-    const html = await http.getText(page, {
+    const html = await net.getText(page, {
       timeoutMs: ctx.timeoutMs,
       headers: { Referer: BASE + '/' },
     });

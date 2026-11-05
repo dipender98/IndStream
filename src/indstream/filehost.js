@@ -90,10 +90,11 @@ function hubFileButtons(pageHtml) {
   return out;
 }
 
-async function hubDriveFiles(driveUrl, referer) {
+async function hubDriveFiles(driveUrl, referer, client) {
+  const net = client || http;
   const url = String(driveUrl || '');
   if (/hubdrive\.|hubcdn\./i.test(url)) {
-    const index = await http.getText(url, { timeoutMs: 10000, headers: { Referer: referer } });
+    const index = await net.getText(url, { timeoutMs: 10000, headers: { Referer: referer } });
     if (!index) return [];
     const reurl = (index.match(REURL_VAR_RE) || [])[1];
     if (reurl) {
@@ -104,10 +105,10 @@ async function hubDriveFiles(driveUrl, referer) {
       }
     }
     const next = (index.match(HUB_DRIVE_NEXT_RE) || [])[0];
-    return next ? hubDriveFiles(next, url) : [];
+    return next ? hubDriveFiles(next, url, net) : [];
   }
 
-  const page = await http.getText(url, { timeoutMs: 10000, headers: { Referer: referer } });
+  const page = await net.getText(url, { timeoutMs: 10000, headers: { Referer: referer } });
   if (!page) return [];
   const google = googleVideoLink(page, url);
   if (google) return [{ url: google, quality: util.qualityText(page), language: '' }];
@@ -117,7 +118,7 @@ async function hubDriveFiles(driveUrl, referer) {
   if (!tokenAbs && !tokenRel) return [];
   const origin = util.originOf(url);
   const tokenUrl = tokenAbs || origin + '/' + tokenRel;
-  const tokenPage = await http.getText(tokenUrl, { timeoutMs: 10000, headers: { Referer: url } });
+  const tokenPage = await net.getText(tokenUrl, { timeoutMs: 10000, headers: { Referer: url } });
   if (!tokenPage) return [];
   return hubFileButtons(tokenPage).slice(0, 4);
 }
@@ -158,9 +159,10 @@ function vcloudPageMatchesEpisode(pageTitle, type, season, episode) {
   return !VCLOUD_EPISODE_TAG_RE.test(pageTitle) || util.episodeMatches(pageTitle, season, episode);
 }
 
-async function vcloudR2Links(vcloudUrl, referer, type, season, episode, timeoutMs) {
-  const t = timeoutMs || 15000;
-  const page = await http.getText(vcloudUrl, { timeoutMs: t, headers: { Referer: referer } });
+async function vcloudR2Links(vcloudUrl, referer, type, season, episode, ctx) {
+  const net = ctx && ctx.http ? ctx.http : http;
+  const timeoutMs = typeof ctx === 'number' ? ctx : (ctx && ctx.timeoutMs) || 15000;
+  const page = await net.getText(vcloudUrl, { timeoutMs: timeoutMs, headers: { Referer: referer } });
   if (!page) return [];
   const pageTitle = (page.match(HTML_TITLE_RE) || [])[1] || '';
   if (ARCHIVE_TITLE_RE.test(pageTitle) || /complete season/i.test(pageTitle)) return [];
@@ -170,7 +172,7 @@ async function vcloudR2Links(vcloudUrl, referer, type, season, episode, timeoutM
   if (!blob) return [];
   const tokenUrl = vcloudDoubleAtob(blob);
   if (!tokenUrl || tokenUrl.indexOf('http') !== 0) return [];
-  const token = await http.getText(tokenUrl, { timeoutMs: t, headers: { Referer: vcloudUrl } });
+  const token = await net.getText(tokenUrl, { timeoutMs: timeoutMs, headers: { Referer: vcloudUrl } });
   if (!token) return [];
 
   const out = [];
@@ -192,7 +194,7 @@ async function vcloudR2Links(vcloudUrl, referer, type, season, episode, timeoutM
   }
   const gpdl = token.match(GPDL_URL_RE) || [];
   for (let i = 0; i < gpdl.length; i += 1) {
-    const files = await hubDriveFiles(gpdl[i], tokenUrl);
+    const files = await hubDriveFiles(gpdl[i], tokenUrl, net);
     files.forEach(function (file) {
       if (!seen[file.url]) {
         seen[file.url] = true;

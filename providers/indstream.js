@@ -29,6 +29,8 @@ var require_http = __commonJS({
   "src/indstream/http.js"(exports2, module2) {
     "use strict";
     var DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    function noop() {
+    }
     function baseHeaders(extra) {
       const headers = {
         "User-Agent": DEFAULT_UA,
@@ -44,27 +46,78 @@ var require_http = __commonJS({
       }
       return headers;
     }
-    function timeoutSignal(ms) {
-      if (typeof AbortController === "undefined") return { signal: void 0, cancel: function() {
-      } };
-      const controller = new AbortController();
-      const timer = setTimeout(function() {
-        try {
-          controller.abort();
-        } catch (error) {
+    function createAbortController() {
+      if (typeof AbortController === "undefined") return null;
+      try {
+        return new AbortController();
+      } catch (error) {
+        return null;
+      }
+    }
+    function abort(controller) {
+      if (!controller) return;
+      try {
+        controller.abort();
+      } catch (error) {
+      }
+    }
+    function timeoutSignal(ms, externalSignal) {
+      const controller = createAbortController();
+      if (!controller) return { signal: externalSignal, cancel: noop, controlled: false };
+      const onAbort = function() {
+        abort(controller);
+      };
+      const timer = setTimeout(onAbort, Math.max(1, ms || 12e3));
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          onAbort();
+        } else if (typeof externalSignal.addEventListener === "function") {
+          externalSignal.addEventListener("abort", onAbort);
         }
-      }, Math.max(1e3, ms || 12e3));
+      }
       return {
         signal: controller.signal,
+        controlled: true,
         cancel: function() {
           clearTimeout(timer);
+          if (externalSignal && typeof externalSignal.removeEventListener === "function") {
+            externalSignal.removeEventListener("abort", onAbort);
+          }
         }
       };
+    }
+    function failure(url, message) {
+      return { ok: false, status: 0, url, headers: null, text: "", error: message };
+    }
+    function timed(promise, ms) {
+      return new Promise(function(resolve, reject) {
+        const timer = setTimeout(function() {
+          resolve(null);
+        }, Math.max(1, ms || 12e3));
+        promise.then(
+          function(value) {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          function(error) {
+            clearTimeout(timer);
+            reject(error);
+          }
+        );
+      });
     }
     function request(url, options) {
       return __async(this, null, function* () {
         const opts = options || {};
-        const guard = timeoutSignal(opts.timeoutMs || 12e3);
+        if (opts.signal && opts.signal.aborted) return failure(url, "aborted");
+        const deadline = Number(opts.deadline) || 0;
+        let timeoutMs = Number(opts.timeoutMs) || 12e3;
+        if (deadline) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) return failure(url, "deadline exceeded");
+          timeoutMs = Math.min(timeoutMs, remaining);
+        }
+        const guard = timeoutSignal(timeoutMs, opts.signal);
         const headers = baseHeaders(opts.headers);
         const init = {
           method: opts.method || "GET",
@@ -75,7 +128,9 @@ var require_http = __commonJS({
         if (opts.body != null) init.body = opts.body;
         if (opts.credentials) init.credentials = opts.credentials;
         try {
-          const response = yield fetch(url, init);
+          const pending = guard.controlled ? fetch(url, init) : timed(fetch(url, init), timeoutMs);
+          const response = yield pending;
+          if (!response) return failure(url, "timeout");
           const text = yield response.text();
           return {
             ok: response.ok,
@@ -86,7 +141,7 @@ var require_http = __commonJS({
           };
         } catch (error) {
           const message = error && error.message ? error.message : String(error);
-          return { ok: false, status: 0, url, headers: null, text: "", error: message };
+          return failure(url, message);
         } finally {
           guard.cancel();
         }
@@ -114,6 +169,8 @@ var require_http = __commonJS({
         method: "POST",
         body: payload,
         timeoutMs: opts.timeoutMs,
+        deadline: opts.deadline,
+        signal: opts.signal,
         headers: Object.assign(
           {
             "Content-Type": "application/json",
@@ -137,6 +194,8 @@ var require_http = __commonJS({
         method: "POST",
         body: payload,
         timeoutMs: opts.timeoutMs,
+        deadline: opts.deadline,
+        signal: opts.signal,
         headers: Object.assign(
           {
             "Content-Type": "application/json",
@@ -174,12 +233,19 @@ var require_http = __commonJS({
         return results;
       });
     }
-    function withTimeout(promise, ms, fallback) {
-      return new Promise(function(resolve) {
-        let settled = false;
-        const timer = setTimeout(function() {
+    function withTimeout(promise, ms, fallback, onTimeout) {
+      let settled = false;
+      let timer = null;
+      const wrapped = new Promise(function(resolve) {
+        timer = setTimeout(function() {
           if (settled) return;
           settled = true;
+          if (onTimeout) {
+            try {
+              onTimeout();
+            } catch (error) {
+            }
+          }
           resolve(fallback);
         }, Math.max(250, ms || 12e3));
         Promise.resolve(promise).then(
@@ -197,9 +263,44 @@ var require_http = __commonJS({
           }
         );
       });
+      wrapped.cancel = function() {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+      };
+      return wrapped;
+    }
+    function scope(ctx) {
+      const base = ctx || {};
+      function merge(options) {
+        const opts = Object.assign({}, options || {});
+        if (opts.deadline == null && base.deadline) opts.deadline = base.deadline;
+        if (opts.signal == null && base.signal) opts.signal = base.signal;
+        return opts;
+      }
+      return {
+        request: function(url, options) {
+          return request(url, merge(options));
+        },
+        getText: function(url, options) {
+          return getText(url, merge(options));
+        },
+        getJson: function(url, options) {
+          return getJson(url, merge(options));
+        },
+        postJson: function(url, body, options) {
+          return postJson(url, body, merge(options));
+        },
+        postText: function(url, body, options) {
+          return postText(url, body, merge(options));
+        }
+      };
     }
     module2.exports = {
       DEFAULT_UA,
+      createAbortController,
+      abort,
+      scope,
       request,
       getText,
       getJson,
@@ -245,14 +346,21 @@ var require_tmdb = __commonJS({
       });
       return pairs.join("&");
     }
-    function apiGet(path, params) {
+    function apiGet(path, params, opts) {
       return __async(this, null, function* () {
         const allKeys = keys();
         const suffix = query(Object.assign({}, params || {}));
+        const options = opts || {};
         for (let i = 0; i < allKeys.length; i += 1) {
           for (let h = 0; h < API_HOSTS.length; h += 1) {
+            if (options.deadline && Date.now() >= options.deadline) return null;
+            if (options.signal && options.signal.aborted) return null;
             const url = API_HOSTS[h] + path + "?api_key=" + encodeURIComponent(allKeys[i]) + (suffix ? "&" + suffix : "");
-            const json = yield http2.getJson(url, { timeoutMs: 3e3 });
+            const json = yield http2.getJson(url, {
+              timeoutMs: 3e3,
+              deadline: options.deadline,
+              signal: options.signal
+            });
             if (json && !json.status_code) return json;
           }
         }
@@ -300,14 +408,14 @@ var require_tmdb = __commonJS({
         })
       };
     }
-    function fetchMeta(tmdbId, type) {
+    function fetchMeta(tmdbId, type, opts) {
       return __async(this, null, function* () {
         const id = String(tmdbId || "").trim();
         if (!id) return null;
         const kind = type === "tv" || type === "series" ? "tv" : "movie";
         const cacheKey = kind + ":" + id;
         if (metaCache[cacheKey]) return metaCache[cacheKey];
-        const raw = yield apiGet("/" + kind + "/" + id, { append_to_response: "external_ids" });
+        const raw = yield apiGet("/" + kind + "/" + id, { append_to_response: "external_ids" }, opts);
         if (!raw) return null;
         const meta = normalizeMeta(raw, kind);
         if (meta) metaCache[cacheKey] = meta;
@@ -320,14 +428,14 @@ var require_tmdb = __commonJS({
       const list = kind === "tv" ? raw.tv_results : raw.movie_results;
       return Array.isArray(list) && list.length ? list[0] : null;
     }
-    function findMetaByImdb(imdbId, type) {
+    function findMetaByImdb(imdbId, type, opts) {
       return __async(this, null, function* () {
         const id = normalizeImdbId(imdbId);
         if (!id) return null;
         const kind = type === "tv" || type === "series" ? "tv" : "movie";
         const cacheKey = kind + ":" + id;
         if (findCache[cacheKey]) return findCache[cacheKey];
-        const raw = yield apiGet("/find/" + id, { external_source: "imdb_id" });
+        const raw = yield apiGet("/find/" + id, { external_source: "imdb_id" }, opts);
         const item = firstFindResult(raw, kind);
         if (!item) return null;
         const meta = normalizeMeta(item, kind);
@@ -338,14 +446,14 @@ var require_tmdb = __commonJS({
         return meta;
       });
     }
-    function resolveMeta(value, type) {
+    function resolveMeta(value, type, opts) {
       return __async(this, null, function* () {
         const imdbId = normalizeImdbId(value);
-        if (imdbId) return findMetaByImdb(imdbId, type);
-        return fetchMeta(String(value == null ? "" : value).trim(), type);
+        if (imdbId) return findMetaByImdb(imdbId, type, opts);
+        return fetchMeta(String(value == null ? "" : value).trim(), type, opts);
       });
     }
-    function resolveImdbId(tmdbId, type, meta) {
+    function resolveImdbId(tmdbId, type, meta, opts) {
       return __async(this, null, function* () {
         const id = String(tmdbId || "").trim();
         if (!id) return "";
@@ -356,7 +464,7 @@ var require_tmdb = __commonJS({
           imdbCache[cacheKey] = meta.imdbId;
           return meta.imdbId;
         }
-        const raw = yield apiGet("/" + kind + "/" + id + "/external_ids");
+        const raw = yield apiGet("/" + kind + "/" + id + "/external_ids", null, opts);
         const imdb = raw && raw.imdb_id ? String(raw.imdb_id) : "";
         if (imdb) imdbCache[cacheKey] = imdb;
         return imdb;
@@ -372,206 +480,6 @@ var require_tmdb = __commonJS({
       _test: {
         firstFindResult
       }
-    };
-  }
-});
-
-// src/indstream/settings.js
-var require_settings = __commonJS({
-  "src/indstream/settings.js"(exports2, module2) {
-    "use strict";
-    var DEFAULTS = {
-      minQuality: "720",
-      resultLimit: "40",
-      requestTimeout: "15",
-      probeQuality: false,
-      includeDash: true,
-      sourceHdhub: true,
-      sourceVidrift: true,
-      sourceBingr: true,
-      sourceMoviebox: true,
-      sourceHub4k: true,
-      sourceFsl: true,
-      debug: false
-    };
-    var SETTINGS_LAYOUT = [
-      {
-        type: "info",
-        label: "One settings page for IndStream. Every enabled provider runs independently and only contributes its own streams."
-      },
-      {
-        type: "header",
-        label: "Playback"
-      },
-      {
-        type: "select",
-        key: "minQuality",
-        label: "Minimum quality",
-        description: "Streams whose height is known and below this are dropped. Unknown heights are kept.",
-        defaultValue: "720",
-        options: [
-          { label: "720p", value: "720" },
-          { label: "1080p", value: "1080" },
-          { label: "Best available", value: "0" }
-        ]
-      },
-      {
-        type: "select",
-        key: "resultLimit",
-        label: "Maximum results",
-        description: "Caps how many streams are returned per request.",
-        defaultValue: "40",
-        options: [
-          { label: "20", value: "20" },
-          { label: "40", value: "40" },
-          { label: "80", value: "80" },
-          { label: "No limit", value: "0" }
-        ]
-      },
-      {
-        type: "select",
-        key: "requestTimeout",
-        label: "Provider timeout",
-        description: "Upper bound for a single provider. Providers that finish sooner still return first.",
-        defaultValue: "15",
-        options: [
-          { label: "10 seconds", value: "10" },
-          { label: "15 seconds", value: "15" },
-          { label: "25 seconds", value: "25" }
-        ]
-      },
-      {
-        type: "toggle",
-        key: "probeQuality",
-        label: "Probe unknown quality",
-        description: "Reads HLS/DASH manifests to detect the real height. Slower, but labels more streams.",
-        defaultValue: false
-      },
-      {
-        type: "toggle",
-        key: "includeDash",
-        label: "Include DASH streams",
-        description: "Adds DASH manifests, which not every player supports. Turn off if playback fails.",
-        defaultValue: true
-      },
-      {
-        type: "header",
-        label: "Providers"
-      },
-      {
-        type: "toggle",
-        key: "sourceHdhub",
-        label: "HdHub",
-        description: "Fast aggregator: instant HLS streams plus 4K file links.",
-        defaultValue: true
-      },
-      {
-        type: "toggle",
-        key: "sourceVidrift",
-        label: "Vidrift",
-        description: "Embed player with direct HLS/MP4 links.",
-        defaultValue: true
-      },
-      {
-        type: "toggle",
-        key: "sourceBingr",
-        label: "Bingr",
-        description: "Multi-server JSON API. Usually the fastest source.",
-        defaultValue: true
-      },
-      {
-        type: "toggle",
-        key: "sourceMoviebox",
-        label: "MovieBox",
-        description: "Title-keyed catalogue with download and playback renditions.",
-        defaultValue: true
-      },
-      {
-        type: "toggle",
-        key: "sourceHub4k",
-        label: "4KHDHub",
-        description: "4K-first release pages resolved through file-host gateways.",
-        defaultValue: true
-      },
-      {
-        type: "toggle",
-        key: "sourceFsl",
-        label: "FSL",
-        description: "Fast file links from release blogs. Heaviest source, so it runs last.",
-        defaultValue: true
-      },
-      {
-        type: "header",
-        label: "Diagnostics"
-      },
-      {
-        type: "toggle",
-        key: "debug",
-        label: "Verbose logging",
-        description: "Logs each source result count and timing. Useful when a source stops working.",
-        defaultValue: false
-      }
-    ];
-    var PROVIDER_SETTINGS = {
-      hdhub: "sourceHdhub",
-      vidrift: "sourceVidrift",
-      bingr: "sourceBingr",
-      moviebox: "sourceMoviebox",
-      hub4k: "sourceHub4k",
-      fsl: "sourceFsl"
-    };
-    function readGlobalSettings() {
-      const scope = typeof globalThis !== "undefined" ? globalThis : {};
-      let raw = scope.SCRAPER_SETTINGS;
-      if (typeof raw === "string") {
-        try {
-          raw = JSON.parse(raw);
-        } catch (error) {
-          raw = null;
-        }
-      }
-      return raw && typeof raw === "object" ? raw : {};
-    }
-    function normalizeBool(value, fallback) {
-      if (value === true || value === "true" || value === 1 || value === "1") return true;
-      if (value === false || value === "false" || value === 0 || value === "0") return false;
-      return fallback;
-    }
-    function pick(value, allowed, fallback) {
-      const text = value == null ? "" : String(value);
-      return allowed.indexOf(text) >= 0 ? text : fallback;
-    }
-    function getSettings() {
-      const raw = readGlobalSettings();
-      const merged = Object.assign({}, DEFAULTS);
-      Object.keys(raw).forEach(function(key) {
-        if (raw[key] != null) merged[key] = raw[key];
-      });
-      const settings2 = {
-        minQuality: Number(pick(merged.minQuality, ["0", "720", "1080"], DEFAULTS.minQuality)),
-        resultLimit: Number(pick(merged.resultLimit, ["0", "20", "40", "80"], DEFAULTS.resultLimit)),
-        requestTimeout: Number(pick(merged.requestTimeout, ["10", "15", "25"], DEFAULTS.requestTimeout)),
-        probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
-        includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
-        debug: normalizeBool(merged.debug, DEFAULTS.debug),
-        sources: {}
-      };
-      Object.keys(PROVIDER_SETTINGS).forEach(function(id) {
-        settings2.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
-      });
-      if (!settings2.minQuality) settings2.minQuality = 0;
-      if (!settings2.requestTimeout) settings2.requestTimeout = 15;
-      return settings2;
-    }
-    function onSettings2() {
-      return SETTINGS_LAYOUT;
-    }
-    module2.exports = {
-      DEFAULTS,
-      SETTINGS_LAYOUT,
-      PROVIDER_SETTINGS,
-      getSettings,
-      onSettings: onSettings2
     };
   }
 });
@@ -755,8 +663,9 @@ var require_util = __commonJS({
     }
     function isKnownBelowFloor(height, floor) {
       const value = Number(height) || 0;
-      const minimum = Number(floor) || 720;
-      return value > 0 && value < minimum;
+      const raw = floor == null || floor === "" ? 720 : Number(floor);
+      const minimum = Number.isFinite(raw) ? raw : 720;
+      return value > 0 && minimum > 0 && value < minimum;
     }
     function languageNames(raw) {
       const text = String(raw == null ? "" : raw).trim();
@@ -919,17 +828,21 @@ var require_util = __commonJS({
       result.languages = languageNames(langs.join(" "));
       return result;
     }
-    function dedupeStreams(streams) {
-      const seen = {};
-      const out = [];
+    function dedupeStreams(streams, compare) {
+      const byKey = {};
       (streams || []).forEach(function(stream) {
         if (!stream || !stream.url) return;
-        let key = stream.url;
-        const noQuery = key.split("#")[0].split("?")[0];
-        if (seen[key] || seen[noQuery]) return;
-        seen[key] = true;
-        seen[noQuery] = true;
-        out.push(stream);
+        const key = String(stream.url).split("#")[0].split("?")[0];
+        const existing = byKey[key];
+        if (!existing) {
+          byKey[key] = stream;
+          return;
+        }
+        if (compare && compare(stream, existing) < 0) byKey[key] = stream;
+      });
+      const out = [];
+      Object.keys(byKey).forEach(function(key) {
+        out.push(byKey[key]);
       });
       return out;
     }
@@ -1129,14 +1042,19 @@ var require_hdhub = __commonJS({
       speed: "very-fast",
       supports: { movie: true, tv: true },
       raceTimeoutMs: 5e3,
-      timeoutMs: 8e3,
+      toggle: {
+        key: "sourceHdhub",
+        label: "HdHub",
+        description: "Fast aggregator: instant HLS streams plus 4K file links."
+      },
       resolve(ctx) {
         return __async(this, null, function* () {
+          const net = ctx.http || http2;
           const type = ctx.type;
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           let imdbId = meta && meta.imdbId || ctx.imdbId || "";
           if (!imdbId && ctx.tmdbId) {
-            imdbId = yield tmdb2.resolveImdbId(ctx.tmdbId, type, meta);
+            imdbId = yield tmdb2.resolveImdbId(ctx.tmdbId, type, meta, ctx);
           }
           let pathId = "";
           if (imdbId) {
@@ -1153,7 +1071,7 @@ var require_hdhub = __commonJS({
           if (!pathId) return [];
           const kind = type === "tv" || type === "series" ? "series" : "movie";
           const url = BASE + "/stream/" + kind + "/" + pathId + ".json";
-          const json = yield http2.getJson(url, { timeoutMs: ctx.timeoutMs });
+          const json = yield net.getJson(url, { timeoutMs: ctx.timeoutMs });
           if (!json || !Array.isArray(json.streams)) return [];
           const out = [];
           const seen = {};
@@ -1203,19 +1121,25 @@ var require_vidrift = __commonJS({
       speed: "fast",
       supports: { movie: true, tv: true },
       raceTimeoutMs: 5e3,
-      timeoutMs: 12e3,
+      toggle: {
+        key: "sourceVidrift",
+        label: "Vidrift",
+        description: "Embed player with direct HLS/MP4 links."
+      },
       resolve(ctx) {
         return __async(this, null, function* () {
+          const net = ctx.http || http2;
           const type = ctx.type;
           const season = Number(ctx.season) || 0;
           const episode = Number(ctx.episode) || 0;
+          if (ctx.deadline && Date.now() >= ctx.deadline) return [];
           if (!ctx.tmdbId) {
             ctx.log("vidrift: missing tmdb id, skipping");
             return [];
           }
           if (type === "tv" && (season <= 0 || episode <= 0)) return [];
           const page = type === "movie" ? BASE + "/embed/movie/" + ctx.tmdbId : BASE + "/embed/tv/" + ctx.tmdbId + "/" + season + "/" + episode;
-          const html = yield http2.getText(page, {
+          const html = yield net.getText(page, {
             timeoutMs: ctx.timeoutMs,
             headers: { Referer: BASE + "/" }
           });
@@ -1306,9 +1230,14 @@ var require_bingr = __commonJS({
       speed: "very-fast",
       supports: { movie: true, tv: true },
       raceTimeoutMs: 5e3,
-      timeoutMs: 15e3,
+      toggle: {
+        key: "sourceBingr",
+        label: "Bingr",
+        description: "Multi-server JSON API. Usually the fastest source."
+      },
       resolve(ctx) {
         return __async(this, null, function* () {
+          const net = ctx.http || http2;
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
@@ -1330,10 +1259,10 @@ var require_bingr = __commonJS({
           for (let i = 0; i < SRVS.length; i += 1) {
             const srv = SRVS[i];
             if (out.length >= 6 || Date.now() > deadline) break;
-            const text = srv === "s40" && type === "tv" ? yield http2.getText(API + "/aphelion-tv/" + id + "/" + (ctx.season || 1) + "/" + (ctx.episode || 1), {
+            const text = srv === "s40" && type === "tv" ? yield net.getText(API + "/aphelion-tv/" + id + "/" + (ctx.season || 1) + "/" + (ctx.episode || 1), {
               timeoutMs: 6e3,
               headers: { Referer: REFERER }
-            }) : yield http2.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
+            }) : yield net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
               timeoutMs: 6e3,
               headers: postHeaders
             });
@@ -1426,7 +1355,11 @@ var require_moviebox = __commonJS({
       speed: "normal",
       supports: { movie: true, tv: true },
       raceTimeoutMs: 6e3,
-      timeoutMs: 2e4,
+      toggle: {
+        key: "sourceMoviebox",
+        label: "MovieBox",
+        description: "Title-keyed catalogue with download and playback renditions."
+      },
       resolve(ctx) {
         return __async(this, null, function* () {
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
@@ -1440,12 +1373,12 @@ var require_moviebox = __commonJS({
           const seasonKey = Number(ctx.season) > 0 ? Number(ctx.season) : 1;
           const episodeKey = Number(ctx.episode) > 0 ? Number(ctx.episode) : 1;
           const subjectType = type === "movie" ? 1 : 2;
-          const token = yield fetchBearer(false);
+          const token = yield fetchBearer(false, ctx);
           if (!token) return [];
           let baseHeaders = headersFor(token);
           let items = yield searchItems(baseHeaders, title, subjectType, ctx);
           if ((!items || !items.length) && Date.now() < deadline - 2e3) {
-            const fresh = yield fetchBearer(true);
+            const fresh = yield fetchBearer(true, ctx);
             if (fresh) {
               baseHeaders = headersFor(fresh);
               items = yield searchItems(baseHeaders, title, subjectType, ctx);
@@ -1480,7 +1413,8 @@ var require_moviebox = __commonJS({
     };
     function searchItems(baseHeaders, title, subjectType, ctx) {
       return __async(this, null, function* () {
-        const json = yield http2.postJson(BASE + "/wefeed-h5api-bff/subject/search", {
+        const net = ctx.http || http2;
+        const json = yield net.postJson(BASE + "/wefeed-h5api-bff/subject/search", {
           keyword: title,
           page: 1,
           perPage: 24,
@@ -1506,10 +1440,11 @@ var require_moviebox = __commonJS({
         "User-Agent": http2.DEFAULT_UA
       };
     }
-    function fetchBearer(forceRefresh) {
+    function fetchBearer(forceRefresh, ctx) {
       return __async(this, null, function* () {
         if (!forceRefresh && tokenCache && Date.now() - tokenAt < TOKEN_TTL_MS) return tokenCache;
-        const res = yield http2.request(BASE + "/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox", {
+        const net = ctx && ctx.http || http2;
+        const res = yield net.request(BASE + "/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox", {
           timeoutMs: 8e3
         });
         const xUser = res.headers && res.headers.get ? res.headers.get("x-user") : "";
@@ -1562,9 +1497,10 @@ var require_moviebox = __commonJS({
     }
     function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx) {
       return __async(this, null, function* () {
+        const net = ctx.http || http2;
         let detailPath = ref.detailPath;
         if (!detailPath) {
-          const json = yield http2.getJson(BASE + "/wefeed-h5-bff/web/post/list/subject?id=" + ref.id, {
+          const json = yield net.getJson(BASE + "/wefeed-h5-bff/web/post/list/subject?id=" + ref.id, {
             timeoutMs: 8e3,
             headers: baseHeaders
           });
@@ -1622,14 +1558,16 @@ var require_moviebox = __commonJS({
             });
           });
         };
-        const downloadJson = yield http2.getJson(BASE + "/wefeed-h5api-bff/subject/download?" + params, {
+        const downloadJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/download?" + params, {
           timeoutMs: 8e3,
           headers: reqHeaders
         });
         add(unwrapData(downloadJson).downloads, false);
+        if (ctx.deadline && Date.now() >= ctx.deadline) return out;
         yield util2.sleep(Math.max(0, 1500 - (Date.now() - lastPlayAt)));
+        if (ctx.deadline && Date.now() >= ctx.deadline) return out;
         lastPlayAt = Date.now();
-        const playJson = yield http2.getJson(BASE + "/wefeed-h5api-bff/subject/play?" + params, {
+        const playJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/play?" + params, {
           timeoutMs: 8e3,
           headers: reqHeaders
         });
@@ -1905,11 +1843,12 @@ var require_filehost = __commonJS({
       });
       return out;
     }
-    function hubDriveFiles(driveUrl, referer) {
+    function hubDriveFiles(driveUrl, referer, client) {
       return __async(this, null, function* () {
+        const net = client || http2;
         const url = String(driveUrl || "");
         if (/hubdrive\.|hubcdn\./i.test(url)) {
-          const index = yield http2.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
+          const index = yield net.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
           if (!index) return [];
           const reurl = (index.match(REURL_VAR_RE) || [])[1];
           if (reurl) {
@@ -1920,9 +1859,9 @@ var require_filehost = __commonJS({
             }
           }
           const next = (index.match(HUB_DRIVE_NEXT_RE) || [])[0];
-          return next ? hubDriveFiles(next, url) : [];
+          return next ? hubDriveFiles(next, url, net) : [];
         }
-        const page = yield http2.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
+        const page = yield net.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
         if (!page) return [];
         const google = googleVideoLink(page, url);
         if (google) return [{ url: google, quality: util2.qualityText(page), language: "" }];
@@ -1931,7 +1870,7 @@ var require_filehost = __commonJS({
         if (!tokenAbs && !tokenRel) return [];
         const origin = util2.originOf(url);
         const tokenUrl = tokenAbs || origin + "/" + tokenRel;
-        const tokenPage = yield http2.getText(tokenUrl, { timeoutMs: 1e4, headers: { Referer: url } });
+        const tokenPage = yield net.getText(tokenUrl, { timeoutMs: 1e4, headers: { Referer: url } });
         if (!tokenPage) return [];
         return hubFileButtons(tokenPage).slice(0, 4);
       });
@@ -1968,10 +1907,11 @@ var require_filehost = __commonJS({
       if (type !== "tv" || !season || !episode) return true;
       return !VCLOUD_EPISODE_TAG_RE.test(pageTitle) || util2.episodeMatches(pageTitle, season, episode);
     }
-    function vcloudR2Links(vcloudUrl, referer, type, season, episode, timeoutMs) {
+    function vcloudR2Links(vcloudUrl, referer, type, season, episode, ctx) {
       return __async(this, null, function* () {
-        const t = timeoutMs || 15e3;
-        const page = yield http2.getText(vcloudUrl, { timeoutMs: t, headers: { Referer: referer } });
+        const net = ctx && ctx.http ? ctx.http : http2;
+        const timeoutMs = typeof ctx === "number" ? ctx : ctx && ctx.timeoutMs || 15e3;
+        const page = yield net.getText(vcloudUrl, { timeoutMs, headers: { Referer: referer } });
         if (!page) return [];
         const pageTitle = (page.match(HTML_TITLE_RE) || [])[1] || "";
         if (ARCHIVE_TITLE_RE.test(pageTitle) || /complete season/i.test(pageTitle)) return [];
@@ -1980,7 +1920,7 @@ var require_filehost = __commonJS({
         if (!blob) return [];
         const tokenUrl = vcloudDoubleAtob(blob);
         if (!tokenUrl || tokenUrl.indexOf("http") !== 0) return [];
-        const token = yield http2.getText(tokenUrl, { timeoutMs: t, headers: { Referer: vcloudUrl } });
+        const token = yield net.getText(tokenUrl, { timeoutMs, headers: { Referer: vcloudUrl } });
         if (!token) return [];
         const out = [];
         const seen = {};
@@ -2001,7 +1941,7 @@ var require_filehost = __commonJS({
         }
         const gpdl = token.match(GPDL_URL_RE) || [];
         for (let i = 0; i < gpdl.length; i += 1) {
-          const files = yield hubDriveFiles(gpdl[i], tokenUrl);
+          const files = yield hubDriveFiles(gpdl[i], tokenUrl, net);
           files.forEach(function(file) {
             if (!seen[file.url]) {
               seen[file.url] = true;
@@ -2045,9 +1985,14 @@ var require_hub4k = __commonJS({
       speed: "slow",
       supports: { movie: true, tv: true },
       raceTimeoutMs: 7e3,
-      timeoutMs: 25e3,
+      toggle: {
+        key: "sourceHub4k",
+        label: "4KHDHub",
+        description: "4K-first release pages resolved through file-host gateways."
+      },
       resolve(ctx) {
         return __async(this, null, function* () {
+          const net = ctx.http || http2;
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
           const title = meta && meta.title ? meta.title : "";
           const year = meta && meta.year ? meta.year : "";
@@ -2060,8 +2005,9 @@ var require_hub4k = __commonJS({
           let searchHtml = "";
           let fallback = null;
           for (let i = 0; i < BASES.length; i += 1) {
+            if (Date.now() > deadline) break;
             const candidate = BASES[i];
-            const h = yield http2.getText(candidate + "/?s=" + encodeURIComponent(title), {
+            const h = yield net.getText(candidate + "/?s=" + encodeURIComponent(title), {
               timeoutMs: 8e3,
               headers: { Referer: candidate + "/" }
             });
@@ -2091,7 +2037,7 @@ var require_hub4k = __commonJS({
           for (let i = 0; i < Math.min(2, ranked.length); i += 1) {
             if (Date.now() > deadline) break;
             const card = ranked[i].card;
-            const post = yield http2.getText(card.url, {
+            const post = yield net.getText(card.url, {
               timeoutMs: 8e3,
               headers: { Referer: base + "/" }
             });
@@ -2110,7 +2056,7 @@ var require_hub4k = __commonJS({
               for (let g = 0; g < item.gatewayUrls.length; g += 1) {
                 if (Date.now() > deadline) break;
                 const gateway = item.gatewayUrls[g];
-                const gwPage = yield http2.getText(gateway, {
+                const gwPage = yield net.getText(gateway, {
                   timeoutMs: 1e4,
                   headers: { Referer: card.url }
                 });
@@ -2122,7 +2068,7 @@ var require_hub4k = __commonJS({
                 if (!resolvedDrive) continue;
                 let finalDrive = resolvedDrive;
                 if (/hubdrive\./i.test(resolvedDrive)) {
-                  const innerPage = yield http2.getText(resolvedDrive, {
+                  const innerPage = yield net.getText(resolvedDrive, {
                     timeoutMs: 8e3,
                     headers: { Referer: card.url }
                   });
@@ -2135,7 +2081,7 @@ var require_hub4k = __commonJS({
                   finalDrive = mirror;
                 }
                 const referer = util2.originOf(finalDrive) || "https://hubcloud.ist/";
-                const files = yield filehost.hubDriveFiles(finalDrive, card.url);
+                const files = yield filehost.hubDriveFiles(finalDrive, card.url, net);
                 for (let f = 0; f < files.length; f += 1) {
                   if (Date.now() > deadline) break;
                   const file = files[f];
@@ -2287,7 +2233,11 @@ var require_fsl = __commonJS({
       speed: "slow",
       supports: { movie: true, tv: true },
       raceTimeoutMs: 6e3,
-      timeoutMs: 3e4,
+      toggle: {
+        key: "sourceFsl",
+        label: "FSL",
+        description: "Fast file links from release blogs. Heaviest source, so it runs last."
+      },
       resolve(ctx) {
         return __async(this, null, function* () {
           const meta = yield http2.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6e3, null);
@@ -2303,9 +2253,9 @@ var require_fsl = __commonJS({
           for (let s = 0; s < SEEDS.length; s += 1) {
             if (Date.now() > deadline) break;
             const seed = SEEDS[s];
-            const base = yield fslBase(seed, ctx.timeoutMs);
+            const base = yield fslBase(seed, ctx);
             if (!base) continue;
-            const json = yield fslGet(base + "/ts-search.php?q=" + encodeURIComponent(title) + "&page=1", base, 8e3, ctx.timeoutMs);
+            const json = yield fslGet(base + "/ts-search.php?q=" + encodeURIComponent(title) + "&page=1", base, 8e3, ctx);
             if (!json) continue;
             const hits = fslSearchHits(json);
             if (!hits.length) continue;
@@ -2319,7 +2269,7 @@ var require_fsl = __commonJS({
             for (let r = 0; r < ranked.length; r += 1) {
               if (Date.now() > deadline) break;
               const permalink = util2.resolveUrl(base, ranked[r].hit.permalink);
-              const post = yield fslGet(permalink, base, 1e4, ctx.timeoutMs);
+              const post = yield fslGet(permalink, base, 1e4, ctx);
               if (!post) continue;
               const groups = util2.episodeOrSeason(fslGroups(post), function(g) {
                 return g.heading;
@@ -2339,14 +2289,14 @@ var require_fsl = __commonJS({
                   if (/vcloud\./i.test(gateway)) {
                     cloudLinks = [gateway];
                   } else {
-                    const expanded = yield fslGet(gateway, base, 15e3, ctx.timeoutMs);
+                    const expanded = yield fslGet(gateway, base, 15e3, ctx);
                     if (!expanded) continue;
                     cloudLinks = gatewayLinksOf(expanded).cloud;
                   }
                   const ordered = episodeFirstOrder(cloudLinks, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0);
                   for (let v = 0; v < ordered.length; v += 1) {
                     if (Date.now() > deadline) break;
-                    const links = yield filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx.timeoutMs);
+                    const links = yield filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx);
                     for (let l = 0; l < links.length; l += 1) {
                       if (Date.now() > deadline) break;
                       const link = links[l];
@@ -2381,37 +2331,39 @@ var require_fsl = __commonJS({
         });
       }
     };
-    function fslGet(url, referer, timeoutMs, maxTimeout) {
+    function fslGet(url, referer, timeoutMs, ctx) {
       return __async(this, null, function* () {
-        const t = Math.min(timeoutMs || 12e3, maxTimeout || 3e4);
-        const res = yield http2.request(url, { timeoutMs: t, headers: { Referer: referer || url } });
+        const net = ctx && ctx.http || http2;
+        const maxTimeout = ctx && ctx.timeoutMs || 3e4;
+        const t = Math.min(timeoutMs || 12e3, maxTimeout);
+        const res = yield net.request(url, { timeoutMs: t, headers: { Referer: referer || url } });
         return res.ok ? res.text : "";
       });
     }
-    function fslBase(seed, maxTimeout) {
+    function fslBase(seed, ctx) {
       return __async(this, null, function* () {
         const cached = baseCache[seed.family];
         if (cached && Date.now() - cached.at < 30 * 60 * 1e3) return cached.base;
-        const live = yield fslLive(seed, maxTimeout);
+        const live = yield fslLive(seed, ctx);
         if (!live) return "";
         const liveBase = fslDomainPick(live.html, seed.family) || util2.originOf(live.url);
         baseCache[seed.family] = { base: liveBase, at: Date.now() };
         return liveBase;
       });
     }
-    function fslLive(seed, maxTimeout) {
+    function fslLive(seed, ctx) {
       return __async(this, null, function* () {
-        let html0 = yield fslGet(seed.seed, seed.seed, 1e4, maxTimeout);
+        let html0 = yield fslGet(seed.seed, seed.seed, 1e4, ctx);
         let url0 = seed.seed;
         if (!html0 && seed.bootstrap) {
-          html0 = yield fslGet(seed.bootstrap, seed.bootstrap, 1e4, maxTimeout);
+          html0 = yield fslGet(seed.bootstrap, seed.bootstrap, 1e4, ctx);
           url0 = seed.bootstrap || url0;
         }
         if (!html0) return null;
         if (!fslIsLanding(html0)) return { html: html0, url: url0 };
         const origin = util2.originOf(url0);
         if (!origin) return null;
-        const probed = yield fslGet(origin + FSL_LANDING_PROBE, origin, 12e3, maxTimeout);
+        const probed = yield fslGet(origin + FSL_LANDING_PROBE, origin, 12e3, ctx);
         if (!probed || fslIsLanding(probed)) return null;
         return { html: probed, url: origin };
       });
@@ -2566,9 +2518,187 @@ var require_providers = __commonJS({
     PROVIDERS.forEach(function(provider) {
       BY_ID[provider.id] = provider;
     });
+    function enabled(sources, type, list) {
+      return (list || PROVIDERS).filter(function(provider) {
+        if (sources && sources[provider.id] === false) return false;
+        if (provider.supports && provider.supports[type] === false) return false;
+        return true;
+      });
+    }
     module2.exports = {
       PROVIDERS,
-      BY_ID
+      BY_ID,
+      enabled
+    };
+  }
+});
+
+// src/indstream/settings.js
+var require_settings = __commonJS({
+  "src/indstream/settings.js"(exports2, module2) {
+    "use strict";
+    var providers2 = require_providers();
+    var CORE_DEFAULTS = {
+      minQuality: "720",
+      resultLimit: "40",
+      requestTimeout: "15",
+      probeQuality: false,
+      includeDash: true,
+      debug: false
+    };
+    function toggleKeyOf(provider) {
+      if (provider.toggle && provider.toggle.key) return provider.toggle.key;
+      return "source" + provider.id.charAt(0).toUpperCase() + provider.id.slice(1);
+    }
+    function toggleDefaultOf(provider) {
+      return provider.toggle && provider.toggle.defaultValue === false ? false : true;
+    }
+    var PROVIDER_SETTINGS = {};
+    var PROVIDER_DEFAULTS = {};
+    providers2.PROVIDERS.forEach(function(provider) {
+      const key = toggleKeyOf(provider);
+      PROVIDER_SETTINGS[provider.id] = key;
+      PROVIDER_DEFAULTS[key] = toggleDefaultOf(provider);
+    });
+    var DEFAULTS = Object.assign({}, CORE_DEFAULTS, PROVIDER_DEFAULTS);
+    function providerToggle(provider) {
+      const meta = provider.toggle || {};
+      return {
+        type: "toggle",
+        key: toggleKeyOf(provider),
+        label: meta.label || provider.name || provider.id,
+        description: meta.description || "",
+        defaultValue: toggleDefaultOf(provider)
+      };
+    }
+    var SETTINGS_LAYOUT = [
+      {
+        type: "info",
+        label: "One settings page for IndStream. Every enabled provider runs independently and only contributes its own streams."
+      },
+      {
+        type: "header",
+        label: "Playback"
+      },
+      {
+        type: "select",
+        key: "minQuality",
+        label: "Minimum quality",
+        description: "Streams whose height is known and below this are dropped. Unknown heights are kept.",
+        defaultValue: "720",
+        options: [
+          { label: "720p", value: "720" },
+          { label: "1080p", value: "1080" },
+          { label: "Best available", value: "0" }
+        ]
+      },
+      {
+        type: "select",
+        key: "resultLimit",
+        label: "Maximum results",
+        description: "Caps how many streams are returned per request.",
+        defaultValue: "40",
+        options: [
+          { label: "20", value: "20" },
+          { label: "40", value: "40" },
+          { label: "80", value: "80" },
+          { label: "No limit", value: "0" }
+        ]
+      },
+      {
+        type: "select",
+        key: "requestTimeout",
+        label: "Provider timeout",
+        description: "Upper bound for a single provider. Providers that finish sooner still return first.",
+        defaultValue: "15",
+        options: [
+          { label: "10 seconds", value: "10" },
+          { label: "15 seconds", value: "15" },
+          { label: "25 seconds", value: "25" }
+        ]
+      },
+      {
+        type: "toggle",
+        key: "probeQuality",
+        label: "Probe unknown quality",
+        description: "Reads HLS/DASH manifests to detect the real height. Slower, but labels more streams.",
+        defaultValue: false
+      },
+      {
+        type: "toggle",
+        key: "includeDash",
+        label: "Include DASH streams",
+        description: "Adds DASH manifests, which not every player supports. Turn off if playback fails.",
+        defaultValue: true
+      },
+      {
+        type: "header",
+        label: "Providers"
+      }
+    ].concat(providers2.PROVIDERS.map(providerToggle)).concat([
+      {
+        type: "header",
+        label: "Diagnostics"
+      },
+      {
+        type: "toggle",
+        key: "debug",
+        label: "Verbose logging",
+        description: "Logs each source result count and timing. Useful when a source stops working.",
+        defaultValue: false
+      }
+    ]);
+    function readGlobalSettings() {
+      const scope = typeof globalThis !== "undefined" ? globalThis : {};
+      let raw = scope.SCRAPER_SETTINGS;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch (error) {
+          raw = null;
+        }
+      }
+      return raw && typeof raw === "object" ? raw : {};
+    }
+    function normalizeBool(value, fallback) {
+      if (value === true || value === "true" || value === 1 || value === "1") return true;
+      if (value === false || value === "false" || value === 0 || value === "0") return false;
+      return fallback;
+    }
+    function pick(value, allowed, fallback) {
+      const text = value == null ? "" : String(value);
+      return allowed.indexOf(text) >= 0 ? text : fallback;
+    }
+    function getSettings() {
+      const raw = readGlobalSettings();
+      const merged = Object.assign({}, DEFAULTS);
+      Object.keys(raw).forEach(function(key) {
+        if (raw[key] != null) merged[key] = raw[key];
+      });
+      const settings2 = {
+        minQuality: Number(pick(merged.minQuality, ["0", "720", "1080"], DEFAULTS.minQuality)),
+        resultLimit: Number(pick(merged.resultLimit, ["0", "20", "40", "80"], DEFAULTS.resultLimit)),
+        requestTimeout: Number(pick(merged.requestTimeout, ["10", "15", "25"], DEFAULTS.requestTimeout)),
+        probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
+        includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
+        debug: normalizeBool(merged.debug, DEFAULTS.debug),
+        sources: {}
+      };
+      Object.keys(PROVIDER_SETTINGS).forEach(function(id) {
+        settings2.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
+      });
+      if (!settings2.requestTimeout) settings2.requestTimeout = 15;
+      return settings2;
+    }
+    function onSettings2() {
+      return SETTINGS_LAYOUT;
+    }
+    module2.exports = {
+      DEFAULTS,
+      SETTINGS_LAYOUT,
+      PROVIDER_SETTINGS,
+      getSettings,
+      onSettings: onSettings2
     };
   }
 });
@@ -2581,7 +2711,7 @@ var require_racer = __commonJS({
     var GRACE_MS = 2e3;
     var OVERALL_MAX_MS = 14e3;
     function capOf(provider, settings2) {
-      const own = Number(provider.raceTimeoutMs) || Number(provider.timeoutMs) || 12e3;
+      const own = Number(provider.raceTimeoutMs) || 12e3;
       const ceiling = (Number(settings2.requestTimeout) || 15) * 1e3 + 5e3;
       return Math.min(own, ceiling);
     }
@@ -2589,6 +2719,8 @@ var require_racer = __commonJS({
       return new Promise(function(resolve) {
         const total = providers2.length;
         const collected = [];
+        const guards = [];
+        const controllers = [];
         let settled = 0;
         let finished = false;
         let graceTimer = null;
@@ -2606,6 +2738,12 @@ var require_racer = __commonJS({
           finished = true;
           clearTimeout(overallTimer);
           if (graceTimer) clearTimeout(graceTimer);
+          guards.forEach(function(guard) {
+            if (guard && typeof guard.cancel === "function") guard.cancel();
+          });
+          controllers.forEach(function(controller) {
+            http2.abort(controller);
+          });
           context.log("done: " + collected.length + " streams from " + settled + "/" + total + " providers");
           resolve(collected.slice());
         }
@@ -2618,12 +2756,25 @@ var require_racer = __commonJS({
           if (settled >= total) finish();
         }
         providers2.forEach(function(provider, i) {
+          const cap = caps[i];
+          const controller = http2.createAbortController();
+          if (controller) controllers.push(controller);
+          const scope = Object.assign({}, context, {
+            deadline: Date.now() + cap - 1e3,
+            timeoutMs: Math.max(1e3, cap - 1e3),
+            signal: controller ? controller.signal : void 0
+          });
+          scope.http = http2.scope(scope);
           const startedAt = Date.now();
-          const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1e3 });
           const work = Promise.resolve().then(function() {
             return provider.resolve(scope);
           });
-          http2.withTimeout(work, caps[i], []).then(function(list) {
+          const guard = http2.withTimeout(work, cap, [], function() {
+            http2.abort(controller);
+          });
+          guards.push(guard);
+          guard.then(function(list) {
+            if (finished) return;
             const normalized = [];
             (list || []).forEach(function(raw) {
               try {
@@ -2651,44 +2802,122 @@ var require_racer = __commonJS({
   }
 });
 
+// src/indstream/finalize.js
+var require_finalize = __commonJS({
+  "src/indstream/finalize.js"(exports2, module2) {
+    "use strict";
+    var util2 = require_util();
+    function streamHeight(stream) {
+      if (!stream) return 0;
+      return Number(stream.height) || util2.parseHeight(stream.quality);
+    }
+    function normalizeStream(raw, provider) {
+      if (!raw || !raw.url) return null;
+      const url = String(raw.url);
+      const type = raw.type || (url.indexOf(".m3u8") >= 0 ? "hls" : url.indexOf(".mpd") >= 0 ? "dash" : "mp4");
+      const declaredHeight = Number(raw.height) || 0;
+      const quality = raw.quality || util2.qualityLabel(declaredHeight);
+      const height = declaredHeight || util2.parseHeight(quality);
+      const stream = {
+        title: util2.displayName(provider.name, raw.language || "", null, raw.size || "", ""),
+        name: provider.name || "",
+        url,
+        type,
+        quality,
+        height,
+        size: raw.size || "",
+        language: raw.language || "",
+        provider: provider.name || "",
+        providerId: provider.id || "",
+        headers: raw.headers || {}
+      };
+      if (Array.isArray(raw.subtitles) && raw.subtitles.length) {
+        stream.subtitles = raw.subtitles;
+      }
+      return stream;
+    }
+    function rankMaps(providers2) {
+      const byId = {};
+      const byName = {};
+      (providers2 || []).forEach(function(provider, index) {
+        if (provider.id) byId[provider.id] = index;
+        if (provider.name) byName[provider.name] = index;
+      });
+      return { byId, byName };
+    }
+    function rankOf(stream, ranks) {
+      if (stream.providerId != null && ranks.byId[stream.providerId] != null) {
+        return ranks.byId[stream.providerId];
+      }
+      if (stream.provider && ranks.byName[stream.provider] != null) {
+        return ranks.byName[stream.provider];
+      }
+      return 1e3;
+    }
+    function compareStreams(a, b, ranks) {
+      const ha = streamHeight(a);
+      const hb = streamHeight(b);
+      if (hb !== ha) return hb - ha;
+      const la = util2.languagePriority(a.language);
+      const lb = util2.languagePriority(b.language);
+      if (lb !== la) return lb - la;
+      const ra = rankOf(a, ranks);
+      const rb = rankOf(b, ranks);
+      if (ra !== rb) return ra - rb;
+      const ua = String(a.url || "");
+      const ub = String(b.url || "");
+      if (ua < ub) return -1;
+      if (ua > ub) return 1;
+      return 0;
+    }
+    function finalizeStreams(streams, options) {
+      const opts = options || {};
+      const ranks = rankMaps(opts.providers || []);
+      const includeDash = opts.includeDash !== false;
+      const filtered = (streams || []).filter(function(stream) {
+        if (!stream || !stream.url) return false;
+        if (!includeDash && stream.type === "dash") return false;
+        return !util2.isKnownBelowFloor(streamHeight(stream), opts.minQuality);
+      });
+      const deduped = util2.dedupeStreams(filtered, function(a, b) {
+        return compareStreams(a, b, ranks);
+      });
+      deduped.sort(function(a, b) {
+        return compareStreams(a, b, ranks);
+      });
+      const limit = Number(opts.resultLimit) || 0;
+      return limit > 0 && deduped.length > limit ? deduped.slice(0, limit) : deduped;
+    }
+    module2.exports = {
+      normalizeStream,
+      finalizeStreams,
+      streamHeight,
+      _test: {
+        compareStreams,
+        rankMaps
+      }
+    };
+  }
+});
+
 // src/indstream/index.js
 var http = require_http();
 var tmdb = require_tmdb();
 var settings = require_settings();
 var providers = require_providers();
 var racer = require_racer();
+var finalize = require_finalize();
 var util = require_util();
 var TMDB_META_CAP_MS = 6e3;
 function safeInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) ? n : 0;
 }
-function normalizeStream(raw, provider) {
-  if (!raw || !raw.url) return null;
-  const type = raw.type || (raw.url.indexOf(".m3u8") >= 0 ? "hls" : raw.url.indexOf(".mpd") >= 0 ? "dash" : "mp4");
-  const height = Number(raw.height) || 0;
-  const quality = raw.quality || util.qualityLabel(height);
-  const stream = {
-    title: util.displayName(provider.name, raw.language || "", null, raw.size || "", ""),
-    name: provider.name || "",
-    url: raw.url,
-    type,
-    quality,
-    size: raw.size || "",
-    language: raw.language || "",
-    provider: provider.name || "",
-    headers: raw.headers || {}
-  };
-  if (Array.isArray(raw.subtitles) && raw.subtitles.length) {
-    stream.subtitles = raw.subtitles;
-  }
-  return stream;
-}
 function probeUnknownQuality(stream, ctx) {
   return __async(this, null, function* () {
-    const url = stream.url;
     if (!ctx.settings.probeQuality) return stream;
-    if (stream.quality) return stream;
+    if (finalize.streamHeight(stream)) return stream;
+    const url = stream.url;
     if (url.indexOf(".m3u8") < 0 && url.indexOf(".mpd") < 0) return stream;
     const text = yield http.getText(url, {
       timeoutMs: 4e3,
@@ -2727,7 +2956,18 @@ function getStreams(mediaId, mediaType, season, episode) {
       }
     };
     if (!context.tmdbId && !context.imdbId) return [];
-    const metaPromise = http.withTimeout(tmdb.resolveMeta(inputId, type), TMDB_META_CAP_MS, null).catch(function() {
+    const metaController = http.createAbortController();
+    const metaPromise = http.withTimeout(
+      tmdb.resolveMeta(inputId, type, {
+        deadline: Date.now() + TMDB_META_CAP_MS,
+        signal: metaController ? metaController.signal : void 0
+      }),
+      TMDB_META_CAP_MS,
+      null,
+      function() {
+        http.abort(metaController);
+      }
+    ).catch(function() {
       return null;
     }).then(function(meta) {
       if (meta) {
@@ -2743,38 +2983,20 @@ function getStreams(mediaId, mediaType, season, episode) {
     context.metaPromise = metaPromise;
     context.meta = null;
     if (inputImdbId) yield metaPromise;
-    const wanted = providers.PROVIDERS.filter(function(provider) {
-      if (s.sources[provider.id] === false) return false;
-      if (provider.supports && provider.supports[type] === false) return false;
-      return true;
-    });
+    const wanted = providers.enabled(s.sources, type);
     if (!wanted.length) return [];
-    let streams = yield racer.race(wanted, context, normalizeStream);
-    const includeDash = s.includeDash;
-    streams = streams.filter(function(stream) {
-      if (!includeDash && stream.type === "dash") return false;
-      const height = Number(stream.height) || util.parseHeight(stream.quality);
-      return !util.isKnownBelowFloor(height, s.minQuality);
-    });
+    let streams = yield racer.race(wanted, context, finalize.normalizeStream);
     if (s.probeQuality) {
       streams = yield http.parallelMap(streams, 4, function(stream) {
         return probeUnknownQuality(stream, context);
       });
-      streams = streams.filter(function(stream) {
-        const height = Number(stream.height) || util.parseHeight(stream.quality);
-        return !util.isKnownBelowFloor(height, s.minQuality);
-      });
     }
-    streams = util.dedupeStreams(streams);
-    streams.sort(function(a, b) {
-      const ha = Number(a.height) || util.parseHeight(a.quality);
-      const hb = Number(b.height) || util.parseHeight(b.quality);
-      if (hb !== ha) return hb - ha;
-      return util.languagePriority(b.language) - util.languagePriority(a.language);
+    return finalize.finalizeStreams(streams, {
+      minQuality: s.minQuality,
+      includeDash: s.includeDash,
+      resultLimit: s.resultLimit,
+      providers: providers.PROVIDERS
     });
-    const limit = Number(s.resultLimit) || 0;
-    if (limit > 0 && streams.length > limit) streams = streams.slice(0, limit);
-    return streams;
   });
 }
 function onSettings() {

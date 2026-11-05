@@ -16,7 +16,16 @@ PROVIDERS.forEach(function (provider) {
   BY_ID[provider.id] = provider;
 });
 
+function enabled(sources, type, list) {
+  return (list || PROVIDERS).filter(function (provider) {
+    if (sources && sources[provider.id] === false) return false;
+    if (provider.supports && provider.supports[type] === false) return false;
+    return true;
+  });
+}
+
 module.exports = {
   PROVIDERS: PROVIDERS,
   BY_ID: BY_ID,
+  enabled: enabled,
 };

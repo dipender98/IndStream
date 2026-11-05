@@ -5,24 +5,20 @@ const http = require('./http');
 const GRACE_MS = 2000;
 const OVERALL_MAX_MS = 14000;
 
-// Each provider owns its race budget. A settings-level timeout still acts as
-// the upper bound so a slow provider can never stall the whole request.
+// Each provider owns its race budget; settings set the upper bound.
 function capOf(provider, settings) {
-  const own = Number(provider.raceTimeoutMs) || Number(provider.timeoutMs) || 12000;
+  const own = Number(provider.raceTimeoutMs) || 12000;
   const ceiling = (Number(settings.requestTimeout) || 15) * 1000 + 5000;
   return Math.min(own, ceiling);
 }
 
-// Runs all providers concurrently. Resolves as soon as one of these happens:
-// - every provider has settled, or
-// - at least one stream arrived and the grace window has elapsed, or
-// - the overall deadline passed.
-// A provider that throws, rejects or times out contributes an empty result and
-// never fails the request.
+// Runs providers concurrently and resolves with partial results.
 function race(providers, context, normalize) {
   return new Promise(function (resolve) {
     const total = providers.length;
     const collected = [];
+    const guards = [];
+    const controllers = [];
     let settled = 0;
     let finished = false;
     let graceTimer = null;
@@ -43,6 +39,12 @@ function race(providers, context, normalize) {
       finished = true;
       clearTimeout(overallTimer);
       if (graceTimer) clearTimeout(graceTimer);
+      guards.forEach(function (guard) {
+        if (guard && typeof guard.cancel === 'function') guard.cancel();
+      });
+      controllers.forEach(function (controller) {
+        http.abort(controller);
+      });
       context.log('done: ' + collected.length + ' streams from ' + settled + '/' + total + ' providers');
       resolve(collected.slice());
     }
@@ -58,14 +60,29 @@ function race(providers, context, normalize) {
     }
 
     providers.forEach(function (provider, i) {
-      const startedAt = Date.now();
-      const scope = Object.assign({}, context, { deadline: Date.now() + caps[i] - 1000 });
+      const cap = caps[i];
+      const controller = http.createAbortController();
+      if (controller) controllers.push(controller);
 
+      const scope = Object.assign({}, context, {
+        deadline: Date.now() + cap - 1000,
+        timeoutMs: Math.max(1000, cap - 1000),
+        signal: controller ? controller.signal : undefined,
+      });
+      scope.http = http.scope(scope);
+
+      const startedAt = Date.now();
       const work = Promise.resolve().then(function () {
         return provider.resolve(scope);
       });
 
-      http.withTimeout(work, caps[i], []).then(function (list) {
+      const guard = http.withTimeout(work, cap, [], function () {
+        http.abort(controller);
+      });
+      guards.push(guard);
+
+      guard.then(function (list) {
+        if (finished) return;
         const normalized = [];
         (list || []).forEach(function (raw) {
           try {

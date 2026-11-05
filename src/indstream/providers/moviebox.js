@@ -24,7 +24,11 @@ module.exports = {
   speed: 'normal',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 6000,
-  timeoutMs: 20000,
+  toggle: {
+    key: 'sourceMoviebox',
+    label: 'MovieBox',
+    description: 'Title-keyed catalogue with download and playback renditions.',
+  },
 
   async resolve(ctx) {
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
@@ -41,13 +45,13 @@ module.exports = {
     const episodeKey = Number(ctx.episode) > 0 ? Number(ctx.episode) : 1;
     const subjectType = type === 'movie' ? 1 : 2;
 
-    const token = await fetchBearer(false);
+    const token = await fetchBearer(false, ctx);
     if (!token) return [];
     let baseHeaders = headersFor(token);
 
     let items = await searchItems(baseHeaders, title, subjectType, ctx);
     if ((!items || !items.length) && Date.now() < deadline - 2000) {
-      const fresh = await fetchBearer(true);
+      const fresh = await fetchBearer(true, ctx);
       if (fresh) {
         baseHeaders = headersFor(fresh);
         items = await searchItems(baseHeaders, title, subjectType, ctx);
@@ -81,7 +85,8 @@ module.exports = {
 };
 
 async function searchItems(baseHeaders, title, subjectType, ctx) {
-  const json = await http.postJson(BASE + '/wefeed-h5api-bff/subject/search', {
+  const net = ctx.http || http;
+  const json = await net.postJson(BASE + '/wefeed-h5api-bff/subject/search', {
     keyword: title,
     page: 1,
     perPage: 24,
@@ -108,9 +113,10 @@ function headersFor(token) {
   };
 }
 
-async function fetchBearer(forceRefresh) {
+async function fetchBearer(forceRefresh, ctx) {
   if (!forceRefresh && tokenCache && Date.now() - tokenAt < TOKEN_TTL_MS) return tokenCache;
-  const res = await http.request(BASE + '/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox', {
+  const net = (ctx && ctx.http) || http;
+  const res = await net.request(BASE + '/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox', {
     timeoutMs: 8000,
   });
   const xUser = res.headers && res.headers.get ? res.headers.get('x-user') : '';
@@ -169,9 +175,10 @@ function matchSubjects(items, title, type, seasonKey) {
 }
 
 async function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx) {
+  const net = ctx.http || http;
   let detailPath = ref.detailPath;
   if (!detailPath) {
-    const json = await http.getJson(BASE + '/wefeed-h5-bff/web/post/list/subject?id=' + ref.id, {
+    const json = await net.getJson(BASE + '/wefeed-h5-bff/web/post/list/subject?id=' + ref.id, {
       timeoutMs: 8000,
       headers: baseHeaders,
     });
@@ -232,15 +239,17 @@ async function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx
     });
   };
 
-  const downloadJson = await http.getJson(BASE + '/wefeed-h5api-bff/subject/download?' + params, {
+  const downloadJson = await net.getJson(BASE + '/wefeed-h5api-bff/subject/download?' + params, {
     timeoutMs: 8000,
     headers: reqHeaders,
   });
   add(unwrapData(downloadJson).downloads, false);
 
+  if (ctx.deadline && Date.now() >= ctx.deadline) return out;
   await util.sleep(Math.max(0, 1500 - (Date.now() - lastPlayAt)));
+  if (ctx.deadline && Date.now() >= ctx.deadline) return out;
   lastPlayAt = Date.now();
-  const playJson = await http.getJson(BASE + '/wefeed-h5api-bff/subject/play?' + params, {
+  const playJson = await net.getJson(BASE + '/wefeed-h5api-bff/subject/play?' + params, {
     timeoutMs: 8000,
     headers: reqHeaders,
   });

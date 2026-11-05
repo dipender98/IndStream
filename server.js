@@ -18,7 +18,8 @@ http.createServer(function (req, res) {
   const pathname = decodeURIComponent(url.pathname);
   const rel = pathname === '/' ? 'manifest.json' : pathname.replace(/^\/+/, '');
   const filePath = path.join(ROOT, rel);
-  if (!filePath.startsWith(ROOT)) {
+  const relative = path.relative(ROOT, filePath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;

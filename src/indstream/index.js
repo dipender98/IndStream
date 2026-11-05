@@ -5,6 +5,7 @@ const tmdb = require('./tmdb');
 const settings = require('./settings');
 const providers = require('./providers');
 const racer = require('./racer');
+const finalize = require('./finalize');
 const util = require('./util');
 
 const TMDB_META_CAP_MS = 6000;
@@ -14,32 +15,10 @@ function safeInt(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeStream(raw, provider) {
-  if (!raw || !raw.url) return null;
-  const type = raw.type || (raw.url.indexOf('.m3u8') >= 0 ? 'hls' : raw.url.indexOf('.mpd') >= 0 ? 'dash' : 'mp4');
-  const height = Number(raw.height) || 0;
-  const quality = raw.quality || util.qualityLabel(height);
-  const stream = {
-    title: util.displayName(provider.name, raw.language || '', null, raw.size || '', ''),
-    name: provider.name || '',
-    url: raw.url,
-    type: type,
-    quality: quality,
-    size: raw.size || '',
-    language: raw.language || '',
-    provider: provider.name || '',
-    headers: raw.headers || {},
-  };
-  if (Array.isArray(raw.subtitles) && raw.subtitles.length) {
-    stream.subtitles = raw.subtitles;
-  }
-  return stream;
-}
-
 async function probeUnknownQuality(stream, ctx) {
-  const url = stream.url;
   if (!ctx.settings.probeQuality) return stream;
-  if (stream.quality) return stream;
+  if (finalize.streamHeight(stream)) return stream;
+  const url = stream.url;
   if (url.indexOf('.m3u8') < 0 && url.indexOf('.mpd') < 0) return stream;
   const text = await http.getText(url, {
     timeoutMs: 4000,
@@ -78,10 +57,19 @@ async function getStreams(mediaId, mediaType, season, episode) {
 
   if (!context.tmdbId && !context.imdbId) return [];
 
-  // Start metadata resolution immediately. Providers that only need the
-  // tmdbId run right away; title-keyed providers wait on this promise.
-  // Both TMDB ids and IMDb ids/URLs are accepted as input.
-  const metaPromise = http.withTimeout(tmdb.resolveMeta(inputId, type), TMDB_META_CAP_MS, null)
+  // Resolve metadata while providers start; IMDb input waits for the mapping.
+  const metaController = http.createAbortController();
+  const metaPromise = http.withTimeout(
+    tmdb.resolveMeta(inputId, type, {
+      deadline: Date.now() + TMDB_META_CAP_MS,
+      signal: metaController ? metaController.signal : undefined,
+    }),
+    TMDB_META_CAP_MS,
+    null,
+    function () {
+      http.abort(metaController);
+    }
+  )
     .catch(function () { return null; })
     .then(function (meta) {
       if (meta) {
@@ -100,47 +88,26 @@ async function getStreams(mediaId, mediaType, season, episode) {
   context.metaPromise = metaPromise;
   context.meta = null;
 
-  // An IMDb input has to be mapped before providers that need a TMDB id can
-  // start. TMDB input still races metadata and providers concurrently.
+  // IMDb input must map to a TMDB id before providers start.
   if (inputImdbId) await metaPromise;
 
-  const wanted = providers.PROVIDERS.filter(function (provider) {
-    if (s.sources[provider.id] === false) return false;
-    if (provider.supports && provider.supports[type] === false) return false;
-    return true;
-  });
+  const wanted = providers.enabled(s.sources, type);
   if (!wanted.length) return [];
 
-  let streams = await racer.race(wanted, context, normalizeStream);
-
-  const includeDash = s.includeDash;
-  streams = streams.filter(function (stream) {
-    if (!includeDash && stream.type === 'dash') return false;
-    const height = Number(stream.height) || util.parseHeight(stream.quality);
-    return !util.isKnownBelowFloor(height, s.minQuality);
-  });
+  let streams = await racer.race(wanted, context, finalize.normalizeStream);
 
   if (s.probeQuality) {
     streams = await http.parallelMap(streams, 4, function (stream) {
       return probeUnknownQuality(stream, context);
     });
-    streams = streams.filter(function (stream) {
-      const height = Number(stream.height) || util.parseHeight(stream.quality);
-      return !util.isKnownBelowFloor(height, s.minQuality);
-    });
   }
 
-  streams = util.dedupeStreams(streams);
-  streams.sort(function (a, b) {
-    const ha = Number(a.height) || util.parseHeight(a.quality);
-    const hb = Number(b.height) || util.parseHeight(b.quality);
-    if (hb !== ha) return hb - ha;
-    return util.languagePriority(b.language) - util.languagePriority(a.language);
+  return finalize.finalizeStreams(streams, {
+    minQuality: s.minQuality,
+    includeDash: s.includeDash,
+    resultLimit: s.resultLimit,
+    providers: providers.PROVIDERS,
   });
-
-  const limit = Number(s.resultLimit) || 0;
-  if (limit > 0 && streams.length > limit) streams = streams.slice(0, limit);
-  return streams;
 }
 
 async function onSettings() {

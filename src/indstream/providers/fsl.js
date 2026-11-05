@@ -28,7 +28,11 @@ module.exports = {
   speed: 'slow',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 6000,
-  timeoutMs: 30000,
+  toggle: {
+    key: 'sourceFsl',
+    label: 'FSL',
+    description: 'Fast file links from release blogs. Heaviest source, so it runs last.',
+  },
 
   async resolve(ctx) {
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
@@ -46,9 +50,9 @@ module.exports = {
     for (let s = 0; s < SEEDS.length; s += 1) {
       if (Date.now() > deadline) break;
       const seed = SEEDS[s];
-      const base = await fslBase(seed, ctx.timeoutMs);
+      const base = await fslBase(seed, ctx);
       if (!base) continue;
-      const json = await fslGet(base + '/ts-search.php?q=' + encodeURIComponent(title) + '&page=1', base, 8000, ctx.timeoutMs);
+      const json = await fslGet(base + '/ts-search.php?q=' + encodeURIComponent(title) + '&page=1', base, 8000, ctx);
       if (!json) continue;
       const hits = fslSearchHits(json);
       if (!hits.length) continue;
@@ -60,7 +64,7 @@ module.exports = {
       for (let r = 0; r < ranked.length; r += 1) {
         if (Date.now() > deadline) break;
         const permalink = util.resolveUrl(base, ranked[r].hit.permalink);
-        const post = await fslGet(permalink, base, 10000, ctx.timeoutMs);
+        const post = await fslGet(permalink, base, 10000, ctx);
         if (!post) continue;
         const groups = util.episodeOrSeason(fslGroups(post), function (g) { return g.heading; }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
         for (let g = 0; g < groups.length; g += 1) {
@@ -78,14 +82,14 @@ module.exports = {
             if (/vcloud\./i.test(gateway)) {
               cloudLinks = [gateway];
             } else {
-              const expanded = await fslGet(gateway, base, 15000, ctx.timeoutMs);
+              const expanded = await fslGet(gateway, base, 15000, ctx);
               if (!expanded) continue;
               cloudLinks = gatewayLinksOf(expanded).cloud;
             }
             const ordered = episodeFirstOrder(cloudLinks, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0);
             for (let v = 0; v < ordered.length; v += 1) {
               if (Date.now() > deadline) break;
-              const links = await filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx.timeoutMs);
+              const links = await filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx);
               for (let l = 0; l < links.length; l += 1) {
                 if (Date.now() > deadline) break;
                 const link = links[l];
@@ -120,34 +124,36 @@ module.exports = {
   },
 };
 
-async function fslGet(url, referer, timeoutMs, maxTimeout) {
-  const t = Math.min(timeoutMs || 12000, maxTimeout || 30000);
-  const res = await http.request(url, { timeoutMs: t, headers: { Referer: referer || url } });
+async function fslGet(url, referer, timeoutMs, ctx) {
+  const net = (ctx && ctx.http) || http;
+  const maxTimeout = (ctx && ctx.timeoutMs) || 30000;
+  const t = Math.min(timeoutMs || 12000, maxTimeout);
+  const res = await net.request(url, { timeoutMs: t, headers: { Referer: referer || url } });
   return res.ok ? res.text : '';
 }
 
-async function fslBase(seed, maxTimeout) {
+async function fslBase(seed, ctx) {
   const cached = baseCache[seed.family];
   if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.base;
-  const live = await fslLive(seed, maxTimeout);
+  const live = await fslLive(seed, ctx);
   if (!live) return '';
   const liveBase = fslDomainPick(live.html, seed.family) || util.originOf(live.url);
   baseCache[seed.family] = { base: liveBase, at: Date.now() };
   return liveBase;
 }
 
-async function fslLive(seed, maxTimeout) {
-  let html0 = await fslGet(seed.seed, seed.seed, 10000, maxTimeout);
+async function fslLive(seed, ctx) {
+  let html0 = await fslGet(seed.seed, seed.seed, 10000, ctx);
   let url0 = seed.seed;
   if (!html0 && seed.bootstrap) {
-    html0 = await fslGet(seed.bootstrap, seed.bootstrap, 10000, maxTimeout);
+    html0 = await fslGet(seed.bootstrap, seed.bootstrap, 10000, ctx);
     url0 = seed.bootstrap || url0;
   }
   if (!html0) return null;
   if (!fslIsLanding(html0)) return { html: html0, url: url0 };
   const origin = util.originOf(url0);
   if (!origin) return null;
-  const probed = await fslGet(origin + FSL_LANDING_PROBE, origin, 12000, maxTimeout);
+  const probed = await fslGet(origin + FSL_LANDING_PROBE, origin, 12000, ctx);
   if (!probed || fslIsLanding(probed)) return null;
   return { html: probed, url: origin };
 }

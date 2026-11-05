@@ -3,6 +3,8 @@
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+function noop() {}
+
 function baseHeaders(extra) {
   const headers = {
     'User-Agent': DEFAULT_UA,
@@ -19,27 +21,91 @@ function baseHeaders(extra) {
   return headers;
 }
 
-function timeoutSignal(ms) {
-  if (typeof AbortController === 'undefined') return { signal: undefined, cancel: function () {} };
-  const controller = new AbortController();
-  const timer = setTimeout(function () {
-    try {
-      controller.abort();
-    } catch (error) {
-      /* ignore */
+function createAbortController() {
+  if (typeof AbortController === 'undefined') return null;
+  try {
+    return new AbortController();
+  } catch (error) {
+    return null;
+  }
+}
+
+function abort(controller) {
+  if (!controller) return;
+  try {
+    controller.abort();
+  } catch (error) {
+    /* ignore */
+  }
+}
+
+// Combines the request timeout with the provider's abort signal.
+function timeoutSignal(ms, externalSignal) {
+  const controller = createAbortController();
+  if (!controller) return { signal: externalSignal, cancel: noop, controlled: false };
+
+  const onAbort = function () {
+    abort(controller);
+  };
+  const timer = setTimeout(onAbort, Math.max(1, ms || 12000));
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      onAbort();
+    } else if (typeof externalSignal.addEventListener === 'function') {
+      externalSignal.addEventListener('abort', onAbort);
     }
-  }, Math.max(1000, ms || 12000));
+  }
+
   return {
     signal: controller.signal,
+    controlled: true,
     cancel: function () {
       clearTimeout(timer);
+      if (externalSignal && typeof externalSignal.removeEventListener === 'function') {
+        externalSignal.removeEventListener('abort', onAbort);
+      }
     },
   };
 }
 
+function failure(url, message) {
+  return { ok: false, status: 0, url: url, headers: null, text: '', error: message };
+}
+
+// Timer fallback for runtimes without AbortController. The underlying request
+// cannot be cancelled there, but the caller still stops waiting.
+function timed(promise, ms) {
+  return new Promise(function (resolve, reject) {
+    const timer = setTimeout(function () {
+      resolve(null);
+    }, Math.max(1, ms || 12000));
+    promise.then(
+      function (value) {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      function (error) {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 async function request(url, options) {
   const opts = options || {};
-  const guard = timeoutSignal(opts.timeoutMs || 12000);
+  if (opts.signal && opts.signal.aborted) return failure(url, 'aborted');
+
+  const deadline = Number(opts.deadline) || 0;
+  let timeoutMs = Number(opts.timeoutMs) || 12000;
+  if (deadline) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return failure(url, 'deadline exceeded');
+    timeoutMs = Math.min(timeoutMs, remaining);
+  }
+
+  const guard = timeoutSignal(timeoutMs, opts.signal);
   const headers = baseHeaders(opts.headers);
   const init = {
     method: opts.method || 'GET',
@@ -51,7 +117,9 @@ async function request(url, options) {
   if (opts.credentials) init.credentials = opts.credentials;
 
   try {
-    const response = await fetch(url, init);
+    const pending = guard.controlled ? fetch(url, init) : timed(fetch(url, init), timeoutMs);
+    const response = await pending;
+    if (!response) return failure(url, 'timeout');
     const text = await response.text();
     return {
       ok: response.ok,
@@ -62,7 +130,7 @@ async function request(url, options) {
     };
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
-    return { ok: false, status: 0, url: url, headers: null, text: '', error: message };
+    return failure(url, message);
   } finally {
     guard.cancel();
   }
@@ -92,6 +160,8 @@ function postJson(url, body, options) {
     method: 'POST',
     body: payload,
     timeoutMs: opts.timeoutMs,
+    deadline: opts.deadline,
+    signal: opts.signal,
     headers: Object.assign(
       {
         'Content-Type': 'application/json',
@@ -116,6 +186,8 @@ function postText(url, body, options) {
     method: 'POST',
     body: payload,
     timeoutMs: opts.timeoutMs,
+    deadline: opts.deadline,
+    signal: opts.signal,
     headers: Object.assign(
       {
         'Content-Type': 'application/json',
@@ -160,14 +232,24 @@ function parallelMap(items, limit, worker) {
   });
 }
 
-function withTimeout(promise, ms, fallback) {
-  return new Promise(function (resolve) {
-    let settled = false;
-    const timer = setTimeout(function () {
+// Resolves with the fallback on timeout; onTimeout aborts provider work.
+function withTimeout(promise, ms, fallback, onTimeout) {
+  let settled = false;
+  let timer = null;
+  const wrapped = new Promise(function (resolve) {
+    timer = setTimeout(function () {
       if (settled) return;
       settled = true;
+      if (onTimeout) {
+        try {
+          onTimeout();
+        } catch (error) {
+          /* ignore */
+        }
+      }
       resolve(fallback);
     }, Math.max(250, ms || 12000));
+
     Promise.resolve(promise).then(
       function (value) {
         if (settled) return;
@@ -183,10 +265,50 @@ function withTimeout(promise, ms, fallback) {
       }
     );
   });
+
+  wrapped.cancel = function () {
+    if (settled) return;
+    settled = true;
+    if (timer) clearTimeout(timer);
+  };
+  return wrapped;
+}
+
+// Binds a client to one provider's deadline and abort signal.
+function scope(ctx) {
+  const base = ctx || {};
+
+  function merge(options) {
+    const opts = Object.assign({}, options || {});
+    if (opts.deadline == null && base.deadline) opts.deadline = base.deadline;
+    if (opts.signal == null && base.signal) opts.signal = base.signal;
+    return opts;
+  }
+
+  return {
+    request: function (url, options) {
+      return request(url, merge(options));
+    },
+    getText: function (url, options) {
+      return getText(url, merge(options));
+    },
+    getJson: function (url, options) {
+      return getJson(url, merge(options));
+    },
+    postJson: function (url, body, options) {
+      return postJson(url, body, merge(options));
+    },
+    postText: function (url, body, options) {
+      return postText(url, body, merge(options));
+    },
+  };
 }
 
 module.exports = {
   DEFAULT_UA: DEFAULT_UA,
+  createAbortController: createAbortController,
+  abort: abort,
+  scope: scope,
   request: request,
   getText: getText,
   getJson: getJson,

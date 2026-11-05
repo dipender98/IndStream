@@ -51,7 +51,9 @@ async function run() {
   }
 }
 
-run().catch(function (err) {
+run().then(function () {
+  process.exit(process.exitCode || 0);
+}).catch(function (err) {
   console.error('SMOKE ERROR:', err);
-  process.exitCode = 1;
+  process.exit(1);
 });

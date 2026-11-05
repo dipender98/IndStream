@@ -1,19 +1,45 @@
 'use strict';
 
-const DEFAULTS = {
+const providers = require('./providers');
+
+const CORE_DEFAULTS = {
   minQuality: '720',
   resultLimit: '40',
   requestTimeout: '15',
   probeQuality: false,
   includeDash: true,
-  sourceHdhub: true,
-  sourceVidrift: true,
-  sourceBingr: true,
-  sourceMoviebox: true,
-  sourceHub4k: true,
-  sourceFsl: true,
   debug: false,
 };
+
+function toggleKeyOf(provider) {
+  if (provider.toggle && provider.toggle.key) return provider.toggle.key;
+  return 'source' + provider.id.charAt(0).toUpperCase() + provider.id.slice(1);
+}
+
+function toggleDefaultOf(provider) {
+  return provider.toggle && provider.toggle.defaultValue === false ? false : true;
+}
+
+const PROVIDER_SETTINGS = {};
+const PROVIDER_DEFAULTS = {};
+providers.PROVIDERS.forEach(function (provider) {
+  const key = toggleKeyOf(provider);
+  PROVIDER_SETTINGS[provider.id] = key;
+  PROVIDER_DEFAULTS[key] = toggleDefaultOf(provider);
+});
+
+const DEFAULTS = Object.assign({}, CORE_DEFAULTS, PROVIDER_DEFAULTS);
+
+function providerToggle(provider) {
+  const meta = provider.toggle || {};
+  return {
+    type: 'toggle',
+    key: toggleKeyOf(provider),
+    label: meta.label || provider.name || provider.id,
+    description: meta.description || '',
+    defaultValue: toggleDefaultOf(provider),
+  };
+}
 
 const SETTINGS_LAYOUT = [
   {
@@ -79,48 +105,7 @@ const SETTINGS_LAYOUT = [
     type: 'header',
     label: 'Providers',
   },
-  {
-    type: 'toggle',
-    key: 'sourceHdhub',
-    label: 'HdHub',
-    description: 'Fast aggregator: instant HLS streams plus 4K file links.',
-    defaultValue: true,
-  },
-  {
-    type: 'toggle',
-    key: 'sourceVidrift',
-    label: 'Vidrift',
-    description: 'Embed player with direct HLS/MP4 links.',
-    defaultValue: true,
-  },
-  {
-    type: 'toggle',
-    key: 'sourceBingr',
-    label: 'Bingr',
-    description: 'Multi-server JSON API. Usually the fastest source.',
-    defaultValue: true,
-  },
-  {
-    type: 'toggle',
-    key: 'sourceMoviebox',
-    label: 'MovieBox',
-    description: 'Title-keyed catalogue with download and playback renditions.',
-    defaultValue: true,
-  },
-  {
-    type: 'toggle',
-    key: 'sourceHub4k',
-    label: '4KHDHub',
-    description: '4K-first release pages resolved through file-host gateways.',
-    defaultValue: true,
-  },
-  {
-    type: 'toggle',
-    key: 'sourceFsl',
-    label: 'FSL',
-    description: 'Fast file links from release blogs. Heaviest source, so it runs last.',
-    defaultValue: true,
-  },
+].concat(providers.PROVIDERS.map(providerToggle)).concat([
   {
     type: 'header',
     label: 'Diagnostics',
@@ -132,18 +117,7 @@ const SETTINGS_LAYOUT = [
     description: 'Logs each source result count and timing. Useful when a source stops working.',
     defaultValue: false,
   },
-];
-
-// Provider toggles live on the single IndStream settings page so users do not
-// have to configure every provider separately.
-const PROVIDER_SETTINGS = {
-  hdhub: 'sourceHdhub',
-  vidrift: 'sourceVidrift',
-  bingr: 'sourceBingr',
-  moviebox: 'sourceMoviebox',
-  hub4k: 'sourceHub4k',
-  fsl: 'sourceFsl',
-};
+]);
 
 function readGlobalSettings() {
   const scope = typeof globalThis !== 'undefined' ? globalThis : {};
@@ -188,7 +162,6 @@ function getSettings() {
   Object.keys(PROVIDER_SETTINGS).forEach(function (id) {
     settings.sources[id] = normalizeBool(merged[PROVIDER_SETTINGS[id]], DEFAULTS[PROVIDER_SETTINGS[id]]);
   });
-  if (!settings.minQuality) settings.minQuality = 0;
   if (!settings.requestTimeout) settings.requestTimeout = 15;
   return settings;
 }

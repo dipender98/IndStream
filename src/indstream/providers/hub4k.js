@@ -19,9 +19,14 @@ module.exports = {
   speed: 'slow',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 7000,
-  timeoutMs: 25000,
+  toggle: {
+    key: 'sourceHub4k',
+    label: '4KHDHub',
+    description: '4K-first release pages resolved through file-host gateways.',
+  },
 
   async resolve(ctx) {
+    const net = ctx.http || http;
     const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 6000, null);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
@@ -36,8 +41,9 @@ module.exports = {
     let searchHtml = '';
     let fallback = null;
     for (let i = 0; i < BASES.length; i += 1) {
+      if (Date.now() > deadline) break;
       const candidate = BASES[i];
-      const h = await http.getText(candidate + '/?s=' + encodeURIComponent(title), {
+      const h = await net.getText(candidate + '/?s=' + encodeURIComponent(title), {
         timeoutMs: 8000,
         headers: { Referer: candidate + '/' },
       });
@@ -68,7 +74,7 @@ module.exports = {
     for (let i = 0; i < Math.min(2, ranked.length); i += 1) {
       if (Date.now() > deadline) break;
       const card = ranked[i].card;
-      const post = await http.getText(card.url, {
+      const post = await net.getText(card.url, {
         timeoutMs: 8000,
         headers: { Referer: base + '/' },
       });
@@ -87,7 +93,7 @@ module.exports = {
         for (let g = 0; g < item.gatewayUrls.length; g += 1) {
           if (Date.now() > deadline) break;
           const gateway = item.gatewayUrls[g];
-          const gwPage = await http.getText(gateway, {
+          const gwPage = await net.getText(gateway, {
             timeoutMs: 10000,
             headers: { Referer: card.url },
           });
@@ -100,7 +106,7 @@ module.exports = {
 
           let finalDrive = resolvedDrive;
           if (/hubdrive\./i.test(resolvedDrive)) {
-            const innerPage = await http.getText(resolvedDrive, {
+            const innerPage = await net.getText(resolvedDrive, {
               timeoutMs: 8000,
               headers: { Referer: card.url },
             });
@@ -114,7 +120,7 @@ module.exports = {
           }
 
           const referer = util.originOf(finalDrive) || 'https://hubcloud.ist/';
-          const files = await filehost.hubDriveFiles(finalDrive, card.url);
+          const files = await filehost.hubDriveFiles(finalDrive, card.url, net);
           for (let f = 0; f < files.length; f += 1) {
             if (Date.now() > deadline) break;
             const file = files[f];

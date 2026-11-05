@@ -100,8 +100,9 @@ function qualityLabel(height) {
 
 function isKnownBelowFloor(height, floor) {
   const value = Number(height) || 0;
-  const minimum = Number(floor) || 720;
-  return value > 0 && value < minimum;
+  const raw = floor == null || floor === '' ? 720 : Number(floor);
+  const minimum = Number.isFinite(raw) ? raw : 720;
+  return value > 0 && minimum > 0 && value < minimum;
 }
 
 function languageNames(raw) {
@@ -272,17 +273,23 @@ function parseDashHeights(text) {
   return result;
 }
 
-function dedupeStreams(streams) {
-  const seen = {};
-  const out = [];
+// Deduplicates by URL with the query stripped. When a comparator is supplied,
+// the best duplicate wins instead of the first one to arrive.
+function dedupeStreams(streams, compare) {
+  const byKey = {};
   (streams || []).forEach(function (stream) {
     if (!stream || !stream.url) return;
-    let key = stream.url;
-    const noQuery = key.split('#')[0].split('?')[0];
-    if (seen[key] || seen[noQuery]) return;
-    seen[key] = true;
-    seen[noQuery] = true;
-    out.push(stream);
+    const key = String(stream.url).split('#')[0].split('?')[0];
+    const existing = byKey[key];
+    if (!existing) {
+      byKey[key] = stream;
+      return;
+    }
+    if (compare && compare(stream, existing) < 0) byKey[key] = stream;
+  });
+  const out = [];
+  Object.keys(byKey).forEach(function (key) {
+    out.push(byKey[key]);
   });
   return out;
 }
