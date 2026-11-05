@@ -1495,7 +1495,7 @@ var require_moviebox = __commonJS({
       name: "MovieBox",
       speed: "normal",
       supports: { movie: true, tv: true },
-      raceTimeoutMs: 4e3,
+      raceTimeoutMs: 2e3,
       toggle: {
         key: "sourceMoviebox",
         label: "MovieBox",
@@ -1705,7 +1705,7 @@ var require_moviebox = __commonJS({
         });
         add(unwrapData(downloadJson).downloads, false);
         if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-        yield util.sleep(Math.max(0, 500 - (Date.now() - lastPlayAt)));
+        yield util.sleep(Math.max(0, 200 - (Date.now() - lastPlayAt)));
         if (ctx.deadline && Date.now() >= ctx.deadline) return out;
         lastPlayAt = Date.now();
         const playJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/play?" + params, {
@@ -2125,7 +2125,7 @@ var require_hub4k = __commonJS({
       name: "4KHDHub",
       speed: "slow",
       supports: { movie: true, tv: true },
-      raceTimeoutMs: 5e3,
+      raceTimeoutMs: 3e3,
       toggle: {
         key: "sourceHub4k",
         label: "4KHDHub",
@@ -2373,7 +2373,7 @@ var require_fsl = __commonJS({
       name: "FSL",
       speed: "slow",
       supports: { movie: true, tv: true },
-      raceTimeoutMs: 4e3,
+      raceTimeoutMs: 2e3,
       toggle: {
         key: "sourceFsl",
         label: "FSL",

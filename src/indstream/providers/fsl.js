@@ -27,7 +27,7 @@ module.exports = {
   name: 'FSL',
   speed: 'slow',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 4000,
+  raceTimeoutMs: 2000,
   toggle: {
     key: 'sourceFsl',
     label: 'FSL',

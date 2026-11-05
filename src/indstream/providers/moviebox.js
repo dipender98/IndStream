@@ -23,7 +23,7 @@ module.exports = {
   name: 'MovieBox',
   speed: 'normal',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 4000,
+  raceTimeoutMs: 2000,
   toggle: {
     key: 'sourceMoviebox',
     label: 'MovieBox',
@@ -246,7 +246,7 @@ async function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx
   add(unwrapData(downloadJson).downloads, false);
 
   if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-  await util.sleep(Math.max(0, 500 - (Date.now() - lastPlayAt)));
+  await util.sleep(Math.max(0, 200 - (Date.now() - lastPlayAt)));
   if (ctx.deadline && Date.now() >= ctx.deadline) return out;
   lastPlayAt = Date.now();
   const playJson = await net.getJson(BASE + '/wefeed-h5api-bff/subject/play?' + params, {

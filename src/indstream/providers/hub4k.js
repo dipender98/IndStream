@@ -18,7 +18,7 @@ module.exports = {
   name: '4KHDHub',
   speed: 'slow',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 5000,
+  raceTimeoutMs: 3000,
   toggle: {
     key: 'sourceHub4k',
     label: '4KHDHub',
