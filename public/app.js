@@ -27,15 +27,58 @@ const DEFAULT_CFG = {
 
 const LS_KEY = 'indstream.cfg.v3';
 const LS_WELCOME = 'indstream.welcome.dismissed';
+const LS_PROFILES = 'indstream.profiles.v1';
+const LS_ACTIVE = 'indstream.activeProfile.v1';
 
-function loadCfg() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return Object.assign({}, DEFAULT_CFG, JSON.parse(raw));
-  } catch (e) {}
-  return Object.assign({}, DEFAULT_CFG);
+function loadProfiles() {
+  let profiles = null;
+  try { profiles = JSON.parse(localStorage.getItem(LS_PROFILES) || 'null'); } catch (e) {}
+  if (!Array.isArray(profiles) || !profiles.length) {
+    let legacy = null;
+    try { const raw = localStorage.getItem(LS_KEY); if (raw) legacy = JSON.parse(raw); } catch (e) {}
+    profiles = [{ id: 'p1', name: 'Default', cfg: Object.assign({}, DEFAULT_CFG, legacy || {}) }];
+    saveProfiles(profiles);
+  }
+  return profiles;
 }
-function saveCfg(cfg) { try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch (e) {} }
+function saveProfiles(profiles) { try { localStorage.setItem(LS_PROFILES, JSON.stringify(profiles)); } catch (e) {} }
+function activeProfileId(profiles) {
+  const list = profiles || loadProfiles();
+  const id = localStorage.getItem(LS_ACTIVE);
+  return list.some(function (p) { return p.id === id; }) ? id : list[0].id;
+}
+function activeProfile() {
+  const profiles = loadProfiles();
+  const id = activeProfileId(profiles);
+  return profiles.find(function (p) { return p.id === id; }) || profiles[0];
+}
+function loadCfg() {
+  const p = activeProfile();
+  return Object.assign({}, DEFAULT_CFG, p.cfg || {});
+}
+function saveCfg(cfg) {
+  const profiles = loadProfiles();
+  const id = activeProfileId(profiles);
+  const idx = profiles.findIndex(function (p) { return p.id === id; });
+  if (idx >= 0) {
+    profiles[idx].cfg = Object.assign({}, DEFAULT_CFG, cfg);
+    saveProfiles(profiles);
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function decodeCfgSegment(seg) {
+  try {
+    const padded = seg.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((seg.length + 3) % 4);
+    const obj = JSON.parse(atob(padded));
+    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 function b64url(obj) {
   return btoa(unescape(encodeURIComponent(JSON.stringify(obj))))
@@ -118,6 +161,91 @@ function updateAll() {
   document.getElementById('statQualities').textContent = cfg.minQuality === '0' ? 'Any' : cfg.minQuality + 'p+';
   document.getElementById('installState').textContent = 'Configuration ready.';
   updatePreview(document.getElementById('streamStyle').value);
+  renderProfiles();
+}
+
+function renderProfiles() {
+  const grid = document.getElementById('profilesGrid');
+  if (!grid) return;
+  const profiles = loadProfiles();
+  const activeId = activeProfileId(profiles);
+  const count = document.getElementById('profilesCount');
+  if (count) count.textContent = profiles.length;
+  const badge = document.getElementById('profilesBadge');
+  if (badge) badge.textContent = profiles.length;
+  const nameEl = document.getElementById('activeProfileName');
+  if (nameEl) nameEl.textContent = (profiles.find(function (p) { return p.id === activeId; }) || profiles[0]).name;
+  grid.innerHTML = '';
+  profiles.forEach(function (p) {
+    const cfg = Object.assign({}, DEFAULT_CFG, p.cfg || {});
+    const url = manifestUrl(cfg);
+    const isActive = p.id === activeId;
+    const card = document.createElement('div');
+    card.className = 'profile-card' + (isActive ? ' active' : '');
+    card.innerHTML =
+      '<div class="profile-card-head">' +
+        '<div class="profile-avatar">' + escapeHtml((p.name || 'P')[0].toUpperCase()) + '</div>' +
+        '<div><div class="profile-name">' + escapeHtml(p.name) + '</div>' +
+        '<div class="profile-meta"><strong>' + cfg.p.length + '</strong> sources · ' +
+          (cfg.minQuality === '0' ? 'any quality' : cfg.minQuality + 'p+') +
+          (cfg.langs.length ? ' · ' + cfg.langs.length + ' language' + (cfg.langs.length > 1 ? 's' : '') : '') +
+        '</div></div>' +
+        (isActive ? '<span class="profile-active-tag">Active</span>' : '') +
+      '</div>' +
+      '<div class="profile-url">' + url + '</div>' +
+      '<div class="profile-actions">' +
+        '<button class="profile-btn primary" data-act="use">' + (isActive ? 'Using' : 'Use') + '</button>' +
+        '<button class="profile-btn" data-act="copy">Copy URL</button>' +
+        '<button class="profile-btn" data-act="rename">Rename</button>' +
+        (profiles.length > 1 ? '<button class="profile-btn danger" data-act="delete">Delete</button>' : '') +
+      '</div>';
+    card.querySelectorAll('.profile-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const act = btn.dataset.act;
+        if (act === 'use') {
+          localStorage.setItem(LS_ACTIVE, p.id);
+          applyCfg(loadCfg());
+          toast('Switched to "' + p.name + '"');
+        } else if (act === 'copy') {
+          copyText(url);
+        } else if (act === 'rename') {
+          const next = prompt('Profile name', p.name);
+          if (next && next.trim()) { p.name = next.trim().slice(0, 40); saveProfiles(profiles); renderProfiles(); }
+        } else if (act === 'delete') {
+          if (confirm('Delete profile "' + p.name + '"?')) {
+            const idx = profiles.findIndex(function (x) { return x.id === p.id; });
+            profiles.splice(idx, 1);
+            saveProfiles(profiles);
+            applyCfg(loadCfg());
+            toast('Profile deleted');
+          }
+        }
+      });
+    });
+    grid.appendChild(card);
+  });
+}
+
+function createProfile(seedCfg, suggestedName) {
+  const profiles = loadProfiles();
+  const fallback = 'Profile ' + (profiles.length + 1);
+  const name = (suggestedName || prompt('Name your profile', fallback) || fallback).trim().slice(0, 40);
+  if (!name) return;
+  const cfg = Object.assign({}, DEFAULT_CFG, seedCfg || loadCfg());
+  const id = 'p' + Date.now();
+  profiles.push({ id: id, name: name, cfg: cfg });
+  saveProfiles(profiles);
+  localStorage.setItem(LS_ACTIVE, id);
+  applyCfg(loadCfg());
+  toast('Profile "' + name + '" created');
+}
+
+function importFromUrl(url) {
+  const m = String(url || '').match(/\/([A-Za-z0-9_-]+)\/manifest\.json/);
+  if (!m) { toast('No config found in that URL'); return; }
+  const cfg = decodeCfgSegment(m[1]);
+  if (!cfg) { toast('That config URL is invalid'); return; }
+  createProfile(Object.assign({}, DEFAULT_CFG, cfg), 'Imported');
 }
 
 let previewToken = 0;
@@ -245,6 +373,7 @@ const WIZARD_STEPS = [
 
 const SECTION_TITLES = {
   overview: ['Overview', 'Install status & sync'],
+  profiles: ['Profiles', 'One addon URL per setup'],
   sources: ['Sources', 'Pick your servers'],
   filtering: ['Filtering', 'Languages & quality'],
   playback: ['Playback', 'Results & style'],
@@ -382,6 +511,12 @@ function setupActions() {
     toast('All 6 sources selected');
   });
   document.getElementById('sourcesNone').addEventListener('click', function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); });
+  document.getElementById('switchProfileBtn').addEventListener('click', function () { setSection('profiles'); });
+  document.getElementById('newProfileBtn').addEventListener('click', function () { createProfile(loadCfg()); });
+  document.getElementById('importProfileBtn').addEventListener('click', function () {
+    const url = prompt('Paste the addon URL to import', window.location.origin + '/manifest.json');
+    if (url) importFromUrl(url);
+  });
   document.getElementById('googleBtn').addEventListener('click', function () { window.location.href = '/auth/google'; });
   document.getElementById('guestBtn').addEventListener('click', function () { toast('Guest mode — preferences stay on this device'); });
   document.getElementById('logoutBtn').addEventListener('click', function () { window.location.href = '/auth/logout'; });

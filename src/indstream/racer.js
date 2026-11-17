@@ -2,7 +2,8 @@
 
 const http = require('./http');
 
-const GRACE_MS = 1000;
+// After the first stream, keep waiting for providers running under their own caps.
+const GRACE_MS = 5000;
 const OVERALL_MAX_MS = 14000;
 
 // Each provider owns its race budget; settings set the upper bound.
