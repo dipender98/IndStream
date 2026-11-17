@@ -25,14 +25,14 @@ function parseSpecs(text) {
   const t = String(text == null ? '' : text);
   const specs = { source: '', codec: '', hdr: [], audio: [], channels: '', tag: '', filename: '' };
 
-  const sourceMatch = t.match(/\bREMUX\b/i) ? 'REMUX'
-    : (/BluRay|Blu-Ray|BDRip|BRRip/i.test(t) ? 'BluRay'
-      : (/WEB-DL/i.test(t) ? 'WEB-DL'
-        : (/WEBRip/i.test(t) ? 'WEBRip'
-          : (/HDTV/i.test(t) ? 'HDTV'
-            : (/DVDRip|DVD\b/i.test(t) ? 'DVDRip'
-              : (/HDRip/i.test(t) ? 'HDRip'
-                : (/\bCAM\b|\bHDTS\b|TELESYNC/i.test(t) ? 'CAM' : '')))))));
+  const sourceMatch = /BluRay|Blu-Ray|BDRip|BRRip/i.test(t) ? 'BluRay'
+    : (/WEB-DL/i.test(t) ? 'WEB-DL'
+      : (/WEBRip/i.test(t) ? 'WEBRip'
+        : (/HDTV/i.test(t) ? 'HDTV'
+          : (/DVDRip|DVD\b/i.test(t) ? 'DVDRip'
+            : (/HDRip/i.test(t) ? 'HDRip'
+              : (/\bCAM\b|\bHDTS\b|TELESYNC/i.test(t) ? 'CAM'
+                : (/\bREMUX\b/i.test(t) ? 'REMUX' : '')))))));
   specs.source = sourceMatch;
 
   if (/HEVC|H\.?265|x265/i.test(t)) specs.codec = 'HEVC';
@@ -53,7 +53,7 @@ function parseSpecs(text) {
   if (/\bAAC/i.test(t)) specs.audio.push('AAC');
   if (/\bFLAC/i.test(t)) specs.audio.push('FLAC');
 
-  const channels = t.match(/\b([257]\.[01])\b/);
+  const channels = t.match(/(?:^|[^0-9])([257]\.[01])(?![0-9])/);
   if (channels) specs.channels = channels[1];
 
   const epTag = t.match(/s\d{2}e\d{2}/i);
@@ -433,7 +433,7 @@ function renderNameTitle(provider, raw, ctx, style) {
 const SAMPLES = [
   {
     label: 'Full details · 2160p movie',
-    raw: { url: 'https://example.com/inception.2160p.mkv', type: 'mp4', quality: '2160p', height: 2160, size: '65.95 GB', language: 'English, Hindi', releaseText: 'Inception.2010.2160p.BluRay.REMUX.DV.HEVC.Hindi.DDP.English.Atmos.5.1.mkv' },
+    raw: { url: 'https://example.com/inception.2160p.mkv', type: 'mp4', quality: '2160p', height: 2160, size: '65.95 GB', language: 'English, Hindi', releaseText: 'Inception.2010.2160p.BluRay.REMUX.DV.HDR.10bit.HEVC.Hindi.DDP.English.Atmos.5.1.mkv' },
     ctx: { season: 0, episode: 0, meta: { title: 'Inception', year: '2010' } },
   },
   {
@@ -449,7 +449,7 @@ const SAMPLES = [
 ];
 
 function previewSamples(style) {
-  const provider = { id: 'indstream', name: 'HDHub4u' };
+  const provider = { id: 'hdhub', name: 'HdHub' };
   return SAMPLES.map(function (sample) {
     const rendered = renderNameTitle(provider, sample.raw, sample.ctx, style);
     return { label: sample.label, name: rendered.name, title: rendered.title };

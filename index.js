@@ -37,6 +37,7 @@ const DEFAULT_CFG = {
   p: ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'],
   langs: [],
   langStrict: false,
+  streamStyle: styles.DEFAULT_STYLE,
   minQuality: '720',
   resultLimit: '40',
   requestTimeout: '15',
@@ -344,6 +345,17 @@ const server = http.createServer(async function (req, res) {
     return;
   }
 
+  if (pathname === '/api/styles') {
+    sendJson(res, 200, { default: styles.DEFAULT_STYLE, options: styles.STYLE_OPTIONS });
+    return;
+  }
+
+  if (pathname === '/api/style-preview') {
+    const style = (query.style || styles.DEFAULT_STYLE);
+    sendJson(res, 200, { samples: styles.previewSamples(style) });
+    return;
+  }
+
   if (pathname === '/api/me') {
     const session = readSession(req);
     sendJson(res, 200, {
@@ -351,6 +363,12 @@ const server = http.createServer(async function (req, res) {
       loginEnabled: LOGIN_ENABLED,
       user: session ? { name: session.name, email: session.email, picture: session.picture } : null,
     });
+    return;
+  }
+
+  if (pathname === '/format-preview.json') {
+    const style = String(query.style || styles.DEFAULT_STYLE);
+    sendJson(res, 200, { samples: styles.previewSamples(style) });
     return;
   }
 

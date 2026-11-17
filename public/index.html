@@ -90,9 +90,44 @@
         <input type="checkbox" id="probeQuality">
         <span>Probe unknown quality (slower)</span>
       </label>
+      <label class="switch">
+        <input type="checkbox" id="debug">
+        <span>Verbose logging</span>
+      </label>
     </div>
 
-    <div class="card install">
+    <div class="card">
+      <h2>Stream style</h2>
+      <p class="hint">How each stream is labelled in the list. Unknown release details are left out, not guessed.</p>
+      <div class="field">
+        <label for="streamStyle">Style</label>
+        <select id="streamStyle">
+          <option value="lightgdrive">LightGDrive (default)</option>
+          <option value="gdrive">GDrive</option>
+          <option value="minimalisticgdrive">MinimalisticGDrive</option>
+          <option value="prism">Prism</option>
+          <option value="plavio-modern">Plavio Modern</option>
+          <option value="torrentio-minimalist">Torrentio Minimalist</option>
+          <option value="mediafusion-pro">MediaFusion Pro</option>
+          <option value="pure-essentials">Pure Essentials</option>
+          <option value="torrentio">Torrentio</option>
+          <option value="torbox">TorBox</option>
+          <option value="default">Plavio Default</option>
+          <option value="classic">IndStream Classic</option>
+        </select>
+      </div>
+      <div class="pv-wrap" id="stylePreview"></div>
+    </div>
+
+    <div class="card">
+      <h2>Display style</h2>
+      <p class="hint">How each stream is labelled in the list.</p>
+      <div class="field">
+        <label for="streamStyle">Stream style</label>
+        <select id="streamStyle"></select>
+      </div>
+      <div class="preview" id="stylePreview"></div>
+    </div>
       <h2>Install</h2>
       <p class="hint">This URL already contains your choices. Install it once and it keeps working.</p>
       <div class="urlbox">

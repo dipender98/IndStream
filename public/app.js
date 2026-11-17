@@ -22,6 +22,7 @@ const DEFAULT_CFG = {
   includeDash: true,
   probeQuality: false,
   debug: false,
+  streamStyle: 'lightgdrive',
 };
 
 const LS_KEY = 'indstream.cfg.v1';
@@ -52,6 +53,7 @@ function readForm() {
     includeDash: document.getElementById('includeDash').checked,
     probeQuality: document.getElementById('probeQuality').checked,
     debug: document.getElementById('debug').checked,
+    streamStyle: document.getElementById('streamStyle').value,
   };
   if (!cfg.p.length) cfg.p = DEFAULT_CFG.p.slice();
   return cfg;
@@ -77,6 +79,8 @@ function writeForm(cfg) {
   document.getElementById('probeQuality').checked = !!cfg.probeQuality;
   document.getElementById('debug').checked = !!cfg.debug;
   document.getElementById('langStrict').checked = !!cfg.langStrict;
+  const styleSel = document.getElementById('streamStyle');
+  if (styleSel && cfg.streamStyle) styleSel.value = cfg.streamStyle;
 }
 
 function toast(msg) {
@@ -98,6 +102,7 @@ function updateUrl() {
   document.getElementById('testUrl').href = testLink;
   document.getElementById('openStremio').href = 'https://www.stremio.com/#/addons?addonUrl=' + encodeURIComponent(url);
   document.getElementById('openStremio2').href = 'https://www.stremio.com/#/addons?addonUrl=' + encodeURIComponent(url);
+  updatePreview();
   return url;
 }
 
@@ -166,6 +171,30 @@ async function loadAccount() {
   } catch (e) {}
 }
 
+function escHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+let lastPreviewStyle = null;
+
+function updatePreview() {
+  const style = document.getElementById('streamStyle').value;
+  if (style === lastPreviewStyle) return;
+  lastPreviewStyle = style;
+  const wrap = document.getElementById('stylePreview');
+  fetch('/format-preview.json?style=' + encodeURIComponent(style))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      wrap.innerHTML = (d.samples || []).map(function (s) {
+        return '<div class="pv"><div class="pv-label">' + escHtml(s.label) + '</div>' +
+          '<div class="pv-name">' + escHtml(s.name) + '</div>' +
+          '<div class="pv-title">' + escHtml(s.title) + '</div></div>';
+      }).join('');
+    })
+    .catch(function () { wrap.innerHTML = ''; lastPreviewStyle = null; });
+}
+
 document.getElementById('googleBtn').addEventListener('click', function () {
   window.location.href = '/auth/google';
 });
@@ -181,13 +210,53 @@ document.getElementById('copyBtn').addEventListener('click', function () { copyT
 document.getElementById('copyHero').addEventListener('click', function () { copyText(document.getElementById('manifestUrl').textContent); });
 document.getElementById('copyInstall').addEventListener('click', function () { copyText(document.getElementById('manifestUrl').textContent); });
 
-['minQuality', 'resultLimit', 'requestTimeout', 'includeDash', 'probeQuality', 'debug', 'langStrict'].forEach(function (id) {
+['minQuality', 'resultLimit', 'requestTimeout', 'includeDash', 'probeQuality', 'debug', 'langStrict', 'streamStyle'].forEach(function (id) {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', updateUrl);
 });
 
+function loadStyles() {
+  fetch('/api/styles').then(function (r) { return r.json(); }).then(function (data) {
+    const sel = document.getElementById('streamStyle');
+    if (!sel) return;
+    sel.innerHTML = '';
+    (data.options || []).forEach(function (opt) {
+      const o = document.createElement('option');
+      o.value = opt.id;
+      o.textContent = opt.label;
+      sel.appendChild(o);
+    });
+    const cfg = loadCfg();
+    sel.value = cfg.streamStyle || data.default;
+    updateStylePreview();
+  }).catch(function () {});
+}
+
+function updateStylePreview() {
+  const style = document.getElementById('streamStyle').value;
+  const box = document.getElementById('stylePreview');
+  if (!box) return;
+  fetch('/api/style-preview?style=' + encodeURIComponent(style)).then(function (r) { return r.json(); }).then(function (data) {
+    box.innerHTML = '';
+    (data.samples || []).forEach(function (s) {
+      const div = document.createElement('div');
+      div.className = 'sample';
+      const name = document.createElement('div');
+      name.className = 'sample-name';
+      name.textContent = s.name;
+      const title = document.createElement('div');
+      title.textContent = s.title;
+      div.appendChild(name);
+      div.appendChild(title);
+      box.appendChild(div);
+    });
+  }).catch(function () {});
+}
+
 buildProviderChips();
 buildLangChips();
 writeForm(loadCfg());
+loadStyles();
+document.getElementById('streamStyle').addEventListener('change', function () { updateUrl(); updateStylePreview(); });
 updateUrl();
 loadAccount();
