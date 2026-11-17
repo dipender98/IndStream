@@ -571,6 +571,8 @@ function setupHealth() {
 
 buildProviderCards();
 buildLangChips();
+setupLangFilters();
+setupPalette();
 setupNav();
 setupWizard();
 setupDrawer();
@@ -581,3 +583,107 @@ loadStyles();
 applyCfg(loadCfg());
 loadAccount();
 setupHealth();
+
+function setupLangFilters() {
+  var search = document.getElementById('langSearch');
+  var clear = document.getElementById('clearLangs');
+  if (search) {
+    search.addEventListener('input', function () {
+      var q = search.value.trim().toLowerCase();
+      document.querySelectorAll('#langs .chip-btn').forEach(function (chip) {
+        var match = !q || chip.dataset.lang.toLowerCase().indexOf(q) >= 0;
+        chip.style.display = match ? '' : 'none';
+      });
+    });
+  }
+  if (clear) {
+    clear.addEventListener('click', function () {
+      document.querySelectorAll('#langs .chip-btn.active').forEach(function (chip) { chip.classList.remove('active'); });
+      updateAll();
+      toast('Languages cleared');
+    });
+  }
+}
+
+function setupPalette() {
+  var palette = document.getElementById('palette');
+  if (!palette) return;
+  var input = document.getElementById('paletteInput');
+  var list = document.getElementById('paletteList');
+  var backdrop = document.getElementById('paletteBackdrop');
+  var SECTIONS = ['overview', 'profiles', 'sources', 'filtering', 'playback', 'account', 'status'];
+  var actions = [
+    { id: 'nav:overview', label: 'Go to Overview', hint: '1' },
+    { id: 'nav:profiles', label: 'Go to Presets', hint: '2' },
+    { id: 'nav:sources', label: 'Go to Sources', hint: '3' },
+    { id: 'nav:filtering', label: 'Go to Filtering', hint: '4' },
+    { id: 'nav:playback', label: 'Go to Playback', hint: '5' },
+    { id: 'nav:account', label: 'Go to Account', hint: '6' },
+    { id: 'nav:status', label: 'Go to Status', hint: '7' },
+    { id: 'copy', label: 'Copy addon URL' },
+    { id: 'reset', label: 'Reset to defaults' }
+  ];
+  var filtered = actions.slice();
+  var index = 0;
+
+  function render() {
+    list.innerHTML = '';
+    filtered.forEach(function (a, i) {
+      var li = document.createElement('li');
+      li.className = 'palette-item' + (i === index ? ' active' : '');
+      li.setAttribute('role', 'option');
+      li.innerHTML = '<span class="palette-label">' + a.label + '</span>' +
+        (a.hint ? '<kbd class="palette-key">' + a.hint + '</kbd>' : '');
+      li.addEventListener('click', function () { run(a); });
+      li.addEventListener('mousemove', function () { index = i; render(); });
+      list.appendChild(li);
+    });
+  }
+
+  function run(a) {
+    closePalette();
+    if (a.id.indexOf('nav:') === 0) { setSection(a.id.slice(4)); return; }
+    if (a.id === 'copy') { copyText(manifestUrl(currentCfg())); return; }
+    if (a.id === 'reset') { applyCfg(DEFAULT_CFG); toast('Reset to defaults'); }
+  }
+
+  function openPalette() {
+    palette.classList.remove('hidden');
+    input.value = '';
+    filtered = actions.slice();
+    index = 0;
+    render();
+    input.focus();
+  }
+
+  function closePalette() { palette.classList.add('hidden'); }
+
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target && e.target.tagName) || '';
+    var typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (palette.classList.contains('hidden')) { openPalette(); } else { closePalette(); }
+      return;
+    }
+    if (e.key === 'Escape') { closePalette(); return; }
+    var paletteOpen = !palette.classList.contains('hidden');
+    if (!paletteOpen) {
+      if (typing) { return; }
+      if (e.key >= '1' && e.key <= '7') { e.preventDefault(); setSection(SECTIONS[Number(e.key) - 1]); }
+      return;
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); index = Math.min(filtered.length - 1, index + 1); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); index = Math.max(0, index - 1); render(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (filtered[index]) { run(filtered[index]); } }
+  });
+
+  input.addEventListener('input', function () {
+    var q = input.value.trim().toLowerCase();
+    filtered = actions.filter(function (a) { return !q || a.label.toLowerCase().indexOf(q) >= 0; });
+    index = 0;
+    render();
+  });
+
+  backdrop.addEventListener('click', closePalette);
+}

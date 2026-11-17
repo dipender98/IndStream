@@ -142,7 +142,8 @@
     </div>
 
     <div class="card">
-      <div class="card-head">Language preference</div>
+      <div class="card-head row-head">Language preference <button class="text-btn" id="clearLangs" type="button">Clear</button></div>
+      <input class="select lang-search" id="langSearch" type="text" placeholder="Search languages..." aria-label="Search languages">
       <div class="chips" id="langs"></div>
       <label class="switch"><input type="checkbox" id="langStrict"><span class="switch-track"></span><span>Hide streams in other languages</span></label>
     </div>
@@ -237,6 +238,16 @@
     </div>
   </section>
 
+  <footer class="foot-hint">
+    <span class="hint-item"><kbd>Ctrl</kbd><kbd>K</kbd> quick switch</span>
+    <span class="hint-sep">&middot;</span>
+    <span class="hint-item"><kbd>1</kbd>&ndash;<kbd>7</kbd> jump</span>
+    <span class="hint-sep">&middot;</span>
+    <span class="hint-item"><kbd>&larr;</kbd><kbd>&rarr;</kbd> tune steps</span>
+    <span class="hint-sep">&middot;</span>
+    <a class="hint-item hint-link" href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
 </main>
 
 <!-- WELCOME MODAL -->
@@ -253,6 +264,19 @@
       Continue with Google
     </button>
     <button class="btn-quiet wide" id="modalGuestBtn" type="button">Continue as guest</button>
+  </div>
+</div>
+
+<div class="palette hidden" id="palette" role="dialog" aria-modal="true" aria-label="Quick switch">
+  <button class="palette-backdrop" id="paletteBackdrop" aria-label="Close quick switch"></button>
+  <div class="palette-box">
+    <div class="palette-input-row">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="18" height="18"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      <input id="paletteInput" type="text" placeholder="Type a command..." autocomplete="off" spellcheck="false" aria-label="Command">
+      <kbd class="palette-esc">esc</kbd>
+    </div>
+    <ul class="palette-list" id="paletteList" role="listbox"></ul>
+    <div class="palette-foot"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span><span><kbd>&crarr;</kbd> run</span><span><kbd>esc</kbd> close</span></div>
   </div>
 </div>
 
