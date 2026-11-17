@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IndStream — Every source. One addon.</title>
-<meta name="description" content="Pick your sources, languages and quality, then install IndStream in Nuvio or Stremio. Free, open, no account needed.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IndStream — Source control</title>
+<meta name="description" content="Configure and install IndStream, a Nuvio and Stremio addon for movies and series streams.">
 <link rel="icon" href="/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,243 +13,245 @@
 </head>
 <body>
 
-<div class="aurora"></div>
-<div class="grain"></div>
+<div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
 
-<header class="top">
-  <div class="wrap top-inner">
-    <a class="wordmark" href="/">
-      <img src="/logo.png" alt="IndStream" width="30" height="30">
-      <span>IndStream</span>
-    </a>
-    <nav class="top-nav">
-      <a href="#sources">Sources</a>
-      <a href="#tune">Tune</a>
-      <a href="#languages">Languages</a>
-      <a href="#status">Status</a>
-    </nav>
-    <div class="top-actions">
-      <button class="chip-btn guest-chip" id="topAccount" type="button">Guest</button>
-      <a class="icon-btn" href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener" aria-label="GitHub">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 .5C5.37.5 0 5.78 0 12.292c0 5.211 3.435 9.63 8.205 11.188.6.111.82-.254.82-.567 0-.28-.01-1.022-.016-2.005-3.338.711-4.042-1.582-4.042-1.582-.546-1.361-1.333-1.724-1.333-1.724-1.09-.73.082-.716.082-.716 1.205.083 1.84 1.226 1.84 1.226 1.07 1.807 2.809 1.283 3.495.981.108-.77.418-1.285.76-1.58-2.665-.297-5.466-1.313-5.466-5.844 0-1.29.465-2.343 1.225-3.169-.123-.297-.53-1.497.116-3.121 0 0 .998-.313 3.27 1.209A11.5 11.5 0 0 1 12 6.844c1.02.005 2.047.135 3.006.394 2.27-1.522 3.266-1.209 3.266-1.209.648 1.624.24 2.824.118 3.121.764.826 1.223 1.881 1.223 3.17 0 4.542-2.805 5.542-5.476 5.833.43.363.824 1.096.824 2.211 0 1.596-.015 2.884-.015 3.273 0 .316.214.683.825.567C20.565 21.917 24 17.5 24 12.292 24 5.78 18.627.5 12 .5z"/></svg>
-      </a>
-      <a class="btn-cta" href="#install">Install</a>
+<aside class="sidebar" id="sidebar">
+  <div class="brand-block">
+    <img src="/logo.png" alt="IndStream" class="logo" width="36" height="36">
+    <div class="brand-text">
+      <div class="brand-name">IndStream</div>
+      <div class="brand-sub">Source control</div>
+    </div>
+    <button class="icon-btn drawer-close" id="drawerClose" aria-label="Close menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </button>
+  </div>
+
+  <nav class="nav" id="nav">
+    <button class="nav-item active" data-section="overview">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <span>Overview</span>
+    </button>
+    <button class="nav-item" data-section="sources">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="7.01" y2="10"/><line x1="11" y1="10" x2="17" y2="10"/><line x1="11" y1="14" x2="15" y2="14"/></svg>
+      <span>Sources</span>
+      <span class="nav-badge" id="sourcesBadge">5</span>
+    </button>
+    <button class="nav-item" data-section="filtering">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      <span>Filtering</span>
+    </button>
+    <button class="nav-item" data-section="playback">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="8" x2="16" y2="8"/><circle cx="18" cy="8" r="1.5"/><line x1="4" y1="16" x2="10" y2="16"/><circle cx="12" cy="16" r="1.5"/></svg>
+      <span>Playback</span>
+    </button>
+    <button class="nav-item" data-section="account">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      <span>Account</span>
+      <span class="nav-dot" id="accountDot" hidden></span>
+    </button>
+    <button class="nav-item" data-section="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 14.5 14"/></svg>
+      <span>Status</span>
+    </button>
+  </nav>
+
+  <div class="account-block">
+    <div class="avatar" id="accountAvatar">G</div>
+    <div class="account-meta">
+      <div class="account-name" id="accountName">Guest</div>
+      <div class="account-sub" id="accountSub">Local preferences</div>
     </div>
   </div>
-</header>
+  <button class="nav-item sign-out" id="signOutBtn" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <span>Sign out</span>
+  </button>
+</aside>
 
-<main class="wrap">
+<main class="main">
 
-  <!-- HERO -->
-  <section class="hero">
-    <div class="hero-copy">
-      <div class="eyebrow"><span class="pulse-dot"></span> MOVIES &amp; SERIES ADDON</div>
-      <h1>Every source.<br><span class="grad-text">One manifest.</span></h1>
-      <p class="lead">Hand-pick your servers, languages and quality — drop the URL into Nuvio or Stremio, and you’re done. No sign-up. No config files. Your link is your settings.</p>
-      <div class="hero-ctas">
-        <a class="btn-big" href="#install">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M8 5v14l11-7z"/></svg>
-          Install IndStream
-        </a>
-        <a class="btn-quiet" href="#sources">Pick sources first</a>
+  <section class="notice" id="notice">
+    <span class="dot-success"></span>
+    <span>IndStream v1 is live. Free forever — your preferences stay in this browser, or sync with Google.</span>
+    <button class="icon-btn notice-close" id="noticeClose" aria-label="Dismiss">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </button>
+  </section>
+
+  <header class="main-header">
+    <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    </button>
+    <div class="header-titles">
+      <h1 id="sectionTitle">Overview</h1>
+      <p id="sectionSub">Install status &amp; sync</p>
+    </div>
+    <a class="icon-btn" href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener" aria-label="GitHub">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 .5C5.37.5 0 5.78 0 12.292c0 5.211 3.435 9.63 8.205 11.188.6.111.82-.254.82-.567 0-.28-.01-1.022-.016-2.005-3.338.711-4.042-1.582-4.042-1.582-.546-1.361-1.333-1.724-1.333-1.724-1.09-.73.082-.716.082-.716 1.205.083 1.84 1.226 1.84 1.226 1.07 1.807 2.809 1.283 3.495.981.108-.77.418-1.285.76-1.58-2.665-.297-5.466-1.313-5.466-5.844 0-1.29.465-2.343 1.225-3.169-.123-.297-.53-1.497.116-3.121 0 0 .998-.313 3.27 1.209A11.5 11.5 0 0 1 12 6.844c1.02.005 2.047.135 3.006.394 2.27-1.522 3.266-1.209 3.266-1.209.648 1.624.24 2.824.118 3.121.764.826 1.223 1.881 1.223 3.17 0 4.542-2.805 5.542-5.476 5.833.43.363.824 1.096.824 2.211 0 1.596-.015 2.884-.015 3.273 0 .316.214.683.825.567C20.565 21.917 24 17.5 24 12.292 24 5.78 18.627.5 12 .5z"/></svg>
+    </a>
+  </header>
+
+  <div class="wizard-bar" id="wizardBar">
+    <button class="wizard-btn back" id="wizardBack" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </button>
+    <div class="wizard-steps" id="wizardSteps"></div>
+    <button class="wizard-btn next" id="wizardNext" type="button">
+      Next
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <section class="panel" id="panel-overview">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Sources</div>
+        <div class="stat-value"><span id="statSources">5</span><span class="stat-max"> / 6</span></div>
+        <div class="stat-sub">selected</div>
       </div>
-      <div class="hero-stats">
-        <div><strong id="heroSources">5</strong><span>sources</span></div>
-        <div class="sep"></div>
-        <div><strong>4K→360p</strong><span>quality ladder</span></div>
-        <div class="sep"></div>
-        <div><strong>~1s</strong><span>to first stream</span></div>
+      <div class="stat-card">
+        <div class="stat-label">Quality</div>
+        <div class="stat-value"><span id="statQualities">720p+</span></div>
+        <div class="stat-sub">floor</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Sync</div>
+        <div class="stat-value ok">Saved <span class="check">&#10003;</span></div>
+        <div class="stat-sub">Auto-sync</div>
       </div>
     </div>
 
-    <div class="hero-visual" aria-hidden="true">
-      <div class="phone">
-        <div class="phone-notch"></div>
-        <div class="phone-screen">
-          <div class="now-playing">
-            <span class="np-dot"></span> NOW PLAYING <span class="np-live">HD</span>
-          </div>
-          <div class="poster">
-            <div class="poster-title" id="posterTitle">Inception</div>
-            <div class="poster-meta"><span id="posterStyle">LightGDrive</span></div>
-          </div>
-          <div class="stream-list" id="posterSamples"></div>
-          <div class="progress"><div class="progress-fill"></div></div>
-          <div class="phone-bar"><span>00:42</span><span>-02:18:09</span></div>
-        </div>
+    <div class="install-card">
+      <div class="install-head"><span class="chevron">&#9656;</span> INSTALL INDSTREAM</div>
+      <p class="install-state" id="installState">Configuration ready.</p>
+      <div class="saved-line"><span class="dot-success"></span> All changes saved</div>
+      <button class="install-btn" id="installBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>
+        Install IndStream
+      </button>
+      <div class="url-row">
+        <code id="manifestUrl"></code>
+        <button class="btn-icon" id="copyUrlBtn" type="button" aria-label="Copy URL">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
       </div>
-      <div class="glow-orb"></div>
+      <button class="btn-quiet wide" id="copyInstall" type="button">Copy manifest URL</button>
+      <button class="text-btn clear-inline" id="clearBtn" type="button">Reset to defaults</button>
     </div>
   </section>
 
-  <!-- STEP 01 SOURCES -->
-  <section class="step" id="sources">
-    <div class="step-head">
-      <span class="step-num">01</span>
-      <div>
-        <h2>Choose your sources</h2>
-        <p class="step-sub">API sources are instant; web scrapers take a few seconds. Fewer sources, faster lists.</p>
-      </div>
-      <div class="step-side">
-        <span id="sourcesCount">5 selected</span>
-        <button class="text-btn" id="sourcesAll" type="button">Select all</button>
-        <button class="text-btn" id="sourcesNone" type="button">Reset</button>
-      </div>
+  <!-- SOURCES -->
+  <section class="panel hidden" id="panel-sources">
+    <div class="panel-head">
+      <h2>Sources <span class="muted" id="sourcesCount">5 selected</span></h2>
     </div>
     <div class="provider-grid" id="providers"></div>
+    <div class="row-foot">
+      <button class="text-btn" id="sourcesAll" type="button">Select all</button>
+      <button class="text-btn" id="sourcesNone" type="button">Reset</button>
+    </div>
+    <p class="panel-note">Every source starts selected. Fewer sources, faster lists — 4–7 is a good balance.</p>
   </section>
 
-  <!-- STEP 02 TUNE -->
-  <section class="step" id="tune">
-    <div class="step-head">
-      <span class="step-num">02</span>
-      <div>
-        <h2>Dial it in</h2>
-        <p class="step-sub">Quality, limits and how each stream is labelled.</p>
+  <!-- FILTERING -->
+  <section class="panel hidden" id="panel-filtering">
+    <div class="panel-head"><h2>Filtering</h2></div>
+
+    <div class="row-card">
+      <div class="row-card-head">
+        <h3>Language preference</h3>
+        <p>Preferred languages float to the top.</p>
+      </div>
+      <div class="chips" id="langs"></div>
+      <label class="switch"><input type="checkbox" id="langStrict"><span class="switch-track"></span><span>Hide streams in other languages</span></label>
+    </div>
+
+    <div class="row-card">
+      <div class="row-card-head"><h3>Minimum quality</h3><p>Known heights below this are dropped. Unknown heights are kept.</p></div>
+      <div class="segmented" id="minQualitySeg">
+        <button data-value="0" type="button">Any</button>
+        <button data-value="720" type="button" class="active">720p</button>
+        <button data-value="1080" type="button">1080p</button>
       </div>
     </div>
-    <div class="tune-grid">
-      <div class="tune-block">
-        <div class="field-label">Minimum quality</div>
-        <div class="segmented" id="minQualitySeg">
-          <button data-value="0" type="button">Any</button>
-          <button data-value="720" type="button" class="active">720p</button>
-          <button data-value="1080" type="button">1080p</button>
-        </div>
-      </div>
-      <div class="tune-block">
-        <div class="field-label">Max results</div>
-        <div class="segmented" id="resultLimitSeg">
-          <button data-value="20" type="button">20</button>
-          <button data-value="40" type="button" class="active">40</button>
-          <button data-value="80" type="button">80</button>
-          <button data-value="0" type="button">Unlimited</button>
-        </div>
-      </div>
-      <div class="tune-block">
-        <div class="field-label">Provider timeout</div>
-        <div class="segmented" id="timeoutSeg">
-          <button data-value="10" type="button">10s</button>
-          <button data-value="15" type="button" class="active">15s</button>
-          <button data-value="25" type="button">25s</button>
-        </div>
-      </div>
-      <div class="tune-block">
-        <div class="field-label">Stream style</div>
-        <select class="select" id="streamStyle"></select>
-      </div>
-      <div class="tune-block toggles">
-        <label class="switch"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span>Include DASH</span></label>
-        <label class="switch"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span>Probe quality</span></label>
-        <label class="switch"><input type="checkbox" id="debug"><span class="switch-track"></span><span>Verbose logs</span></label>
-      </div>
-    </div>
+
+    <label class="switch row-card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span>Include DASH streams</span></label>
   </section>
 
-  <!-- STEP 03 LANGUAGES -->
-  <section class="step" id="languages">
-    <div class="step-head">
-      <span class="step-num">03</span>
-      <div>
-        <h2>Language preference</h2>
-        <p class="step-sub">Preferred languages float to the top. Strict mode hides the rest.</p>
-      </div>
-      <label class="switch inline"><input type="checkbox" id="langStrict"><span class="switch-track"></span><span>Strict</span></label>
-    </div>
-    <div class="chips" id="langs"></div>
-  </section>
+  <!-- PLAYBACK -->
+  <section class="panel hidden" id="panel-playback">
+    <div class="panel-head"><h2>Playback</h2></div>
 
-  <!-- INSTALL -->
-  <section class="install-panel" id="install">
-    <div class="install-inner">
-      <div class="install-copy">
-        <div class="eyebrow small">YOUR ADDON URL</div>
-        <h2>Install once.<br><span class="grad-text">Enjoy forever.</span></h2>
-        <p>This link already contains every choice on this page. Ever want to change something? Just come back and generate a new link.</p>
-        <div class="url-row">
-          <code id="manifestUrl"></code>
-          <button class="btn-icon" id="copyIcon" type="button" aria-label="Copy URL">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          </button>
-        </div>
-        <div class="install-actions">
-          <button class="btn-big" id="copyInstall" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Copy manifest URL
-          </button>
-          <a class="btn-quiet" id="openStremio" href="https://www.stremio.com/#/addons" target="_blank" rel="noopener">Open Stremio</a>
-        </div>
-        <p class="install-hint">In Nuvio: <strong>Settings → Addons → Add by URL</strong>. In Stremio: <strong>Addons → paste the URL</strong>.</p>
-      </div>
-      <div class="install-card">
-        <div class="install-head">
-          <span class="chevron">▸</span> INSTALL INDSTREAM
-        </div>
-        <div class="install-state" id="installState">Configuration ready</div>
-        <button class="install-btn" id="installBtn" type="button">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M8 5v14l11-7z"/></svg>
-          Install IndStream
-        </button>
-        <div class="install-meta">
-          <div><span id="statSources">5</span> sources</div>
-          <div><span id="statResultLimit">40</span> max results</div>
-          <div><span id="statStyle">LightGDrive</span> style</div>
-        </div>
-        <button class="text-btn clear-inline" id="clearBtn" type="button">Reset to defaults</button>
+    <div class="row-card">
+      <div class="row-card-head"><h3>Maximum results</h3><p>Caps streams per scraper.</p></div>
+      <div class="segmented" id="resultLimitSeg">
+        <button data-value="20" type="button">20</button>
+        <button data-value="40" type="button" class="active">40</button>
+        <button data-value="80" type="button">80</button>
+        <button data-value="0" type="button">Unlimited</button>
       </div>
     </div>
+
+    <div class="row-card">
+      <div class="row-card-head"><h3>Provider timeout</h3><p>Upper bound per source.</p></div>
+      <div class="segmented" id="timeoutSeg">
+        <button data-value="10" type="button">10s</button>
+        <button data-value="15" type="button" class="active">15s</button>
+        <button data-value="25" type="button">25s</button>
+      </div>
+    </div>
+
+    <div class="row-card">
+      <div class="row-card-head"><h3>Stream style</h3><p>How each stream is labelled.</p></div>
+      <select class="select" id="streamStyle"></select>
+      <div class="style-preview" id="stylePreview"></div>
+    </div>
+
+    <label class="switch row-card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span>Probe unknown quality (slower)</span></label>
+    <label class="switch row-card"><input type="checkbox" id="debug"><span class="switch-track"></span><span>Verbose logging</span></label>
   </section>
 
-  <!-- ACCOUNT + STATUS -->
-  <section class="bottom-grid">
-    <div class="mini-card" id="account">
-      <div class="mini-head">
-        <div class="avatar" id="accountAvatar">G</div>
+  <!-- ACCOUNT -->
+  <section class="panel hidden" id="panel-account">
+    <div class="panel-head"><h2>Account</h2></div>
+    <div class="account-card">
+      <div class="account-big">
+        <div class="avatar big" id="bigAvatar">G</div>
         <div>
-          <div class="mini-title" id="accountName">Guest</div>
-          <div class="mini-sub" id="accountSub">Preferences saved on this device</div>
+          <div class="account-big-name" id="bigName">Guest</div>
+          <div class="account-big-sub" id="bigSub">Local preferences - sign in to keep them on every device.</div>
         </div>
       </div>
-      <div class="mini-actions">
+      <div class="account-actions">
         <button class="btn-google" id="googleBtn" type="button">
-          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z"/></svg>
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z"/></svg>
           Continue with Google
         </button>
-        <button class="btn-quiet" id="guestBtn" type="button">Continue as guest</button>
-        <button class="text-btn" id="logoutBtn" type="button" hidden>Sign out</button>
+        <button class="btn-ghost" id="guestBtn" type="button">Continue as guest</button>
+        <button class="text-btn danger" id="logoutBtn" type="button" hidden>Sign out</button>
       </div>
     </div>
+  </section>
 
-    <div class="mini-card" id="status">
-      <div class="mini-head">
-        <div class="status-dot" id="statusDot"></div>
-        <div>
-          <div class="mini-title">Service health</div>
-          <div class="mini-sub" id="healthStreams">Checking…</div>
-        </div>
-        <button class="icon-btn small" id="recheckBtn" type="button" aria-label="Re-check">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="16" height="16"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
-        </button>
+  <!-- STATUS -->
+  <section class="panel hidden" id="panel-status">
+    <div class="panel-head"><h2>Status</h2></div>
+    <div class="row-card">
+      <div class="row-card-head"><h3>Service health</h3><p>Live checks against the running addon.</p></div>
+      <div class="health-grid">
+        <div class="health-item"><span class="health-name">Manifest</span><span class="health-val" id="healthManifest">checking...</span></div>
+        <div class="health-item"><span class="health-name">Streams (Inception)</span><span class="health-val" id="healthStreams">checking...</span></div>
+        <div class="health-item"><span class="health-name">Version</span><span class="health-val">1.0.0</span></div>
+        <div class="health-item"><span class="health-name">Runtime</span><span class="health-val">Node 20</span></div>
       </div>
-      <div class="health-rows">
-        <div class="health-row"><span>Manifest</span><span id="healthManifest">…</span></div>
-        <div class="health-row"><span>Version</span><span>1.0.0</span></div>
-        <div class="health-row"><span>Runtime</span><span>Node 20</span></div>
-      </div>
+      <button class="btn-ghost" id="recheckBtn" type="button">Re-check</button>
     </div>
   </section>
 
 </main>
-
-<footer class="footer">
-  <div class="wrap footer-inner">
-    <div>IndStream v1 · A free, open addon. Not affiliated with Nuvio or any stream provider.</div>
-    <div class="footer-links">
-      <a href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/dipender98/IndStream/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
-    </div>
-  </div>
-</footer>
 
 <!-- WELCOME MODAL -->
 <div class="modal-backdrop hidden" id="welcomeModal" role="dialog" aria-modal="true" aria-label="Welcome to IndStream">

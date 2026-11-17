@@ -97,26 +97,32 @@ function manifestUrl(cfg) {
   return window.location.origin + '/' + b64url(cfg) + '/manifest.json';
 }
 
+function flashSaved() {
+  const bar = document.querySelector('.saved-line');
+  if (!bar) return;
+  bar.innerHTML = '<span class="dot-success" style="background:#c9a36b"></span> Saving...';
+  setTimeout(function () {
+    bar.innerHTML = '<span class="dot-success"></span> All changes saved';
+  }, 650);
+}
+
 function updateAll() {
   const cfg = currentCfg();
   saveCfg(cfg);
+  flashSaved();
   const url = manifestUrl(cfg);
   document.getElementById('manifestUrl').textContent = url;
-  document.getElementById('heroSources').textContent = cfg.p.length;
   document.getElementById('statSources').textContent = cfg.p.length;
+  document.getElementById('sourcesBadge').textContent = cfg.p.length;
   document.getElementById('sourcesCount').textContent = cfg.p.length + ' selected';
-  document.getElementById('statResultLimit').textContent = cfg.resultLimit === '0' ? '∞' : cfg.resultLimit;
-  const styleSel = document.getElementById('streamStyle');
-  const styleLabel = styleSel.options[styleSel.selectedIndex] ? styleSel.options[styleSel.selectedIndex].textContent.replace(' (default)', '') : 'LightGDrive';
-  document.getElementById('statStyle').textContent = styleLabel;
-  document.getElementById('posterStyle').textContent = styleLabel;
-  document.getElementById('openStremio').href = 'https://www.stremio.com/#/addons?addonUrl=' + encodeURIComponent(url);
-  updatePreview(styleSel.value);
+  document.getElementById('statQualities').textContent = cfg.minQuality === '0' ? 'Any' : cfg.minQuality + 'p+';
+  document.getElementById('installState').textContent = 'Configuration ready.';
+  updatePreview(document.getElementById('streamStyle').value);
 }
 
 let previewToken = 0;
 function updatePreview(style) {
-  const box = document.getElementById('posterSamples');
+  const box = document.getElementById('stylePreview');
   if (!box) return;
   const token = ++previewToken;
   fetch('/api/style-preview?style=' + encodeURIComponent(style))
@@ -124,10 +130,16 @@ function updatePreview(style) {
     .then(function (data) {
       if (token !== previewToken) return;
       box.innerHTML = '';
-      (data.samples || []).slice(0, 4).forEach(function (s) {
+      (data.samples || []).forEach(function (s) {
         const div = document.createElement('div');
-        div.className = 'poster-sample';
-        div.textContent = s.title;
+        div.className = 'sample';
+        const name = document.createElement('div');
+        name.className = 'sample-name';
+        name.textContent = s.name;
+        const title = document.createElement('div');
+        title.textContent = s.title;
+        div.appendChild(name);
+        div.appendChild(title);
         box.appendChild(div);
       });
     })
@@ -204,27 +216,152 @@ async function loadAccount() {
     const signedIn = !!(data.signedIn && data.user);
     const name = signedIn ? (data.user.name || 'Account') : 'Guest';
     document.getElementById('accountName').textContent = name;
-    document.getElementById('accountSub').textContent = signedIn ? 'Connected · synced to this Google account' : 'Preferences saved on this device';
-    document.getElementById('topAccount').textContent = name;
+    document.getElementById('accountSub').textContent = signedIn ? 'Connected · synced' : 'Local preferences';
+    document.getElementById('bigName').textContent = name;
+    document.getElementById('bigSub').textContent = signedIn ? (data.user.email || 'Connected · synced to this Google account') : 'Local preferences - sign in to keep them on every device.';
     document.getElementById('googleBtn').hidden = signedIn || !data.loginEnabled;
     document.getElementById('modalGoogleBtn').hidden = !data.loginEnabled;
     document.getElementById('guestBtn').hidden = signedIn;
     document.getElementById('logoutBtn').hidden = !signedIn;
+    document.getElementById('signOutBtn').hidden = !signedIn;
+    document.getElementById('accountDot').hidden = signedIn;
     const initial = name[0].toUpperCase();
-    const avatar = document.getElementById('accountAvatar');
-    if (signedIn && data.user.picture) {
-      avatar.innerHTML = '<img src="' + data.user.picture + '" alt="" referrerpolicy="no-referrer" onerror="this.outerHTML=\'' + initial + '\'">';
-    } else {
-      avatar.textContent = initial;
-    }
+    ['accountAvatar', 'bigAvatar'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (signedIn && data.user.picture) {
+        el.innerHTML = '<img src="' + data.user.picture + '" alt="" referrerpolicy="no-referrer" onerror="this.outerHTML=\'' + initial + '\'">';
+      } else {
+        el.textContent = initial;
+      }
+    });
   } catch (e) {}
+}
+
+const WIZARD_STEPS = [
+  { id: 'sources', label: 'Sources' },
+  { id: 'filtering', label: 'Filtering' },
+  { id: 'playback', label: 'Playback' },
+];
+
+const SECTION_TITLES = {
+  overview: ['Overview', 'Install status & sync'],
+  sources: ['Sources', 'Pick your servers'],
+  filtering: ['Filtering', 'Languages & quality'],
+  playback: ['Playback', 'Results & style'],
+  account: ['Account', 'Sign in, or carry on as guest'],
+  status: ['Status', 'Service health'],
+};
+
+function currentWizardIndex() {
+  const active = document.querySelector('#nav .nav-item.active');
+  const name = active ? active.dataset.section : 'overview';
+  return WIZARD_STEPS.findIndex(function (s) { return s.id === name; });
+}
+
+function updateWizard(name) {
+  const bar = document.getElementById('wizardBar');
+  const steps = document.getElementById('wizardSteps');
+  if (!bar || !steps) return;
+  const idx = WIZARD_STEPS.findIndex(function (s) { return s.id === name; });
+  if (idx === -1) {
+    bar.classList.remove('show');
+    return;
+  }
+  bar.classList.add('show');
+  steps.innerHTML = '';
+  WIZARD_STEPS.forEach(function (step, i) {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'wizard-step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
+    el.style.cssText = 'background:none;border:none;cursor:pointer;font-size:.8rem';
+    el.innerHTML = '<span class="wizard-dot">' + (i < idx ? '✓' : (i + 1)) + '</span><span class="step-name">' + step.label + '</span>';
+    el.addEventListener('click', function () { setSection(step.id); });
+    steps.appendChild(el);
+    if (i < WIZARD_STEPS.length - 1) {
+      const line = document.createElement('div');
+      line.className = 'wizard-line';
+      steps.appendChild(line);
+    }
+  });
+  const nextBtn = document.getElementById('wizardNext');
+  nextBtn.innerHTML = (idx === WIZARD_STEPS.length - 1 ? 'Finish & Install' : 'Next') +
+    ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="9 18 15 12 9 6"/></svg>';
+}
+
+function setupWizard() {
+  document.getElementById('wizardBack').addEventListener('click', function () {
+    const idx = currentWizardIndex();
+    if (idx === -1 || idx === 0) setSection('overview');
+    else setSection(WIZARD_STEPS[idx - 1].id);
+  });
+  document.getElementById('wizardNext').addEventListener('click', function () {
+    const idx = currentWizardIndex();
+    if (idx === -1) return;
+    if (idx === WIZARD_STEPS.length - 1) setSection('overview');
+    else setSection(WIZARD_STEPS[idx + 1].id);
+  });
+  document.addEventListener('keydown', function (e) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    const idx = currentWizardIndex();
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight' && idx < WIZARD_STEPS.length - 1) setSection(WIZARD_STEPS[idx + 1].id);
+    else if (e.key === 'ArrowLeft' && idx > 0) setSection(WIZARD_STEPS[idx - 1].id);
+  });
+}
+
+function setSection(name) {
+  document.querySelectorAll('#nav .nav-item').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.section === name);
+  });
+  document.querySelectorAll('.panel').forEach(function (p) {
+    p.classList.toggle('hidden', p.id !== 'panel-' + name);
+  });
+  const t = SECTION_TITLES[name] || ['Overview', ''];
+  document.getElementById('sectionTitle').textContent = t[0];
+  document.getElementById('sectionSub').textContent = t[1];
+  updateWizard(name);
+  closeDrawer();
+  window.scrollTo({ top: 0 });
+}
+
+function openDrawer() {
+  document.getElementById('sidebar').classList.add('open');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  backdrop.hidden = false;
+  document.getElementById('hamburger').setAttribute('aria-expanded', 'true');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDrawer() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar.classList.contains('open')) return;
+  sidebar.classList.remove('open');
+  document.getElementById('sidebarBackdrop').hidden = true;
+  document.getElementById('hamburger').setAttribute('aria-expanded', 'false');
+  document.body.style.overflow = '';
+}
+
+function setupDrawer() {
+  document.getElementById('hamburger').addEventListener('click', openDrawer);
+  document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+  document.getElementById('sidebarBackdrop').addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeDrawer();
+  });
+}
+
+function setupNav() {
+  document.querySelectorAll('#nav .nav-item').forEach(function (btn) {
+    btn.addEventListener('click', function () { setSection(btn.dataset.section); });
+  });
 }
 
 function setupWelcomeModal() {
   const modal = document.getElementById('welcomeModal');
   const dismissed = localStorage.getItem(LS_WELCOME) === '1';
   fetch('/api/me').then(function (r) { return r.json(); }).then(function (data) {
-    if (!dismissed && !data.signedIn) setTimeout(function () { modal.classList.remove('hidden'); }, 900);
+    if (!dismissed && !data.signedIn) setTimeout(function () { modal.classList.remove('hidden'); }, 800);
   }).catch(function () {});
   const close = function () { modal.classList.add('hidden'); localStorage.setItem(LS_WELCOME, '1'); };
   document.getElementById('welcomeClose').addEventListener('click', close);
@@ -237,7 +374,7 @@ function setupActions() {
   const url = function () { return manifestUrl(currentCfg()); };
   document.getElementById('installBtn').addEventListener('click', function () { copyText(url()); });
   document.getElementById('copyInstall').addEventListener('click', function () { copyText(url()); });
-  document.getElementById('copyIcon').addEventListener('click', function () { copyText(url()); });
+  document.getElementById('copyUrlBtn').addEventListener('click', function () { copyText(url()); });
   document.getElementById('clearBtn').addEventListener('click', function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); });
   document.getElementById('sourcesAll').addEventListener('click', function () {
     document.querySelectorAll('#providers .provider-card').forEach(function (el) { el.classList.add('active'); });
@@ -248,9 +385,8 @@ function setupActions() {
   document.getElementById('googleBtn').addEventListener('click', function () { window.location.href = '/auth/google'; });
   document.getElementById('guestBtn').addEventListener('click', function () { toast('Guest mode — preferences stay on this device'); });
   document.getElementById('logoutBtn').addEventListener('click', function () { window.location.href = '/auth/logout'; });
-  document.getElementById('topAccount').addEventListener('click', function () {
-    document.getElementById('account').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
+  document.getElementById('signOutBtn').addEventListener('click', function () { window.location.href = '/auth/logout'; });
+  document.getElementById('noticeClose').addEventListener('click', function () { document.getElementById('notice').remove(); });
 }
 
 function setupSegmented() {
@@ -271,28 +407,25 @@ function setupSegmented() {
 }
 
 async function checkHealth() {
-  const dot = document.getElementById('statusDot');
-  const sub = document.getElementById('healthStreams');
   const man = document.getElementById('healthManifest');
+  const sub = document.getElementById('healthStreams');
   try {
     const mf = await fetch('/manifest.json');
     man.textContent = mf.ok ? 'OK' : 'HTTP ' + mf.status;
-    man.style.color = mf.ok ? 'var(--success)' : 'var(--danger)';
+    man.className = 'health-val ' + (mf.ok ? 'ok' : 'bad');
   } catch (e) {
-    man.textContent = 'down';
-    man.style.color = 'var(--danger)';
+    man.textContent = 'unreachable';
+    man.className = 'health-val bad';
   }
   try {
     const res = await fetch('/stream/movie/27205.json');
     const data = await res.json();
     const n = (data.streams || []).length;
-    sub.textContent = n > 0 ? 'Live · ' + n + ' streams for Inception' : 'No streams right now';
-    sub.style.color = n > 0 ? 'var(--success)' : 'var(--danger)';
-    dot.classList.toggle('bad', n === 0);
+    sub.textContent = n > 0 ? n + ' streams live' : '0 streams right now';
+    sub.className = 'health-val ' + (n > 0 ? 'ok' : 'bad');
   } catch (e) {
-    sub.textContent = 'Unreachable';
-    sub.style.color = 'var(--danger)';
-    dot.classList.add('bad');
+    sub.textContent = 'unreachable';
+    sub.className = 'health-val bad';
   }
 }
 
@@ -303,6 +436,9 @@ function setupHealth() {
 
 buildProviderCards();
 buildLangChips();
+setupNav();
+setupWizard();
+setupDrawer();
 setupSegmented();
 setupActions();
 setupWelcomeModal();
