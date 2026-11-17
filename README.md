@@ -36,9 +36,12 @@ The app stays live at `https://indstream.fly.dev/`.
 ## Configure
 
 Open `https://indstream.fly.dev/` (or `http://localhost:8080/`), pick your
-settings (minimum quality, result limit, timeout, DASH, probing, debug), and
-click "Generate URL". Each user gets their own configured addon URL of the
-form `https://<host>/<config>/manifest.json`.
+sources, languages and settings (minimum quality, result limit, timeout, DASH,
+probing, stream style), and copy the addon URL. The stream style controls how
+each stream is labelled; LightGDrive is the default and shows
+`Source Quality` as the badge with title, quality, size, source and language
+flags below. Each user gets their own configured addon URL of the form
+`https://<host>/<config>/manifest.json`.
 
 ## Install
 

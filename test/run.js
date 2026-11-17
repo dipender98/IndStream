@@ -706,4 +706,54 @@ test('provider work starts before metadata resolves', async function () {
   }
 });
 
+section('styles');
+const styles = require('../src/indstream/styles');
+const HDR_RAW = {
+  url: 'https://example.com/inception.2160p.mkv',
+  type: 'mp4',
+  quality: '2160p',
+  height: 2160,
+  size: '65.95 GB',
+  language: 'English, Hindi',
+  releaseText: 'Inception.2010.2160p.BluRay.REMUX.DV.HDR.10bit.HEVC.Hindi.DDP.English.Atmos.5.1.mkv',
+};
+const HDR_CTX = { season: 0, episode: 0, meta: { title: 'Inception', year: '2010' } };
+test('lightgdrive renders declared specs only', function () {
+  const out = styles.renderNameTitle({ id: 'hdhub', name: 'HdHub' }, HDR_RAW, HDR_CTX, 'lightgdrive');
+  assert.strictEqual(out.name, 'HdHub 2160p');
+  assert.ok(out.title.indexOf('📁 Inception (2010)') === 0);
+  assert.ok(out.title.indexOf('BluRay') >= 0);
+  assert.ok(out.title.indexOf('HEVC') >= 0);
+  assert.ok(out.title.indexOf('📦 65.95 GB') >= 0);
+  assert.ok(out.title.indexOf('🇬🇧') >= 0);
+});
+test('lightgdrive episode tag', function () {
+  const raw = Object.assign({}, HDR_RAW, { quality: '1080p', height: 1080, releaseText: 'Stranger.Things.S01E01.1080p.WEB-DL.DDP5.1.H.264.mkv' });
+  const ctx = { season: 1, episode: 1, meta: { title: 'Stranger Things', year: '2016' } };
+  const out = styles.renderNameTitle({ id: 'fsl', name: 'FSL' }, raw, ctx, 'lightgdrive');
+  assert.strictEqual(out.name, 'FSL 1080p');
+  assert.ok(out.title.indexOf('S01E01') >= 0);
+  assert.ok(out.title.indexOf('WEB-DL') >= 0);
+});
+test('unknown release text omits spec lines instead of guessing', function () {
+  const raw = { url: 'https://example.com/v.mp4', type: 'mp4', quality: '1080p', height: 1080, language: '' };
+  const out = styles.renderNameTitle({ id: 'bingr', name: 'Bingr' }, raw, { season: 0, episode: 0 }, 'lightgdrive');
+  assert.ok(out.title.indexOf('🎥') < 0);
+  assert.ok(out.title.indexOf('📺') < 0);
+  assert.ok(out.title.indexOf('🔍 Bingr') >= 0);
+});
+test('invalid style falls back to lightgdrive', function () {
+  const out = styles.renderNameTitle({ id: 'hdhub', name: 'HdHub' }, HDR_RAW, HDR_CTX, 'nope');
+  assert.strictEqual(out.name, 'HdHub 2160p');
+});
+test('every preset renders without throwing', function () {
+  styles.STYLE_IDS.forEach(function (id) {
+    const samples = styles.previewSamples(id);
+    assert.strictEqual(samples.length, 3);
+    samples.forEach(function (sample) {
+      assert.ok(sample.name && sample.title, 'empty render for ' + id);
+    });
+  });
+});
+
 main();

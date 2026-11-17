@@ -366,12 +366,6 @@ const server = http.createServer(async function (req, res) {
     return;
   }
 
-  if (pathname === '/format-preview.json') {
-    const style = String(query.style || styles.DEFAULT_STYLE);
-    sendJson(res, 200, { samples: styles.previewSamples(style) });
-    return;
-  }
-
   if (pathname === '/auth/google') {
     if (!LOGIN_ENABLED) {
       redirect(res, '/?error=disabled');

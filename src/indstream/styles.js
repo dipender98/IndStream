@@ -7,14 +7,10 @@ const STYLE_OPTIONS = [
   { id: 'gdrive', label: 'GDrive' },
   { id: 'minimalisticgdrive', label: 'MinimalisticGDrive' },
   { id: 'prism', label: 'Prism' },
-  { id: 'plavio-modern', label: 'Plavio Modern' },
   { id: 'torrentio-minimalist', label: 'Torrentio Minimalist' },
   { id: 'mediafusion-pro', label: 'MediaFusion Pro' },
-  { id: 'pure-essentials', label: 'Pure Essentials' },
   { id: 'torrentio', label: 'Torrentio' },
   { id: 'torbox', label: 'TorBox' },
-  { id: 'default', label: 'Plavio Default' },
-  { id: 'classic', label: 'IndStream Classic' },
 ];
 const STYLE_IDS = STYLE_OPTIONS.map(function (s) { return s.id; });
 const DEFAULT_STYLE = 'lightgdrive';
@@ -271,30 +267,6 @@ function renderPrism(bits, raw, ctx) {
   return { name: name, title: lines.join('\n') };
 }
 
-function renderPlavioModern(bits, raw, ctx) {
-  const is4k = Number(raw && raw.height) >= 2160 || /2160|4k|uhd/i.test(String(raw && raw.quality || ''));
-  const name = is4k ? '🔥4K UHD' : (Number(raw && raw.height) === 1080 || /1080/i.test(String(raw && raw.quality || '')) ? '🔥FHD' : '🔥' + bits.res);
-  const lines = [];
-  const epLong = episodeLong(ctx);
-  lines.push('🎬 ' + bits.title + (bits.year ? ' (' + bits.year + ')' : '') + (epLong ? ' ' + epLong : ''));
-  const line2 = joinPresent([
-    bits.specs.source ? '🎥 ' + bits.specs.source : '',
-    bits.specs.hdr.length ? '📺 ' + bits.specs.hdr.join(' | ') : '',
-    bits.specs.codec ? '🎞️ ' + bits.specs.codec : '',
-  ], ' ');
-  if (line2) lines.push(line2);
-  const flagPart = flagOnlyOf(languageNamesOf(raw)).join(' / ');
-  const line3 = joinPresent([
-    bits.specs.audio.length ? '🎧 ' + bits.specs.audio.join(' | ') : '',
-    bits.specs.channels ? '📡 ' + bits.specs.channels : '',
-    flagPart ? '🗣️ ' + flagPart : '',
-  ], ' ');
-  if (line3) lines.push(line3);
-  if (bits.size) lines.push('📦 ' + bits.size);
-  lines.push('💻 Web Link 🔍' + bits.providerName);
-  return { name: name, title: lines.join('\n') };
-}
-
 function plainSpecsLine(bits) {
   const tokens = [bits.res]
     .concat(bits.specs.source ? [bits.specs.source] : [])
@@ -339,25 +311,6 @@ function renderMediafusionPro(bits, raw, ctx) {
   return { name: '⚡ IndStream | ' + (is4k ? '💎 4K UHD' : '📺 ' + bits.res) + ' | ' + bits.providerName, title: lines.join('\n') };
 }
 
-function renderPureEssentials(bits, raw, ctx) {
-  const ep = episodeTag(ctx);
-  const lines = [];
-  lines.push(bits.title + (ep ? ' • ' + ep : ''));
-  const tokens = [bits.res]
-    .concat(bits.specs.source ? [bits.specs.source] : [])
-    .concat(bits.specs.hdr)
-    .concat(bits.specs.codec ? [bits.specs.codec] : [])
-    .concat(bits.specs.audio)
-    .concat(bits.specs.channels ? [bits.specs.channels] : []);
-  lines.push(tokens.join(' • '));
-  const names = languageNamesOf(raw);
-  const parts = [];
-  if (bits.size) parts.push('Size: ' + bits.size);
-  if (names.length) parts.push('Audio: ' + names.join(','));
-  if (parts.length) lines.push(parts.join(' • '));
-  return { name: bits.res + ' • Direct • ' + bits.providerName, title: lines.join('\n') };
-}
-
 function renderTorrentio(bits, raw, ctx) {
   const lines = [];
   if (bits.specs.filename) lines.push(bits.specs.filename);
@@ -386,44 +339,19 @@ function renderTorbox(bits, raw, ctx) {
   return { name: bits.providerName + ' (' + bits.res + ')', title: lines.join('\n') };
 }
 
-function renderDefault(bits, raw, ctx) {
-  const name = joinPresent([bits.title, bits.year, bits.providerName, bits.res], ' ');
-  const lines = [];
-  if (bits.specs.filename) lines.push(bits.specs.filename);
-  const tokens = [bits.res]
-    .concat(bits.specs.source ? [bits.specs.source] : [])
-    .concat(bits.specs.hdr)
-    .concat(bits.specs.codec ? [bits.specs.codec] : [])
-    .concat(bits.specs.audio)
-    .concat(bits.specs.channels ? [bits.specs.channels] : []);
-  const names = languageNamesOf(raw);
-  if (names.length) tokens.push(names.join(', '));
-  if (bits.size) tokens.push(bits.size);
-  lines.push(tokens.join(' · '));
-  return { name: name, title: lines.join('\n') };
-}
-
-function renderClassic(provider, raw, ctx) {
-  return { name: String((provider && (provider.name || provider.id)) || 'IndStream'), title: util.streamTitle(provider, raw, ctx) };
-}
-
 const RENDERERS = {
   lightgdrive: renderLightgdrive,
   gdrive: renderGdrive,
   minimalisticgdrive: renderMinimalistic,
   prism: renderPrism,
-  'plavio-modern': renderPlavioModern,
   'torrentio-minimalist': renderTorrentioMinimalist,
   'mediafusion-pro': renderMediafusionPro,
-  'pure-essentials': renderPureEssentials,
   torrentio: renderTorrentio,
   torbox: renderTorbox,
-  default: renderDefault,
 };
 
 function renderNameTitle(provider, raw, ctx, style) {
   const id = STYLE_IDS.indexOf(style) >= 0 ? style : DEFAULT_STYLE;
-  if (id === 'classic') return renderClassic(provider, raw, ctx);
   const bits = metaBits(provider, raw, ctx);
   return RENDERERS[id](bits, raw, ctx);
 }
