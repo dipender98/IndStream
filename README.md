@@ -14,16 +14,6 @@ Install (addon URL):
 https://indstream.fly.dev/manifest.json
 ```
 
-## Run locally
-
-```bash
-npm install
-npm start
-```
-
-Open `http://localhost:8080/` to configure and generate your addon URL, or
-`http://localhost:8080/manifest.json` for the default config.
-
 ## Install
 
 Paste the addon URL into Nuvio (Settings -> Plugins/Addons -> Add by URL) or
