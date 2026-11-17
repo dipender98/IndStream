@@ -65,7 +65,7 @@ module.exports = {
     const cards = hubParseCards(searchHtml, base);
     if (!cards.length) return [];
     const ranked = cards
-      .map(function (card) { return { card: card, score: util.titleScore(title, card.title, year, util.titleYearOf(card.title)) }; })
+      .map(function (card) { return { card: card, score: util.titleScore(title, card.title, year, util.yearFromText(card.title)) }; })
       .sort(function (a, b) { return b.score - a.score; })
       .slice(0, 3);
     if (!ranked.length || ranked[0].score < 0.6) return [];

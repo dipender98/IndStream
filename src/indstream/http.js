@@ -51,6 +51,7 @@ function timeoutSignal(ms, externalSignal) {
 
   if (externalSignal) {
     if (externalSignal.aborted) {
+      clearTimeout(timer);
       onAbort();
     } else if (typeof externalSignal.addEventListener === 'function') {
       externalSignal.addEventListener('abort', onAbort);
@@ -93,9 +94,59 @@ function timed(promise, ms) {
   });
 }
 
+function isPrivateHost(host) {
+  const h = String(host || '').toLowerCase();
+  if (!h) return true;
+  if (h === 'localhost' || h === '0.0.0.0' || h === '[::1]' || h.endsWith('.localhost') || h.endsWith('.local')) return true;
+  if (/^(10|127|169\.254|192\.168)\./.test(h)) return true;
+  const m = h.match(/^172\.(\d{1,3})\./);
+  if (m) {
+    const n = Number(m[1]);
+    return n >= 16 && n <= 31;
+  }
+  if (h.indexOf('[fc') === 0 || h.indexOf('[fe80') === 0 || h.indexOf('[fd') === 0) return true;
+  return false;
+}
+
+function blockedUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+    return isPrivateHost(parsed.hostname);
+  } catch (e) {
+    return true;
+  }
+}
+
+async function readCapped(response, maxBytes) {
+  const body = response.body;
+  if (!body || !body.getReader) return response.text();
+  const reader = body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const result = await reader.read();
+    if (result.done) break;
+    total += result.value.length;
+    if (total > maxBytes) {
+      try { await reader.cancel(); } catch (e) {}
+      throw new Error('response too large');
+    }
+    chunks.push(result.value);
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder().decode(merged);
+}
+
 async function request(url, options) {
   const opts = options || {};
   if (opts.signal && opts.signal.aborted) return failure(url, 'aborted');
+  if (blockedUrl(url)) return failure(url, 'blocked');
 
   const deadline = Number(opts.deadline) || 0;
   let timeoutMs = Number(opts.timeoutMs) || 12000;
@@ -120,7 +171,10 @@ async function request(url, options) {
     const pending = guard.controlled ? fetch(url, init) : timed(fetch(url, init), timeoutMs);
     const response = await pending;
     if (!response) return failure(url, 'timeout');
-    const text = await response.text();
+    const maxBytes = Number(opts.maxBytes) || 10 * 1024 * 1024;
+    const length = Number(response.headers.get('content-length') || 0);
+    if (length > maxBytes) return failure(url, 'response too large');
+    const text = await readCapped(response, maxBytes);
     return {
       ok: response.ok,
       status: response.status,

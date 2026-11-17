@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+reference
+test
+*.log
+.DS_Store
+Dockerfile
+.dockerignore

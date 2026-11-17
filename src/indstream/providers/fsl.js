@@ -58,8 +58,8 @@ module.exports = {
       const hits = fslSearchHits(json);
       if (!hits.length) continue;
       const ranked = hits
-        .map(function (hit) { return { hit: hit, score: util.titleScore(title, hit.title, year, util.titleYearOf(hit.title)) }; })
-        .filter(function (row) { return !year || !util.titleYearOf(row.hit.title) || row.score > 0.5; })
+        .map(function (hit) { return { hit: hit, score: util.titleScore(title, hit.title, year, util.yearFromText(hit.title)) }; })
+        .filter(function (row) { return !year || !util.yearFromText(row.hit.title) || row.score > 0.5; })
         .sort(function (a, b) { return b.score - a.score; })
         .slice(0, 2);
       for (let r = 0; r < ranked.length; r += 1) {

@@ -44,7 +44,6 @@ const DEFAULT_CFG = {
   includeDash: true,
   probeQuality: false,
   debug: false,
-  streamStyle: styles.DEFAULT_STYLE,
 };
 
 const MIME = {
@@ -61,10 +60,12 @@ function normalizeCfg(raw) {
   const merged = Object.assign({}, DEFAULT_CFG, raw || {});
   if (!Array.isArray(merged.p)) merged.p = DEFAULT_CFG.p.slice();
   if (!Array.isArray(merged.langs)) merged.langs = [];
-  globalThis.SCRAPER_SETTINGS = JSON.stringify(merged);
-  const s = settings.getSettings();
-  globalThis.SCRAPER_SETTINGS = undefined;
-  return s;
+  try {
+    globalThis.SCRAPER_SETTINGS = JSON.stringify(merged);
+    return settings.getSettings();
+  } finally {
+    globalThis.SCRAPER_SETTINGS = undefined;
+  }
 }
 
 function encodeCfg(cfg) {
@@ -74,10 +75,15 @@ function encodeCfg(cfg) {
 
 function decodeCfg(seg) {
   try {
+    if (typeof seg !== 'string' || seg.length > 8192) return null;
     const padded = seg.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((seg.length + 3) % 4);
     const obj = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-    return obj;
+    const cleaned = {};
+    for (const key of Object.keys(obj)) {
+      if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') cleaned[key] = obj[key];
+    }
+    return cleaned;
   } catch (e) {
     return null;
   }
@@ -89,23 +95,26 @@ function shortHash(str) {
   return (h >>> 0).toString(16);
 }
 
-function makeManifest(cfg) {
+function makeManifest(cfg, base) {
   return {
     id: 'com.indstream.addon.' + shortHash(encodeCfg(cfg)),
-    version: '1.0.0',
+    version: '1.1.0',
     name: 'IndStream',
     description: 'IndStream streams for movies and series.',
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'tmdb:'],
     catalogs: [],
+    logo: base + '/logo.png',
     behaviorHints: { configurable: true, p2p: false },
   };
 }
 
 function selectedProviders(cfg) {
   const ids = Array.isArray(cfg.p) && cfg.p.length ? cfg.p : DEFAULT_CFG.p;
-  return ALL_PROVIDERS.filter(function (p) { return ids.indexOf(p.id) >= 0; });
+  return ids.map(function (id) {
+    return ALL_PROVIDERS.find(function (p) { return p.id === id; });
+  }).filter(Boolean);
 }
 
 function languageRank(label, langs) {
@@ -117,11 +126,22 @@ function languageRank(label, langs) {
   return -1;
 }
 
-function applyLanguagePreference(streams, cfg) {
-  const langs = Array.isArray(cfg.langs) ? cfg.langs.filter(Boolean) : [];
+function toBool(value) {
+  return value === true || value === 1 || value === '1' || value === 'true' || value === 'yes';
+}
+
+function languagePrefs(raw) {
+  const langs = Array.isArray(raw && raw.langs)
+    ? raw.langs.filter(function (lang) { return typeof lang === 'string' && lang.trim(); }).map(function (lang) { return lang.trim(); })
+    : [];
+  return { langs: langs, langStrict: toBool(raw && raw.langStrict) };
+}
+
+function applyLanguagePreference(streams, prefs) {
+  const langs = Array.isArray(prefs.langs) ? prefs.langs.filter(Boolean) : [];
   if (!langs.length) return streams;
   let out = streams;
-  if (cfg.langStrict) {
+  if (prefs.langStrict) {
     out = out.filter(function (s) {
       const label = String(s.language || '').trim();
       if (!label) return true;
@@ -143,7 +163,8 @@ async function getStreams(mediaId, mediaType, season, episode, cfg) {
   const type = mediaType === 'series' ? 'tv' : 'movie';
   const inputId = String(mediaId == null ? '' : mediaId).trim();
   const inputImdbId = tmdb.normalizeImdbId(inputId);
-  const inputTmdbId = inputImdbId ? 0 : (parseInt(inputId, 10) || 0);
+  const tmdbMatch = inputId.match(/^(?:tmdb:)?(\d+)$/);
+  const inputTmdbId = inputImdbId ? 0 : (tmdbMatch ? Number(tmdbMatch[1]) : 0);
 
   const context = {
     inputId: inputId,
@@ -185,13 +206,15 @@ async function getStreams(mediaId, mediaType, season, episode, cfg) {
   if (!wanted.length) return [];
 
   const raw = await racer.race(wanted, context, finalize.normalizeStream);
+  const resultLimit = Number(s.resultLimit) || 0;
   const finalized = finalize.finalizeStreams(raw, {
     minQuality: s.minQuality,
     includeDash: s.includeDash,
-    resultLimit: s.resultLimit,
+    resultLimit: 0,
     providers: wanted,
   });
-  return applyLanguagePreference(finalized, cfg);
+  const languageSorted = applyLanguagePreference(finalized, languagePrefs(cfg));
+  return resultLimit > 0 ? languageSorted.slice(0, resultLimit) : languageSorted;
 }
 
 function sendJson(res, status, body) {
@@ -209,13 +232,17 @@ function sendHtml(res, status, html) {
   res.end(html);
 }
 
+function safeDecode(value) {
+  try { return decodeURIComponent(value); } catch (e) { return ''; }
+}
+
 function parseCookies(req) {
   const out = {};
   const raw = req.headers.cookie || '';
   raw.split(';').forEach(function (part) {
     const idx = part.indexOf('=');
     if (idx < 0) return;
-    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+    out[part.slice(0, idx).trim()] = safeDecode(part.slice(idx + 1).trim());
   });
   return out;
 }
@@ -245,18 +272,23 @@ function readSession(req) {
   }
 }
 
-function sessionCookie(data) {
+function sessionCookie(data, secure) {
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
-  return 'indstream_sess=' + payload + '.' + signValue(payload) + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000';
+  return 'indstream_sess=' + payload + '.' + signValue(payload) + '; Path=/; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : '') + '; Max-Age=2592000';
 }
 
-function clearCookie() {
-  return 'indstream_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+function clearCookie(secure) {
+  return 'indstream_sess=; Path=/; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : '') + '; Max-Age=0';
 }
 
+function isHttpsRequest(req) {
+  const h = req && req.headers['x-forwarded-proto'];
+  if (typeof h === 'string' && h.trim()) return h.split(',')[0].trim().toLowerCase() === 'https';
+  return String(PUBLIC_URL || '').startsWith('https://');
+}
 function baseUrl(req) {
   if (PUBLIC_URL) return PUBLIC_URL;
-  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  const proto = isHttpsRequest(req) ? 'https' : 'http';
   return proto + '://' + req.headers.host;
 }
 
@@ -267,14 +299,22 @@ function redirect(res, location, extraCookie) {
   res.end();
 }
 
+function clearOauthCookie(secure) {
+  return 'indstream_oauth=; Path=/; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : '') + '; Max-Age=0';
+}
+
 async function handleGoogleCallback(req, res, query) {
+  if (!LOGIN_ENABLED) {
+    redirect(res, '/?error=disabled', clearOauthCookie(isHttpsRequest(req)));
+    return;
+  }
   const cookies = parseCookies(req);
   const stateCookie = cookies.indstream_oauth;
   const state = query.state || '';
   const code = query.code || '';
 
   if (!code || !stateCookie || stateCookie !== state) {
-    redirect(res, '/?error=auth');
+    redirect(res, '/?error=auth', clearOauthCookie(isHttpsRequest(req)));
     return;
   }
   try {
@@ -282,6 +322,7 @@ async function handleGoogleCallback(req, res, query) {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      signal: AbortSignal.timeout(8000),
       body: new URLSearchParams({
         code: code,
         client_id: GOOGLE_CLIENT_ID,
@@ -292,15 +333,16 @@ async function handleGoogleCallback(req, res, query) {
     });
     const tokenJson = await tokenRes.json();
     if (!tokenJson || !tokenJson.access_token) {
-      redirect(res, '/?error=token');
+      redirect(res, '/?error=token', clearOauthCookie(isHttpsRequest(req)));
       return;
     }
     const infoRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
       headers: { Authorization: 'Bearer ' + tokenJson.access_token },
+      signal: AbortSignal.timeout(8000),
     });
     const info = await infoRes.json();
     if (!info || !info.sub) {
-      redirect(res, '/?error=profile');
+      redirect(res, '/?error=profile', clearOauthCookie(isHttpsRequest(req)));
       return;
     }
     const session = {
@@ -310,14 +352,14 @@ async function handleGoogleCallback(req, res, query) {
       picture: info.picture || '',
       exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
     };
-    redirect(res, '/', sessionCookie(session));
+    redirect(res, '/', [clearOauthCookie(isHttpsRequest(req)), sessionCookie(session, isHttpsRequest(req))]);
   } catch (e) {
     console.error('oauth error:', e && e.message ? e.message : e);
-    redirect(res, '/?error=oauth');
+    redirect(res, '/?error=oauth', clearOauthCookie(isHttpsRequest(req)));
   }
 }
 
-function serveStatic(res, filePath) {
+function serveStatic(req, res, filePath) {
   fs.readFile(filePath, function (err, data) {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -325,12 +367,22 @@ function serveStatic(res, filePath) {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const etag = '"' + crypto.createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' });
+      res.end();
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      ETag: etag,
+      'Cache-Control': 'no-cache',
+    });
     res.end(data);
   });
 }
 
-const server = http.createServer(async function (req, res) {
+async function handleRequest(req, res) {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname || '/';
   const query = parsed.query || {};
@@ -383,7 +435,7 @@ const server = http.createServer(async function (req, res) {
     }).toString();
     res.writeHead(302, {
       Location: authUrl,
-      'Set-Cookie': 'indstream_oauth=' + state + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=600',
+      'Set-Cookie': 'indstream_oauth=' + state + '; Path=/; HttpOnly; SameSite=Lax' + (isHttpsRequest(req) ? '; Secure' : '') + '; Max-Age=600',
     });
     res.end();
     return;
@@ -395,29 +447,34 @@ const server = http.createServer(async function (req, res) {
   }
 
   if (pathname === '/auth/logout') {
-    redirect(res, '/', clearCookie());
+    redirect(res, '/', clearCookie(isHttpsRequest(req)));
     return;
   }
 
   if (pathname === '/logo.png') {
-    serveStatic(res, path.join(ROOT, 'assets', 'indstream.png'));
+    serveStatic(req, res, path.join(ROOT, 'assets', 'indstream.png'));
     return;
   }
 
   if (pathname === '/' || pathname === '/index.html') {
-    serveStatic(res, path.join(PUBLIC_DIR, 'index.html'));
+    serveStatic(req, res, path.join(PUBLIC_DIR, 'index.html'));
     return;
   }
 
   if (pathname === '/app.js' || pathname === '/style.css') {
-    serveStatic(res, path.join(PUBLIC_DIR, pathname.slice(1)));
+    serveStatic(req, res, path.join(PUBLIC_DIR, pathname.slice(1)));
     return;
   }
 
   const { cfg, rest } = splitConfig(pathname);
 
   if (rest === '/manifest.json' || rest === '/') {
-    sendJson(res, 200, makeManifest(cfg));
+    sendJson(res, 200, makeManifest(cfg, baseUrl(req)));
+    return;
+  }
+
+  if (rest === '/configure' || rest === '/configure/') {
+    serveStatic(req, res, path.join(PUBLIC_DIR, 'index.html'));
     return;
   }
 
@@ -436,9 +493,21 @@ const server = http.createServer(async function (req, res) {
 
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Not found');
+}
+
+const server = http.createServer(function (req, res) {
+  handleRequest(req, res).catch(function (err) {
+    console.error('request error:', err && err.message ? err.message : err);
+    if (!res.headersSent) {
+      sendJson(res, 500, { streams: [] });
+      return;
+    }
+    try { res.end(); } catch (e) {}
+  });
 });
 
 function splitConfig(pathname) {
+  if (typeof pathname !== 'string' || pathname.length > 8192) return { cfg: DEFAULT_CFG, rest: '/' };
   const parts = pathname.split('/').filter(Boolean);
   if (!parts.length) return { cfg: DEFAULT_CFG, rest: '/' };
   const first = decodeCfg(parts[0]);

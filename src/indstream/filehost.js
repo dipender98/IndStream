@@ -90,9 +90,13 @@ function hubFileButtons(pageHtml) {
   return out;
 }
 
-async function hubDriveFiles(driveUrl, referer, client) {
+async function hubDriveFiles(driveUrl, referer, client, depth, seen) {
   const net = client || http;
   const url = String(driveUrl || '');
+  const level = depth || 0;
+  const history = seen || new Set();
+  if (!url || history.has(url) || level > 5) return [];
+  history.add(url);
   if (/hubdrive\.|hubcdn\./i.test(url)) {
     const index = await net.getText(url, { timeoutMs: 10000, headers: { Referer: referer } });
     if (!index) return [];
@@ -105,7 +109,7 @@ async function hubDriveFiles(driveUrl, referer, client) {
       }
     }
     const next = (index.match(HUB_DRIVE_NEXT_RE) || [])[0];
-    return next ? hubDriveFiles(next, url, net) : [];
+    return next ? hubDriveFiles(next, url, net, level + 1, history) : [];
   }
 
   const page = await net.getText(url, { timeoutMs: 10000, headers: { Referer: referer } });

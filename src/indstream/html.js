@@ -26,11 +26,12 @@ function eachTag(html, tagName) {
   const name = String(tagName || 'div');
   const openRe = new RegExp('<' + name + '\\b[^>]*>', 'gi');
   const closeToken = '</' + name + '>';
+  const lower = source.toLowerCase();
   const out = [];
   let match;
   while ((match = openRe.exec(source))) {
-    const close = source.toLowerCase().indexOf(closeToken, openRe.lastIndex);
-    if (close < 0) break;
+    const close = lower.indexOf(closeToken, openRe.lastIndex);
+    if (close < 0) continue;
     out.push({
       attrs: attrMap(match[0]),
       inner: source.slice(openRe.lastIndex, close),
@@ -66,7 +67,7 @@ function blocks(html, tagName, classToken) {
         break;
       }
     }
-    if (end < 0) break;
+    if (end < 0) continue;
     out.push({
       attrs: attrs,
       inner: source.slice(openRe.lastIndex, end),

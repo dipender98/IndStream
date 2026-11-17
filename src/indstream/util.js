@@ -54,6 +54,11 @@ function titleYearOf(meta) {
   return match ? Number(match[1]) : 0;
 }
 
+function yearFromText(value) {
+  const match = String(value == null ? '' : value).match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? Number(match[1]) : 0;
+}
+
 function titleScore(query, candidate, year, candidateYear) {
   const a = compactTitle(query);
   const b = compactTitle(candidate);
@@ -63,8 +68,8 @@ function titleScore(query, candidate, year, candidateYear) {
   else if (b.indexOf(a) === 0 || a.indexOf(b) === 0) score = 0.86;
   else if (b.indexOf(a) >= 0 || a.indexOf(b) >= 0) score = 0.68;
   else {
-    const at = normalizeTitle(a).split(' ').filter(Boolean);
-    const bt = normalizeTitle(b).split(' ').filter(Boolean);
+    const at = normalizeTitle(query).split(' ').filter(Boolean);
+    const bt = normalizeTitle(candidate).split(' ').filter(Boolean);
     if (at.length && bt.length) {
       const common = at.filter((token) => bt.indexOf(token) >= 0).length;
       score = common / Math.max(at.length, bt.length) * 0.6;
@@ -405,9 +410,9 @@ function flagOf(tag) {
   return FLAG_MAP[tag] || '';
 }
 
-const RESOLUTION_TOKEN_RE = /\\s*(?:\\d{3,4}\\s*p(?:\\d{2,3})?|[24]\\s*k)\\b/gi;
-const QUALITY_ALIAS_RE = /(?:\\s*\\b(?:FHD|UHD|QHD)\\b)|(?:\\s+\\bHD\\b(?=\\s*$))/gi;
-const TRAILING_LANGUAGE_RE = /(?:[\\s,+/&()\\[\\]{}-]*\\b(?:hindi|english|tamil|telugu|malayalam|kannada|bengali|bangla|marathi|punjabi|gujarati|urdu|nepali|sinhala|arabic|russian|chinese|mandarin|japanese|korean|french|spanish|portuguese|filipino|tagalog|indonesian|malaysian|vietnamese|thai|turkish|german|italian|dutch|polish|multi|dual)\\b(?:\\s*[(\\[]?\\s*(?:audio|dub|dubbed)\\s*[)\\]]?)?[^\\n]*)+$/i;
+const RESOLUTION_TOKEN_RE = /\s*(?:\d{3,4}\s*p(?:\d{2,3})?|[24]\s*k)\b/gi;
+const QUALITY_ALIAS_RE = /(?:\s*\b(?:FHD|UHD|QHD)\b)|(?:\s+\bHD\b(?=\s*$))/gi;
+const TRAILING_LANGUAGE_RE = /(?:[\s,+/&()\[\]{}-]*\b(?:hindi|english|tamil|telugu|malayalam|kannada|bengali|bangla|marathi|punjabi|gujarati|urdu|nepali|sinhala|arabic|russian|chinese|mandarin|japanese|korean|french|spanish|portuguese|filipino|tagalog|indonesian|malaysian|vietnamese|thai|turkish|german|italian|dutch|polish|multi|dual)\b(?:\s*[(\[]?\s*(?:audio|dub|dubbed)\s*[)\]]?)?[^\n]*)+$/i;
 
 function stripQualityText(value) {
   return String(value == null ? '' : value)
@@ -461,6 +466,7 @@ function sleep(ms) {
 
 module.exports = {
   titleYearOf: titleYearOf,
+  yearFromText: yearFromText,
   titleScore: titleScore,
   parseHeight: parseHeight,
   qualityLabel: qualityLabel,

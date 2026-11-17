@@ -1,6 +1,9 @@
 app = "indstream"
 primary_region = "iad"
 
+[env]
+  PUBLIC_URL = "https://indstream.fly.dev"
+
 [build]
   dockerfile = "Dockerfile"
 
