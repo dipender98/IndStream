@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>IndStream — Source control</title>
-<meta name="description" content="Configure and install IndStream, a Nuvio and Stremio addon for movies and series streams.">
+<title>IndStream — Every source. One manifest.</title>
+<meta name="description" content="IndStream adds every streaming source to Nuvio and Stremio — your servers, your quality, your languages. Free, no account required.">
 <link rel="icon" href="/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -20,7 +20,7 @@
     <img src="/logo.png" alt="IndStream" class="logo" width="36" height="36">
     <div class="brand-text">
       <div class="brand-name">IndStream</div>
-      <div class="brand-sub">Source control</div>
+      <div class="brand-sub">Nuvio &amp; Stremio addon</div>
     </div>
     <button class="icon-btn drawer-close" id="drawerClose" aria-label="Close menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
@@ -28,37 +28,13 @@
   </div>
 
   <nav class="nav" id="nav">
-    <button class="nav-item active" data-section="overview">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-      <span>Overview</span>
-    </button>
-    <button class="nav-item" data-section="profiles">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="7.01" y2="9"/><line x1="11" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="7.01" y2="13"/><line x1="11" y1="13" x2="15" y2="13"/></svg>
-      <span>Profiles</span>
-      <span class="nav-badge" id="profilesBadge">1</span>
-    </button>
-    <button class="nav-item" data-section="sources">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="7.01" y2="10"/><line x1="11" y1="10" x2="17" y2="10"/><line x1="11" y1="14" x2="15" y2="14"/></svg>
-      <span>Sources</span>
-      <span class="nav-badge" id="sourcesBadge">5</span>
-    </button>
-    <button class="nav-item" data-section="filtering">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-      <span>Filtering</span>
-    </button>
-    <button class="nav-item" data-section="playback">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="8" x2="16" y2="8"/><circle cx="18" cy="8" r="1.5"/><line x1="4" y1="16" x2="10" y2="16"/><circle cx="12" cy="16" r="1.5"/></svg>
-      <span>Playback</span>
-    </button>
-    <button class="nav-item" data-section="account">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-      <span>Account</span>
-      <span class="nav-dot" id="accountDot" hidden></span>
-    </button>
-    <button class="nav-item" data-section="status">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 14.5 14"/></svg>
-      <span>Status</span>
-    </button>
+    <button class="nav-item active" data-section="overview"><span class="nav-dot-icon"></span><span>Overview</span></button>
+    <button class="nav-item" data-section="profiles"><span class="nav-dot-icon"></span><span>Presets</span><span class="nav-badge" id="profilesBadge">1</span></button>
+    <button class="nav-item" data-section="sources"><span class="nav-dot-icon"></span><span>Sources</span><span class="nav-badge" id="sourcesBadge">5</span></button>
+    <button class="nav-item" data-section="filtering"><span class="nav-dot-icon"></span><span>Filtering</span></button>
+    <button class="nav-item" data-section="playback"><span class="nav-dot-icon"></span><span>Playback</span></button>
+    <button class="nav-item" data-section="account"><span class="nav-dot-icon"></span><span>Account</span><span class="nav-dot" id="accountDot" hidden></span></button>
+    <button class="nav-item" data-section="status"><span class="nav-dot-icon"></span><span>Status</span></button>
   </nav>
 
   <div class="account-block">
@@ -76,120 +52,103 @@
 
 <main class="main">
 
-  <section class="notice" id="notice">
-    <span class="dot-success"></span>
-    <span>IndStream v1 is live. Free forever — your preferences stay in this browser, or sync with Google.</span>
-    <button class="icon-btn notice-close" id="noticeClose" aria-label="Dismiss">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
-    </button>
-  </section>
-
   <header class="main-header">
     <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     </button>
     <div class="header-titles">
       <h1 id="sectionTitle">Overview</h1>
-      <p id="sectionSub">Install status &amp; sync</p>
+      <p id="sectionSub">Install &amp; sync</p>
     </div>
     <a class="icon-btn" href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener" aria-label="GitHub">
       <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 .5C5.37.5 0 5.78 0 12.292c0 5.211 3.435 9.63 8.205 11.188.6.111.82-.254.82-.567 0-.28-.01-1.022-.016-2.005-3.338.711-4.042-1.582-4.042-1.582-.546-1.361-1.333-1.724-1.333-1.724-1.09-.73.082-.716.082-.716 1.205.083 1.84 1.226 1.84 1.226 1.07 1.807 2.809 1.283 3.495.981.108-.77.418-1.285.76-1.58-2.665-.297-5.466-1.313-5.466-5.844 0-1.29.465-2.343 1.225-3.169-.123-.297-.53-1.497.116-3.121 0 0 .998-.313 3.27 1.209A11.5 11.5 0 0 1 12 6.844c1.02.005 2.047.135 3.006.394 2.27-1.522 3.266-1.209 3.266-1.209.648 1.624.24 2.824.118 3.121.764.826 1.223 1.881 1.223 3.17 0 4.542-2.805 5.542-5.476 5.833.43.363.824 1.096.824 2.211 0 1.596-.015 2.884-.015 3.273 0 .316.214.683.825.567C20.565 21.917 24 17.5 24 12.292 24 5.78 18.627.5 12 .5z"/></svg>
     </a>
   </header>
 
-  <div class="wizard-bar" id="wizardBar">
-    <button class="wizard-btn back" id="wizardBack" type="button">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
-      Back
-    </button>
-    <div class="wizard-steps" id="wizardSteps"></div>
-    <button class="wizard-btn next" id="wizardNext" type="button">
-      Next
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
-    </button>
+  <div class="tuner-bar" id="wizardBar">
+    <button class="tuner-btn back" id="wizardBack" type="button">&#9664;&nbsp; Back</button>
+    <div class="tuner-steps" id="wizardSteps"></div>
+    <button class="tuner-btn next" id="wizardNext" type="button">Next &nbsp;&#9654;</button>
   </div>
 
   <!-- OVERVIEW -->
   <section class="panel" id="panel-overview">
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">Sources</div>
-        <div class="stat-value"><span id="statSources">5</span><span class="stat-max"> / 6</span></div>
-        <div class="stat-sub">selected</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Quality</div>
-        <div class="stat-value"><span id="statQualities">720p+</span></div>
-        <div class="stat-sub">floor</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Sync</div>
-        <div class="stat-value ok">Saved <span class="check">&#10003;</span></div>
-        <div class="stat-sub">Auto-sync</div>
-      </div>
-    </div>
+    <div class="hero">
+      <h2 class="hero-title">Every source.<br><span class="grad-text">One manifest.</span></h2>
+      <p class="hero-sub">IndStream plugs into Nuvio and Stremio and serves every streaming source — your servers, your quality, your languages. No account needed.</p>
 
-    <div class="install-card">
-      <div class="install-head"><span class="chevron">&#9656;</span> INSTALL INDSTREAM</div>
-      <p class="install-state" id="installState">Configuration ready.</p>
-      <div class="saved-line"><span class="dot-success"></span> All changes saved</div>
-      <div class="active-profile-line">Profile: <strong id="activeProfileName">Default</strong> <button class="text-btn" id="switchProfileBtn" type="button">Manage profiles</button></div>
-      <button class="install-btn" id="installBtn" type="button">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>
-        Install IndStream
-      </button>
-      <div class="url-row">
-        <code id="manifestUrl"></code>
-        <button class="btn-icon" id="copyUrlBtn" type="button" aria-label="Copy URL">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        </button>
+      <div class="url-block">
+        <label class="field-label" for="manifestUrl">Your addon URL</label>
+        <div class="url-row">
+          <code id="manifestUrl"></code>
+          <button class="btn-icon" id="copyUrlBtn" type="button" aria-label="Copy manifest URL">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
       </div>
-      <button class="btn-quiet wide" id="copyInstall" type="button">Copy manifest URL</button>
-      <button class="text-btn clear-inline" id="clearBtn" type="button">Reset to defaults</button>
+
+      <div class="hero-actions">
+        <button class="btn-primary" id="installBtn" type="button">Copy manifest URL</button>
+        <a class="btn-quiet" href="/stream/movie/27205.json" target="_blank" rel="noopener">Test streams &#8594;</a>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat-pill"><strong id="statSources">5/6</strong><span>sources</span></div>
+        <div class="stat-pill"><strong id="statQualities">720p+</strong><span>quality floor</span></div>
+        <div class="stat-pill"><strong class="ok">Auto</strong><span>sync</span></div>
+      </div>
+
+      <div class="active-profile-line">Profile: <strong id="activeProfileName">Default</strong> <button class="text-btn" id="switchProfileBtn" type="button">Switch</button></div>
+      <p class="saved-line"><span class="dot-success"></span> Everything saves to this browser automatically.</p>
     </div>
   </section>
 
   <!-- PROFILES -->
   <section class="panel hidden" id="panel-profiles">
     <div class="panel-head row">
-      <h2>Profiles <span class="muted" id="profilesCount">1</span></h2>
+      <div>
+        <h2>Presets</h2>
+        <p class="panel-sub">Saved setups — each with its own addon URL.</p>
+      </div>
       <div class="panel-actions">
-        <button class="btn-ghost small" id="importProfileBtn" type="button">Import config</button>
-        <button class="btn-cta" id="newProfileBtn" type="button">+ New profile</button>
+        <button class="btn-quiet small" id="importProfileBtn" type="button">Import URL</button>
+        <button class="btn-primary small" id="newProfileBtn" type="button">+ New preset</button>
       </div>
     </div>
-    <p class="panel-note">Each profile is its own addon URL with its own sources, quality and languages. Switch between them any time — the Overview install button always installs the active profile.</p>
+    <p class="panel-note">The Overview install button always installs the active preset. Switching presets changes your addon URL.</p>
     <div class="profiles-grid" id="profilesGrid"></div>
   </section>
 
   <!-- SOURCES -->
   <section class="panel hidden" id="panel-sources">
-    <div class="panel-head">
-      <h2>Sources <span class="muted" id="sourcesCount">5 selected</span></h2>
+    <div class="panel-head row">
+      <div>
+        <h2>Sources <span class="muted" id="sourcesCount">5 selected</span></h2>
+        <p class="panel-sub">Each source is independent — a slow or dead server never stalls the rest.</p>
+      </div>
+      <div class="panel-actions">
+        <button class="text-btn" id="sourcesAll" type="button">Select all</button>
+        <button class="text-btn" id="sourcesNone" type="button">Reset</button>
+      </div>
     </div>
     <div class="provider-grid" id="providers"></div>
-    <div class="row-foot">
-      <button class="text-btn" id="sourcesAll" type="button">Select all</button>
-      <button class="text-btn" id="sourcesNone" type="button">Reset</button>
-    </div>
-    <p class="panel-note">Every source starts selected. Fewer sources, faster lists — 4–7 is a good balance.</p>
   </section>
 
   <!-- FILTERING -->
   <section class="panel hidden" id="panel-filtering">
-    <div class="panel-head"><h2>Filtering</h2></div>
+    <div class="panel-head">
+      <h2>Filtering</h2>
+      <p class="panel-sub">Keep what you watch. Drop the rest.</p>
+    </div>
 
-    <div class="row-card">
-      <div class="row-card-head">
-        <h3>Language preference</h3>
-        <p>Preferred languages float to the top.</p>
-      </div>
+    <div class="card">
+      <div class="card-head">Language preference</div>
       <div class="chips" id="langs"></div>
       <label class="switch"><input type="checkbox" id="langStrict"><span class="switch-track"></span><span>Hide streams in other languages</span></label>
     </div>
 
-    <div class="row-card">
-      <div class="row-card-head"><h3>Minimum quality</h3><p>Known heights below this are dropped. Unknown heights are kept.</p></div>
+    <div class="card">
+      <div class="card-head">Minimum quality</div>
       <div class="segmented" id="minQualitySeg">
         <button data-value="0" type="button">Any</button>
         <button data-value="720" type="button" class="active">720p</button>
@@ -197,25 +156,28 @@
       </div>
     </div>
 
-    <label class="switch row-card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span>Include DASH streams</span></label>
+    <label class="switch card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span>Include DASH (.mpd) streams</span></label>
   </section>
 
   <!-- PLAYBACK -->
   <section class="panel hidden" id="panel-playback">
-    <div class="panel-head"><h2>Playback</h2></div>
+    <div class="panel-head">
+      <h2>Playback</h2>
+      <p class="panel-sub">Caps and labels for what you get.</p>
+    </div>
 
-    <div class="row-card">
-      <div class="row-card-head"><h3>Maximum results</h3><p>Caps streams per scraper.</p></div>
+    <div class="card">
+      <div class="card-head">Maximum results</div>
       <div class="segmented" id="resultLimitSeg">
         <button data-value="20" type="button">20</button>
         <button data-value="40" type="button" class="active">40</button>
         <button data-value="80" type="button">80</button>
-        <button data-value="0" type="button">Unlimited</button>
+        <button data-value="0" type="button">No limit</button>
       </div>
     </div>
 
-    <div class="row-card">
-      <div class="row-card-head"><h3>Provider timeout</h3><p>Upper bound per source.</p></div>
+    <div class="card">
+      <div class="card-head">Provider timeout</div>
       <div class="segmented" id="timeoutSeg">
         <button data-value="10" type="button">10s</button>
         <button data-value="15" type="button" class="active">15s</button>
@@ -223,25 +185,28 @@
       </div>
     </div>
 
-    <div class="row-card">
-      <div class="row-card-head"><h3>Stream style</h3><p>How each stream is labelled.</p></div>
+    <div class="card">
+      <div class="card-head">Stream style</div>
       <select class="select" id="streamStyle"></select>
       <div class="style-preview" id="stylePreview"></div>
     </div>
 
-    <label class="switch row-card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span>Probe unknown quality (slower)</span></label>
-    <label class="switch row-card"><input type="checkbox" id="debug"><span class="switch-track"></span><span>Verbose logging</span></label>
+    <label class="switch card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span>Probe unknown quality (slower)</span></label>
+    <label class="switch card"><input type="checkbox" id="debug"><span class="switch-track"></span><span>Verbose logging</span></label>
   </section>
 
   <!-- ACCOUNT -->
   <section class="panel hidden" id="panel-account">
-    <div class="panel-head"><h2>Account</h2></div>
+    <div class="panel-head">
+      <h2>Account</h2>
+      <p class="panel-sub">Carry your setup between devices, or keep it local.</p>
+    </div>
     <div class="account-card">
       <div class="account-big">
         <div class="avatar big" id="bigAvatar">G</div>
         <div>
           <div class="account-big-name" id="bigName">Guest</div>
-          <div class="account-big-sub" id="bigSub">Local preferences - sign in to keep them on every device.</div>
+          <div class="account-big-sub" id="bigSub">Local preferences — sign in to sync.</div>
         </div>
       </div>
       <div class="account-actions">
@@ -249,7 +214,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z"/></svg>
           Continue with Google
         </button>
-        <button class="btn-ghost" id="guestBtn" type="button">Continue as guest</button>
+        <button class="btn-quiet wide" id="guestBtn" type="button">Continue as guest</button>
         <button class="text-btn danger" id="logoutBtn" type="button" hidden>Sign out</button>
       </div>
     </div>
@@ -257,16 +222,18 @@
 
   <!-- STATUS -->
   <section class="panel hidden" id="panel-status">
-    <div class="panel-head"><h2>Status</h2></div>
-    <div class="row-card">
-      <div class="row-card-head"><h3>Service health</h3><p>Live checks against the running addon.</p></div>
+    <div class="panel-head">
+      <h2>Status</h2>
+      <p class="panel-sub">Live checks against this instance.</p>
+    </div>
+    <div class="card">
       <div class="health-grid">
-        <div class="health-item"><span class="health-name">Manifest</span><span class="health-val" id="healthManifest">checking...</span></div>
-        <div class="health-item"><span class="health-name">Streams (Inception)</span><span class="health-val" id="healthStreams">checking...</span></div>
+        <div class="health-item"><span class="health-name">Manifest</span><span class="health-val" id="healthManifest">checking…</span></div>
+        <div class="health-item"><span class="health-name">Streams (Inception)</span><span class="health-val" id="healthStreams">checking…</span></div>
         <div class="health-item"><span class="health-name">Version</span><span class="health-val">1.0.0</span></div>
         <div class="health-item"><span class="health-name">Runtime</span><span class="health-val">Node 20</span></div>
       </div>
-      <button class="btn-ghost" id="recheckBtn" type="button">Re-check</button>
+      <button class="btn-quiet" id="recheckBtn" type="button">Re-run checks</button>
     </div>
   </section>
 
@@ -278,14 +245,14 @@
     <button class="icon-btn modal-close" id="welcomeClose" aria-label="Close">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
     </button>
-    <img class="modal-logo" src="/logo.png" alt="" width="56" height="56">
+    <img class="modal-logo" src="/logo.png" alt="IndStream" width="52" height="52">
     <h2>Welcome to IndStream</h2>
-    <p>Sign in to keep your setup on every device, or run it locally as a guest.</p>
+    <p>Sign in to carry your setup between devices, or stay local as a guest.</p>
     <button class="btn-google" id="modalGoogleBtn" type="button">
       <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z"/></svg>
       Continue with Google
     </button>
-    <button class="btn-quiet" id="modalGuestBtn" type="button">Continue as guest</button>
+    <button class="btn-quiet wide" id="modalGuestBtn" type="button">Continue as guest</button>
   </div>
 </div>
 

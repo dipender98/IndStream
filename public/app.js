@@ -401,9 +401,9 @@ function updateWizard(name) {
   WIZARD_STEPS.forEach(function (step, i) {
     const el = document.createElement('button');
     el.type = 'button';
-    el.className = 'wizard-step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
+    el.className = 'tuner-step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
     el.style.cssText = 'background:none;border:none;cursor:pointer;font-size:.8rem';
-    el.innerHTML = '<span class="wizard-dot">' + (i < idx ? '✓' : (i + 1)) + '</span><span class="step-name">' + step.label + '</span>';
+    el.innerHTML = '<span class="tick">' + (i < idx ? '✓' : (i + 1)) + '</span><span class="step-name">' + step.label + '</span>';
     el.addEventListener('click', function () { setSection(step.id); });
     steps.appendChild(el);
     if (i < WIZARD_STEPS.length - 1) {
