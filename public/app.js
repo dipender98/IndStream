@@ -687,3 +687,50 @@ function setupPalette() {
 
   backdrop.addEventListener('click', closePalette);
 }
+
+function setupSpatialNav() {
+  var FOCUSABLE = 'button:not([disabled]):not([hidden]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+  function visible(el) {
+    return !!(el.offsetParent || el.getClientRects().length);
+  }
+
+  function center(el) {
+    var r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
+    var tag = (e.target && e.target.tagName) || '';
+    var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if (typing) return;
+
+    var candidates = Array.prototype.slice.call(document.querySelectorAll(FOCUSABLE)).filter(visible);
+    if (!candidates.length) return;
+
+    var current = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    if (!current) { e.preventDefault(); candidates[0].focus(); return; }
+
+    var c = center(current);
+    var best = null;
+    var bestScore = Infinity;
+
+    candidates.forEach(function (el) {
+      if (el === current) return;
+      var p = center(el);
+      var dx = p.x - c.x, dy = p.y - c.y;
+      var primary, secondary, forward;
+      if (e.key === 'ArrowRight') { if (dx <= 1) return; primary = dx; secondary = Math.abs(dy); forward = dx; }
+      else if (e.key === 'ArrowLeft') { if (dx >= -1) return; primary = -dx; secondary = Math.abs(dy); forward = -dx; }
+      else if (e.key === 'ArrowDown') { if (dy <= 1) return; primary = dy; secondary = Math.abs(dx); forward = dy; }
+      else { if (dy >= -1) return; primary = -dy; secondary = Math.abs(dx); forward = -dy; }
+      if (forward <= 0) return;
+      var score = primary * 4 + secondary;
+      if (score < bestScore) { bestScore = score; best = el; }
+    });
+
+    if (best) { e.preventDefault(); best.focus(); }
+  });
+}
+setupSpatialNav();
