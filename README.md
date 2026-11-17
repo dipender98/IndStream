@@ -24,26 +24,6 @@ npm start
 Open `http://localhost:8080/` to configure and generate your addon URL, or
 `http://localhost:8080/manifest.json` for the default config.
 
-## Deploy (Fly.io, free tier)
-
-```bash
-fly auth login
-fly apps create indstream
-fly deploy
-```
-
-The app stays live at `https://indstream.fly.dev/`.
-
-## Configure
-
-Open `https://indstream.fly.dev/` (or `http://localhost:8080/`), pick your
-sources, languages and settings (minimum quality, result limit, timeout, DASH,
-probing, stream style), and copy the addon URL. The stream style controls how
-each stream is labelled; LightGDrive is the default and shows
-`Source Quality` as the badge with title, quality, size, source and language
-flags below. Each user gets their own configured addon URL of the form
-`https://<host>/<config>/manifest.json`.
-
 ## Install
 
 Paste the addon URL into Nuvio (Settings -> Plugins/Addons -> Add by URL) or
