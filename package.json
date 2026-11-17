@@ -1,20 +1,20 @@
 {
   "name": "indstream",
-  "version": "1.8.1",
+  "version": "1.0.0",
   "private": true,
-  "description": "IndStream — independent Nuvio scrapers, one per server",
+  "description": "IndStream Stremio/Nuvio addon (hosted).",
   "scripts": {
-    "build": "node build.js",
-    "build:watch": "node build.js --watch",
-    "start": "node server.js",
-    "test": "node test/run.js",
-    "smoke": "node test/live.js"
+    "start": "node index.js",
+    "test": "node test/run.js"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.5"
   },
-  "dependencies": {
-    "crypto-js": "^4.2.0"
+  "engines": {
+    "node": ">=18"
   },
   "license": "GPL-3.0"
 }

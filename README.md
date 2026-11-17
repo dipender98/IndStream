@@ -14,7 +14,23 @@ https://raw.githubusercontent.com/dipender98/IndStream/main/manifest.json
 Or in Nuvio: **Settings > Content & Discovery > Plugins**, paste the URL above,
 refresh, and enable the scrapers you want.
 
-## DMCA Notice
+## Run locally
+
+```bash
+npm install
+npm start
+```
+
+Then open `http://localhost:8080/manifest.json` or install the addon in Nuvio/Stremio with
+`http://localhost:8080/manifest.json`.
+
+## Install (hosted)
+
+Once deployed (e.g. Fly.io), add the addon URL in Nuvio/Stremio:
+
+```
+https://<your-host>/manifest.json
+```
 
 This project operates like a standard web browser by retrieving video files
 from the Internet and does not, by itself, contravene the Digital Millennium
