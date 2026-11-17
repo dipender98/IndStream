@@ -1,18 +1,6 @@
 # IndStream
 
-A [Nuvio](https://nuvio.tv) plugin with independent stream scrapers for movies
-and series.
-
-## Install
-
-Open Nuvio, add a plugin by URL:
-
-```
-https://raw.githubusercontent.com/dipender98/IndStream/main/manifest.json
-```
-
-Or in Nuvio: **Settings > Content & Discovery > Plugins**, paste the URL above,
-refresh, and enable the scrapers you want.
+A [Nuvio](https://nuvio.tv) addon for movies and series streams.
 
 ## Run locally
 
@@ -21,30 +9,31 @@ npm install
 npm start
 ```
 
-Then open `http://localhost:8080/manifest.json` or install the addon in Nuvio/Stremio with
-`http://localhost:8080/manifest.json`.
+Open `http://localhost:8080/` to configure and generate your addon URL, or
+`http://localhost:8080/manifest.json` for the default config. Install in
+Nuvio/Stremio with the addon URL.
 
 ## Install (hosted)
 
-Once deployed (e.g. Fly.io), add the addon URL in Nuvio/Stremio:
+Once deployed (e.g. Fly.io), open `https://<your-host>/` to configure, then add
+the generated addon URL in Nuvio/Stremio.
 
-```
-https://<your-host>/manifest.json
-```
+## DMCA Notice
 
 This project operates like a standard web browser by retrieving video files
 from the Internet and does not, by itself, contravene the Digital Millennium
-Copyright Act (17 U.S.C. §§ 1201-1205, 17 U.S.C. § 512) or other applicable
-law. Any content accessed through the plugins is provided by third-party
-websites or file hosts and is not hosted, controlled, or maintained by this
-repository or the Nuvio application, and users are solely responsible for
-ensuring their use complies with applicable copyright, licensing, contract,
-and other laws. Pursuant to the DMCA, copyright owners seeking removal of
-infringing material should follow the notice-and-takedown procedures set forth
-in 17 U.S.C. §§ 1201-1205, 17 U.S.C. § 512. If you believe any content
-accessed via the plugins infringes intellectual property rights, please
-direct your complaints to the hosting websites or file hosts rather than to
-the repository maintainers or the Nuvio application developers.
+Copyright Act (17 U.S.C. sections 1201-1205, 17 U.S.C. section 512) or other
+applicable law. Any content accessed through the plugins is provided by
+third-party websites or file hosts and is not hosted, controlled, or
+maintained by this repository or the Nuvio application, and users are solely
+responsible for ensuring their use complies with applicable copyright,
+licensing, contract, and other laws. Pursuant to the DMCA, copyright owners
+seeking removal of infringing material should follow the notice-and-takedown
+procedures set forth in 17 U.S.C. sections 1201-1205, 17 U.S.C. section 512.
+If you believe any content accessed via the plugins infringes intellectual
+property rights, please direct your complaints to the hosting websites or
+file hosts rather than to the repository maintainers or the Nuvio application
+developers.
 
 ## Disclaimer
 
