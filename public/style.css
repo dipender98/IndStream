@@ -11,14 +11,14 @@
   --line-1: rgba(246, 247, 249, .08);
   --line-2: rgba(246, 247, 249, .14);
   --line-3: rgba(246, 247, 249, .22);
-  /* type */
-  --text-1: #f6f7f9;
-  --text-2: rgba(246, 247, 249, .6);
-  --text-3: rgba(246, 247, 249, .38);
+  /* type — soft off-white, gentle contrast */
+  --text-1: #dcdad4;
+  --text-2: rgba(220, 218, 212, .58);
+  --text-3: rgba(220, 218, 212, .35);
   /* accent — white, like a well-made dark app */
-  --accent: #f6f7f9;
-  --accent-strong: #f6f7f9;
-  --accent-soft: rgba(246, 247, 249, .06);
+  --accent: #dcdad4;
+  --accent-strong: #dcdad4;
+  --accent-soft: rgba(220, 218, 212, .06);
   --on-accent: #07080b;
   --ok: #8ab48e;
   --danger: #cf938c;
@@ -218,8 +218,8 @@ img, svg, canvas { max-width: 100%; }
   border: 1px solid var(--line-2); position: relative; flex: none; transition: background .2s; }
 .switch-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
   border-radius: 50%; background: var(--text-2); transition: transform .2s, background .2s; }
-.switch input:checked + .switch-track { background: var(--accent-soft); border-color: rgba(232, 226, 212, .3); }
-.switch input:checked + .switch-track::after { transform: translateX(16px); background: #e8e2d4; }
+.switch input:checked + .switch-track { background: rgba(220, 218, 212, .14); border-color: rgba(220, 218, 212, .28); }
+.switch input:checked + .switch-track::after { transform: translateX(16px); background: #dcdad4; }
 
 /* ===== Providers ===== */
 .provider-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
