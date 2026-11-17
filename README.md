@@ -1,5 +1,7 @@
 # IndStream
 
+![IndStream](assets/indstream.png)
+
 A [Nuvio](https://nuvio.tv) / Stremio addon for movies and series streams,
 hosted on Fly.io.
 
