@@ -17,9 +17,14 @@ const vidrift = require('./src/indstream/providers/vidrift');
 const bingr = require('./src/indstream/providers/bingr');
 const moviebox = require('./src/indstream/providers/moviebox');
 const hub4k = require('./src/indstream/providers/hub4k');
-const fsl = require('./src/indstream/providers/fsl');
+const netmirror = require('./src/indstream/providers/netmirror');
+const atlantic = require('./src/indstream/providers/atlantic');
+const vidly = require('./src/indstream/providers/vidly');
+const streamCacheModule = require('./src/indstream/cache');
 
-const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
+const streamCache = streamCacheModule.createTtlCache({ ttlMs: 15 * 60 * 1000, maxEntries: 400 });
+
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -82,6 +87,16 @@ function decodeCfg(seg) {
     for (const key of Object.keys(obj)) {
       if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') cleaned[key] = obj[key];
     }
+    if (Array.isArray(cleaned.p)) {
+      const known = new Set(ALL_PROVIDERS.map(function (p) { return p.id; }));
+      const seen = new Set();
+      cleaned.p = cleaned.p.filter(function (id) {
+        if (typeof id !== 'string' || !known.has(id)) return false;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    }
     return cleaned;
   } catch (e) {
     return null;
@@ -97,7 +112,7 @@ function shortHash(str) {
 function makeManifest(cfg, base) {
   return {
     id: 'com.indstream.addon.' + shortHash(encodeCfg(cfg)),
-    version: '1.1.0',
+    version: (function () { try { return require('./package.json').version; } catch (e) { return '0.0.0'; } })(),
     name: 'IndStream',
     description: 'IndStream streams for movies and series.',
     resources: ['stream'],
@@ -157,7 +172,29 @@ function applyLanguagePreference(streams, prefs) {
   });
 }
 
+function configKey(cfg) {
+  try {
+    return crypto.createHash('sha256').update(encodeCfg(cfg || {})).digest('hex').slice(0, 16);
+  } catch (error) {
+    return String(JSON.stringify(cfg || {})).slice(0, 120);
+  }
+}
+
 async function getStreams(mediaId, mediaType, season, episode, cfg) {
+  const type = mediaType === 'series' ? 'tv' : 'movie';
+  const inputId = String(mediaId == null ? '' : mediaId).trim();
+  const sNum = Math.max(0, Math.trunc(Number(season) || 0));
+  const eNum = Math.max(0, Math.trunc(Number(episode) || 0));
+  const cacheKey = JSON.stringify([type, inputId, sNum, eNum, configKey(cfg)]);
+  const dbg = cfg && cfg.debug;
+  const entry = await streamCache.get(cacheKey, function () {
+    return resolveStreams(mediaId, mediaType, season, episode, cfg);
+  });
+  if (dbg) console.log('[IndStream] cache ' + (entry.cached === true ? 'hit' : entry.cached === 'inflight' ? 'joined' : 'miss') + ' for ' + cacheKey);
+  return entry.value;
+}
+
+async function resolveStreams(mediaId, mediaType, season, episode, cfg) {
   const s = normalizeCfg(cfg);
   const type = mediaType === 'series' ? 'tv' : 'movie';
   const inputId = String(mediaId == null ? '' : mediaId).trim();
@@ -170,8 +207,8 @@ async function getStreams(mediaId, mediaType, season, episode, cfg) {
     tmdbId: inputTmdbId,
     imdbId: inputImdbId,
     type: type,
-    season: Number(season) || 0,
-    episode: Number(episode) || 0,
+    season: Math.max(0, Math.trunc(Number(season) || 0)),
+    episode: Math.max(0, Math.trunc(Number(episode) || 0)),
     settings: s,
     timeoutMs: s.requestTimeout * 1000,
     log: s.debug ? function (m) { console.log('[IndStream] ' + m); } : function () {},
@@ -216,19 +253,19 @@ async function getStreams(mediaId, mediaType, season, episode, cfg) {
   return resultLimit > 0 ? languageSorted.slice(0, resultLimit) : languageSorted;
 }
 
-function sendJson(res, status, body) {
-  res.writeHead(status, {
+function sendJson(res, status, body, corsEnabled) {
+  if (corsEnabled == null) corsEnabled = true;
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': '*',
     'Cache-Control': 'no-store',
-  });
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (corsEnabled) {
+    headers['Access-Control-Allow-Origin'] = '*';
+    headers['Access-Control-Allow-Headers'] = '*';
+  }
+  res.writeHead(status, headers);
   res.end(JSON.stringify(body));
-}
-
-function sendHtml(res, status, html) {
-  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(html);
 }
 
 function safeDecode(value) {
@@ -260,8 +297,10 @@ function readSession(req) {
   const payload = raw.slice(0, idx);
   const sig = raw.slice(idx + 1);
   const expected = signValue(payload);
-  if (sig.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  const sigBuf = Buffer.from(sig, 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  if (sigBuf.length !== expectedBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!data || !data.exp || data.exp < Date.now()) return null;
@@ -269,6 +308,114 @@ function readSession(req) {
   } catch (e) {
     return null;
   }
+}
+
+function sanitizeConfigFromApi(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  Object.keys(raw).forEach(function (key) {
+    const v = raw[key];
+    if (key === 'p') {
+      if (Array.isArray(v)) {
+        const known = new Set(ALL_PROVIDERS.map(function (p) { return p.id; }));
+        const seen = new Set();
+        const picked = [];
+        v.forEach(function (id) {
+          if (typeof id !== 'string' || !known.has(id)) return;
+          if (seen.has(id)) return;
+          seen.add(id);
+          picked.push(id);
+        });
+        out.p = picked.slice(0, 32);
+      }
+      return;
+    }
+    if (key === 'langs') {
+      if (Array.isArray(v)) {
+        const seen = new Set();
+        const picked = [];
+        v.forEach(function (l) {
+          if (typeof l !== 'string' || !l.trim()) return;
+          const t = l.trim().slice(0, 40);
+          if (seen.has(t)) return;
+          seen.add(t);
+          picked.push(t);
+        });
+        out.langs = picked.slice(0, 40);
+      }
+      return;
+    }
+    if (key === 'langStrict' || key === 'includeDash' || key === 'probeQuality' || key === 'debug') {
+      out[key] = !!v;
+      return;
+    }
+    if (key === 'streamStyle') {
+      if (typeof v === 'string' && styles.STYLE_IDS.indexOf(v) >= 0) out.streamStyle = v;
+      return;
+    }
+    if (key === 'minQuality') {
+      const t = String(v);
+      if (['0', '720', '1080'].indexOf(t) >= 0) out.minQuality = t;
+      return;
+    }
+    if (key === 'resultLimit') {
+      const t = String(v);
+      if (['0', '20', '40', '80'].indexOf(t) >= 0) out.resultLimit = t;
+      return;
+    }
+    if (key === 'requestTimeout') {
+      const t = String(v);
+      if (['10', '15', '25'].indexOf(t) >= 0) out.requestTimeout = t;
+      return;
+    }
+  });
+  return out;
+}
+
+function readCfgCookie(req) {
+  if (!LOGIN_ENABLED) return null;
+  const raw = parseCookies(req).indstream_cfg;
+  if (!raw) return null;
+  const idx = raw.lastIndexOf('.');
+  if (idx < 0) return null;
+  const payload = raw.slice(0, idx);
+  const sig = raw.slice(idx + 1);
+  const expected = signValue(payload);
+  const sigBuf = Buffer.from(sig, 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  if (sigBuf.length !== expectedBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    return sanitizeConfigFromApi(data);
+  } catch (e) {
+    return null;
+  }
+}
+
+function cfgCookie(cfg, secure) {
+  const sanitized = sanitizeConfigFromApi(cfg);
+  const payload = Buffer.from(JSON.stringify(sanitized)).toString('base64url');
+  return 'indstream_cfg=' + payload + '.' + signValue(payload) + '; Path=/; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : '') + '; Max-Age=2592000';
+}
+
+function clearCfgCookie(secure) {
+  return 'indstream_cfg=; Path=/; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : '') + '; Max-Age=0';
+}
+
+function readBody(req, limit) {
+  return new Promise(function (resolve, reject) {
+    let size = 0;
+    const chunks = [];
+    req.on('data', function (chunk) {
+      size += chunk.length;
+      if (size > limit) { req.destroy(); reject(new Error('payload too large')); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', function () { resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', reject);
+  });
 }
 
 function sessionCookie(data, secure) {
@@ -368,7 +515,7 @@ function serveStatic(req, res, filePath) {
     const ext = path.extname(filePath).toLowerCase();
     const etag = '"' + crypto.createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
     if (req.headers['if-none-match'] === etag) {
-      res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' });
+      res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
       res.end();
       return;
     }
@@ -376,6 +523,7 @@ function serveStatic(req, res, filePath) {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       ETag: etag,
       'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(data);
   });
@@ -389,21 +537,40 @@ async function handleRequest(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': '*',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end();
     return;
   }
 
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'text/plain', 'Allow': 'GET, POST, OPTIONS', 'X-Content-Type-Options': 'nosniff' });
+    res.end('Method not allowed');
+    return;
+  }
+
+  if (req.method === 'POST' && pathname !== '/api/cfg') {
+    res.writeHead(405, { 'Content-Type': 'text/plain', 'Allow': 'GET, POST, OPTIONS', 'X-Content-Type-Options': 'nosniff' });
+    res.end('Method not allowed');
+    return;
+  }
   if (pathname === '/api/styles') {
     sendJson(res, 200, { default: styles.DEFAULT_STYLE, options: styles.STYLE_OPTIONS });
     return;
   }
 
+  if (pathname === '/api/version') {
+    let pkgVersion = '1.0.0';
+    try { pkgVersion = require('./package.json').version || pkgVersion; } catch (e) {}
+    sendJson(res, 200, { version: pkgVersion, runtime: 'Node ' + process.version }, false);
+    return;
+  }
+
   if (pathname === '/api/style-preview') {
     const style = (query.style || styles.DEFAULT_STYLE);
-    sendJson(res, 200, { samples: styles.previewSamples(style) });
+    sendJson(res, 200, { samples: styles.previewSamples(style) }, false);
     return;
   }
 
@@ -413,7 +580,54 @@ async function handleRequest(req, res) {
       signedIn: !!session,
       loginEnabled: LOGIN_ENABLED,
       user: session ? { name: session.name, email: session.email, picture: session.picture } : null,
+      cfg: session ? readCfgCookie(req) : null,
+    }, false);
+    return;
+  }
+
+  if (pathname === '/api/cfg') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'text/plain', 'Allow': 'POST', 'X-Content-Type-Options': 'nosniff' });
+      res.end('Method not allowed');
+      return;
+    }
+    const session = readSession(req);
+    if (!session) {
+      sendJson(res, 401, { ok: false, error: 'not signed in' }, false);
+      return;
+    }
+    const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (ct !== 'application/json') {
+      sendJson(res, 415, { ok: false, error: 'expected application/json' }, false);
+      return;
+    }
+    const origin = req.headers.origin || '';
+    if (origin && origin !== baseUrl(req)) {
+      sendJson(res, 403, { ok: false, error: 'origin mismatch' }, false);
+      return;
+    }
+    let body;
+    try {
+      body = await readBody(req, 8192);
+    } catch (e) {
+      sendJson(res, 413, { ok: false, error: 'payload too large' }, false);
+      return;
+    }
+    let posted;
+    try {
+      posted = JSON.parse(body);
+    } catch (e) {
+      sendJson(res, 400, { ok: false, error: 'invalid JSON' }, false);
+      return;
+    }
+    const cfg = sanitizeConfigFromApi(posted && posted.cfg ? posted.cfg : posted);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Set-Cookie': cfgCookie(cfg, isHttpsRequest(req)),
     });
+    res.end(JSON.stringify({ ok: true, cfg: cfg }));
     return;
   }
 
@@ -446,7 +660,7 @@ async function handleRequest(req, res) {
   }
 
   if (pathname === '/auth/logout') {
-    redirect(res, '/', clearCookie(isHttpsRequest(req)));
+    redirect(res, '/', [clearCookie(isHttpsRequest(req)), clearCfgCookie(isHttpsRequest(req))]);
     return;
   }
 
@@ -479,9 +693,16 @@ async function handleRequest(req, res) {
 
   const m = rest.match(/^\/stream\/(movie|series)\/(.+)\.json$/);
   if (m) {
-    const parts = decodeURIComponent(m[2]).split(':');
+    const parts = m[2].split(':');
     try {
-      const streams = await getStreams(parts[0], m[1], parts[1], parts[2], cfg);
+      const decoded = parts.map(function (p) {
+        try { return decodeURIComponent(p); } catch (e) { return p; }
+      });
+      if (!decoded.every(function (p) { return /^(?:[A-Za-z0-9_-]+)$/.test(p); })) {
+        sendJson(res, 200, { streams: [] });
+        return;
+      }
+      const streams = await getStreams(decoded[0], m[1], decoded[1], decoded[2], cfg);
       sendJson(res, 200, { streams: streams });
     } catch (err) {
       console.error('stream error:', err && err.message ? err.message : err);
@@ -490,7 +711,7 @@ async function handleRequest(req, res) {
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.writeHead(404, { 'Content-Type': 'text/plain', 'X-Content-Type-Options': 'nosniff' });
   res.end('Not found');
 }
 
@@ -504,6 +725,9 @@ const server = http.createServer(function (req, res) {
     try { res.end(); } catch (e) {}
   });
 });
+server.headersTimeout = 30000;
+server.requestTimeout = 20000;
+server.keepAliveTimeout = 5000;
 
 function splitConfig(pathname) {
   if (typeof pathname !== 'string' || pathname.length > 8192) return { cfg: DEFAULT_CFG, rest: '/' };

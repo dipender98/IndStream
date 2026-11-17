@@ -11,12 +11,15 @@ const settings = require('../src/indstream/settings');
 const tmdb = require('../src/indstream/tmdb');
 const providers = require('../src/indstream/providers');
 const racer = require('../src/indstream/racer');
+const cacheLib = require('../src/indstream/cache');
 const hdhub = require('../src/indstream/providers/hdhub');
 const vidrift = require('../src/indstream/providers/vidrift');
 const bingr = require('../src/indstream/providers/bingr');
 const moviebox = require('../src/indstream/providers/moviebox');
 const hub4k = require('../src/indstream/providers/hub4k');
-const fsl = require('../src/indstream/providers/fsl');
+const netmirror = require('../src/indstream/providers/netmirror');
+const atlantic = require('../src/indstream/providers/atlantic');
+const vidly = require('../src/indstream/providers/vidly');
 const filehost = require('../src/indstream/filehost');
 
 const queue = [];
@@ -203,6 +206,7 @@ test('result limit applies after sorting', function () {
   assert.strictEqual(out[0].url, 'https://x/1080');
 });
 
+
 section('html');
 test('blocks extracts nested download-item blocks', function () {
   const markup =
@@ -238,6 +242,7 @@ test('defaults', function () {
   assert.strictEqual(s.minQuality, 720);
   assert.strictEqual(s.resultLimit, 40);
   assert.strictEqual(s.includeDash, true);
+  assert.strictEqual(s.requestTimeout, 5);
 });
 test('override', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({
@@ -325,19 +330,33 @@ test('streamPath falls back to metadata only when no id exists', async function 
 });
 
 section('vidrift');
-test('vidriftStreams parses orionStreams', function () {
-  const fixture =
-    '<script>var embedMeta = {"orionStreams":[{"name":"Hindi","url":"https://cdn.example.com/hi.m3u8"},' +
-    '{"name":"English","url":"https://cdn.example.com/en.m3u8"}],"evionUrl":""}</script>';
-  const out = vidrift._test.vidriftStreams(fixture);
+test('vidriftStreams builds stream objects from orionStreams', function () {
+  const meta = {
+    orionStreams: [
+      { name: 'Orion · Hindi', url: '/api/orion/a/master.m3u8', rungs: [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }], subtitleListUrl: '/api/orion/a/subtitles.json' },
+      { name: 'Orion · Original', url: '/api/orion/b/master.m3u8', rungs: [{ width: 854, height: 480 }] },
+    ],
+    evionUrl: '',
+  };
+  const out = vidrift._test.vidriftStreams(meta);
   assert.strictEqual(out.length, 2);
-  assert.strictEqual(out[0][1], 'Hindi');
+  assert.strictEqual(out[0].url, 'https://embed.vidrift.net/api/orion/a/master.m3u8');
+  assert.strictEqual(out[0].type, 'hls');
+  assert.strictEqual(out[0].height, 1080);
+  assert.strictEqual(out[0].quality, '1080p');
+  assert.strictEqual(out[0].language, 'Hindi');
+  assert.strictEqual(out[0]._subtitleListUrl, '/api/orion/a/subtitles.json');
+  assert.strictEqual(out[1].language, 'Original');
+  assert.strictEqual(out[1].height, 480);
 });
 test('vidriftStreams falls back to evionUrl', function () {
-  const fixture = '<script>var embedMeta = {"evionUrl":"https://cdn.example.com/master.m3u8"}</script>';
-  const out = vidrift._test.vidriftStreams(fixture);
+  const meta = { orionStreams: [], evionUrl: 'https://cdn.example.com/master.m3u8' };
+  const out = vidrift._test.vidriftStreams(meta);
   assert.strictEqual(out.length, 1);
-  assert.strictEqual(out[0][0], 'https://cdn.example.com/master.m3u8');
+  assert.strictEqual(out[0].url, 'https://cdn.example.com/master.m3u8');
+});
+test('vidriftStreams returns nothing for empty meta', function () {
+  assert.strictEqual(vidrift._test.vidriftStreams({}).length, 0);
 });
 
 section('bingr');
@@ -430,51 +449,118 @@ test('hubLangOf', function () {
   assert.strictEqual(hub4k._test.hubLangOf('Tamil'), 'Tamil');
 });
 
-section('fsl');
-test('fslIsLanding', function () {
-  assert.strictEqual(fsl._test.fslIsLanding('<script src="https://qikly.pro/host"></script>'), true);
-  assert.strictEqual(fsl._test.fslIsLanding('<div id="stx"></div>'), true);
-  assert.strictEqual(fsl._test.fslIsLanding('<html><body>movies</body></html>'), false);
+section('netmirror');
+test('streamsOf parses embed streams and resolution', function () {
+  const root = { ok: true, streams: [{ url: 'https://cdn.example.com/a.mp4?x=1', resolution: 1080, size: 2414667149 }] };
+  const out = netmirror._test.streamsOf(root, 'Hindi');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].height, 1080);
+  assert.strictEqual(out[0].language, 'Hindi');
+  assert.strictEqual(out[0].size, '2.25 GB');
+  assert.strictEqual(out[0].type, 'mp4');
 });
-test('fslDomainPick picks most frequent family domain', function () {
-  const htmlText = '<a href="https://vegamovies.lease/x">1</a><a href="https://vegamovies.lease/y">2</a>' +
-    '<a href="https://1vegamovies.asia/z">3</a>';
-  assert.strictEqual(fsl._test.fslDomainPick(htmlText, 'vegamovies'), 'https://vegamovies.lease');
+test('streamsOf falls back to mp4 field and rejects bad roots', function () {
+  const root = { ok: true, mp4: 'https://cdn.example.com/b.mp4', resolution: 720 };
+  assert.strictEqual(netmirror._test.streamsOf(root, '').length, 1);
+  assert.strictEqual(netmirror._test.streamsOf({ ok: false }, '').length, 0);
+  assert.strictEqual(netmirror._test.streamsOf(null, '').length, 0);
+  assert.strictEqual(netmirror._test.streamsOf('<meta name="viewport">', '').length, 0);
 });
-test('fslSearchHits', function () {
-  const json = JSON.stringify({ hits: [
-    { document: { permalink: '/inception-2010/', post_title: 'Download Inception (2010)' } },
-    { document: { permalink: '', post_title: 'No link' } },
+test('parseJson rejects interstitial html', function () {
+  assert.strictEqual(netmirror._test.parseJson('<meta name="x">'), null);
+  assert.deepStrictEqual(netmirror._test.parseJson('{"ok":true}'), { ok: true });
+});
+test('captionsOf resolves relative urls against the base', function () {
+  const root = { captions: [{ lang: 'en', name: 'English', url: '/api/proxy/video?url=enc' }] };
+  const out = netmirror._test.captionsOf(root);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].url, 'https://net79.cc/api/proxy/video?url=enc');
+  assert.strictEqual(out[0].lang, 'en');
+});
+test('dubLabel maps dub suffixes to canonical languages', function () {
+  assert.strictEqual(netmirror._test.dubLabel('Hindi dub', false), 'Hindi');
+  assert.strictEqual(netmirror._test.dubLabel('Telugu dub', false), 'Telugu');
+  assert.strictEqual(netmirror._test.dubLabel('Arabic sub', false), null);
+  assert.strictEqual(netmirror._test.dubLabel('Default', false), null);
+  assert.strictEqual(netmirror._test.dubLabel('Default', true), 'Original');
+  assert.strictEqual(netmirror._test.dubLabel('esla dub', false), null);
+});
+test('dubSpecs prefers indian dubs, dedupes and caps at 4', function () {
+  const variants = JSON.stringify({ variants: [
+    { dubSubjectId: '1', language: 'Default', isOriginal: false, detailPath: 'd0' },
+    { dubSubjectId: '2', language: 'French dub', isOriginal: false, detailPath: 'd1' },
+    { dubSubjectId: '3', language: 'Hindi dub', isOriginal: false, detailPath: 'd2' },
+    { dubSubjectId: '4', language: 'Telugu dub', isOriginal: false, detailPath: 'd3' },
+    { dubSubjectId: '5', language: 'Tamil dub', isOriginal: false, detailPath: 'd4' },
+    { dubSubjectId: '6', language: 'Malayalam dub', isOriginal: false, detailPath: 'd5' },
+    { dubSubjectId: '7', language: 'Kannada dub', isOriginal: false, detailPath: 'd6' },
+    { dubSubjectId: '3', language: 'Hindi dub', isOriginal: false, detailPath: 'd2' },
   ] });
-  const hits = fsl._test.fslSearchHits(json);
-  assert.strictEqual(hits.length, 1);
-  assert.strictEqual(hits[0].permalink, '/inception-2010/');
+  const out = netmirror._test.dubSpecs(variants);
+  assert.deepStrictEqual(out.map(function (d) { return d.label; }), ['Hindi', 'Tamil', 'Telugu', 'Malayalam']);
 });
-test('fslGroups heading-gated gateways', function () {
-  const markup =
-    '<div class="entry-content">' +
-    '<h2>Inception (2010) 1080p [3.2GB]</h2>' +
-    '<a href="https://vcloud.xyz/abc123">Download</a>' +
-    '<a href="https://filepress.link/xyz">FilePress</a>' +
-    '<h3>Random section</h3>' +
-    '<a href="https://vcloud.xyz/zzz999">Download</a>' +
-    '</div>';
-  const groups = fsl._test.fslGroups(markup);
-  assert.strictEqual(groups.length, 1);
-  assert.strictEqual(groups[0].gateways.length, 2);
+test('sizeLabel formats bytes', function () {
+  assert.strictEqual(netmirror._test.sizeLabel(2414667149), '2.25 GB');
+  assert.strictEqual(netmirror._test.sizeLabel(734003200), '700 MB');
+  assert.strictEqual(netmirror._test.sizeLabel(0), '');
 });
-test('headingSizeOf', function () {
-  assert.strictEqual(fsl._test.headingSizeOf('Movie [1.3GB] 720p'), '1.3GB');
-  assert.strictEqual(fsl._test.headingSizeOf('Movie [900MB/EP] 720p'), '900MB');
+
+section('atlantic');
+test('bestHlsSource returns direct hls source with height hint', function () {
+  const json = { sources: { Vidbox: { type: 'hls', url: 'https://cdn.example.com/master.m3u8', label: 'AUTO' } } };
+  const out = atlantic._test.bestHlsSource(json);
+  assert.strictEqual(out.url, 'https://cdn.example.com/master.m3u8');
 });
-test('releaseLanguageOf', function () {
-  assert.strictEqual(fsl._test.releaseLanguageOf('Hindi 720p'), 'Hindi');
-  assert.strictEqual(fsl._test.releaseLanguageOf('Dual Audio'), 'Multi');
+test('bestHlsSource decrypts moscow ms_ payload', function () {
+  const json = { sources: { Moscow: { type: 'hls', url: 'ms_7c30053082f4cb3c0a66080923cb4892a431e626185591ccf10398271cb9ff4562a620fe3bc148bffec508d18f8dc8a837541d134fc9f1cae298142a37efb4b79cea148af341d4c0f216f5b6cd8757b342e5fe247ac3faa2277b672a7e10075e2b92b63cffc1eed1e16a7a13f5b22d0731dbd7c97d63ef4fa3685f28f9fc7c4ec183cb0705' } } };
+  const out = atlantic._test.bestHlsSource(json);
+  assert.strictEqual(out.url, 'https://stream.hls.lol/nesterov/master.m3u8?i=0&k=321c4a86b689e1d51d52&s=7fa637452cd4e36e18b88266eb3855ff');
 });
-test('fslServerLabel', function () {
-  assert.strictEqual(fsl._test.fslServerLabel('Download', 'FSL'), 'FSL');
-  assert.strictEqual(fsl._test.fslServerLabel('Hindi', 'FSL'), 'FSL');
-  assert.strictEqual(fsl._test.fslServerLabel('Mirror 1 Server', 'FSL'), 'Mirror 1');
+test('decryptMsUrl rejects garbage', function () {
+  assert.strictEqual(atlantic._test.decryptMsUrl('ms_zzzz'), null);
+  assert.strictEqual(atlantic._test.decryptMsUrl(''), null);
+  assert.strictEqual(atlantic._test.decryptMsUrl(null), null);
+});
+test('localesOf extracts audio locales from a release label', function () {
+  assert.strictEqual(atlantic._test.localesOf('BR 1080p (ru, uk, en-US)'), 'Russian, English');
+  assert.strictEqual(atlantic._test.localesOf('AUTO'), '');
+});
+test('mboxTracks maps dash tracks with language labels', function () {
+  const json = { tracks: [
+    { id: '0', url: 'https://stream.hls.lol/mbox/mpd?q=a', kind: 'dash', quality: '1080p', lang: 'Original', mode: 'original' },
+    { id: '5', url: 'https://stream.hls.lol/mbox/mpd?q=b', kind: 'dash', quality: '1080p', lang: 'Telugu', mode: 'dub' },
+    { id: '6', url: 'https://stream.hls.lol/mbox/mpd?q=c', kind: 'dash', quality: '480p', lang: 'Hindi', mode: 'dub' },
+    { id: '7', url: 'https://stream.hls.lol/mbox/mpd?q=d', kind: 'dash', quality: '1080p', lang: 'Arabic sub', mode: 'sub' },
+  ] };
+  const out = atlantic._test.mboxTracks(json);
+  assert.strictEqual(out.length, 3);
+  assert.strictEqual(out[0].type, 'dash');
+  assert.strictEqual(out[0].language, 'Original');
+  assert.strictEqual(out[0].height, 1080);
+  assert.strictEqual(out[1].language, 'Telugu');
+  assert.strictEqual(out[2].height, 480);
+});
+test('subtitlesOf maps mbox and q62 subtitle shapes', function () {
+  const mbox = atlantic._test.subtitlesOf({ subtitles: [{ url: 'https://cdn.example.com/en.srt', lang: 'en', label: 'English' }] }, 'mbox');
+  assert.strictEqual(mbox.length, 1);
+  assert.strictEqual(mbox[0].id, 'atlantic-mbox-0');
+  assert.strictEqual(mbox[0].label, 'English');
+  const q62 = atlantic._test.subtitlesOf({ releases: [{ subtitles: [{ url: 'https://cdn.example.com/hi.srt', language: 'hi', label: 'Hindi' }] }] }, 'q62');
+  assert.strictEqual(q62.length, 1);
+  assert.strictEqual(q62[0].lang, 'hi');
+  assert.strictEqual(atlantic._test.subtitlesOf({ subtitles: [{ url: 'not-http' }] }, 'mbox').length, 0);
+});
+
+section('vidly');
+test('vidlyStreamUrls extracts distinct m3u8 urls and unescapes entities', function () {
+  const html = '<script>self.__DATA__={"u":"https:\\/\\/gzip.rousav.tech\\/tv\\/ee3c2a52662960708707\\/index.m3u8?sig=a\\u0026x=1"}</script>' +
+    '<source src="https:\\/\\/gzip.rousav.tech\\/tv\\/ee3c2a52662960708707\\/index.m3u8?sig=a&x=1">';
+  const out = vidly._test.vidlyStreamUrls(html);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0], 'https://gzip.rousav.tech/tv/ee3c2a52662960708707/index.m3u8?sig=a&x=1');
+});
+test('vidlyStreamUrls returns empty for pages without streams', function () {
+  assert.strictEqual(vidly._test.vidlyStreamUrls('<html>no streams</html>').length, 0);
 });
 
 section('filehost');
@@ -730,8 +816,8 @@ test('lightgdrive renders declared specs only', function () {
 test('lightgdrive episode tag', function () {
   const raw = Object.assign({}, HDR_RAW, { quality: '1080p', height: 1080, releaseText: 'Stranger.Things.S01E01.1080p.WEB-DL.DDP5.1.H.264.mkv' });
   const ctx = { season: 1, episode: 1, meta: { title: 'Stranger Things', year: '2016' } };
-  const out = styles.renderNameTitle({ id: 'fsl', name: 'FSL' }, raw, ctx, 'lightgdrive');
-  assert.strictEqual(out.name, 'FSL 1080p');
+  const out = styles.renderNameTitle({ id: 'netmirror', name: 'NetMirror' }, raw, ctx, 'lightgdrive');
+  assert.strictEqual(out.name, 'NetMirror 1080p');
   assert.ok(out.title.indexOf('S01E01') >= 0);
   assert.ok(out.title.indexOf('WEB-DL') >= 0);
 });
@@ -754,6 +840,98 @@ test('every preset renders without throwing', function () {
       assert.ok(sample.name && sample.title, 'empty render for ' + id);
     });
   });
+});
+
+section('display languages');
+test('sortDisplayLanguages orders original first, then hindi, then english', function () {
+  assert.deepStrictEqual(util.sortDisplayLanguages(['English', 'Hindi', 'French', 'German'], 'German'), ['German', 'Hindi', 'English', 'French']);
+  assert.deepStrictEqual(util.sortDisplayLanguages(['English', 'Telugu', 'Tamil'], 'Tamil'), ['Tamil', 'English', 'Telugu']);
+  assert.deepStrictEqual(util.sortDisplayLanguages(['English', 'Hindi'], ''), ['Hindi', 'English']);
+});
+test('capDisplayLanguages caps at three and renders Multi beyond', function () {
+  assert.deepStrictEqual(util.capDisplayLanguages(['Hindi', 'English', 'German'], ''), ['Hindi', 'English', 'German']);
+  assert.deepStrictEqual(util.capDisplayLanguages(['Hindi', 'English', 'German', 'French'], ''), ['Multi']);
+  assert.deepStrictEqual(util.capDisplayLanguages(['Tamil', 'English', 'Hindi', 'Telugu'], ''), ['Multi']);
+});
+test('renderNameTitle caps embedded language lists at Multi', function () {
+  const raw = { url: 'https://example.com/x.m3u8', type: 'hls', quality: '1080p', height: 1080, language: 'German, English, Spanish, French, Hindi, Italian, Japanese, Polish, Portuguese, Turkish' };
+  const ctx = { season: 0, episode: 0, meta: { title: 'Inception', year: '2010' } };
+  const out = styles.renderNameTitle({ id: 'vidly', name: 'Vidly' }, raw, ctx, 'lightgdrive');
+  assert.ok(out.title.indexOf('Multi') >= 0);
+  assert.ok(out.title.indexOf('German') < 0);
+  assert.ok(out.title.indexOf('Japanese') < 0);
+});
+test('renderNameTitle shows original first then hindi then english', function () {
+  const raw = { url: 'https://example.com/x.mp4', type: 'mp4', quality: '1080p', height: 1080, language: 'English, Hindi, French' };
+  const ctx = { season: 0, episode: 0, meta: { title: 'Inception', year: '2010', originalLanguage: 'fr' } };
+  const out = styles.renderNameTitle({ id: 'hdhub', name: 'HdHub' }, raw, ctx, 'gdrive');
+  const fr = out.title.indexOf('French');
+  const hi = out.title.indexOf('Hindi');
+  const en = out.title.indexOf('English');
+  assert.ok(fr >= 0 && hi > fr && en > hi, 'expected French, Hindi, English order in: ' + out.title);
+});
+
+section('racer');
+test('capOf honors the ui timeout per provider', function () {
+  assert.strictEqual(racer.capOf({ raceTimeoutMs: 9000 }, { requestTimeout: 5 }), 5000);
+  assert.strictEqual(racer.capOf({ raceTimeoutMs: 3000 }, { requestTimeout: 5 }), 5000);
+  assert.strictEqual(racer.capOf({ raceTimeoutMs: 3000 }, { requestTimeout: 10 }), 10000);
+  assert.strictEqual(racer.capOf({ raceTimeoutMs: 4321 }, {}), 4321);
+  assert.strictEqual(racer.capOf({ raceTimeoutMs: 0 }, { requestTimeout: 0 }), 12000);
+});
+
+section('cache');
+test('cached values are reused without re-running the producer', async function () {
+  const calls = { n: 0 };
+  const cache = cacheLib.createTtlCache({ ttlMs: 60000, maxEntries: 10, now: function () { return 1000; } });
+  const first = await cache.get('k', async function () { calls.n += 1; return [{ url: 'a' }]; });
+  const second = await cache.get('k', async function () { calls.n += 1; return [{ url: 'b' }]; });
+  assert.strictEqual(calls.n, 1);
+  assert.strictEqual(first.cached, false);
+  assert.strictEqual(second.cached, true);
+  assert.strictEqual(second.value[0].url, 'a');
+});
+test('empty results are never cached', async function () {
+  const calls = { n: 0 };
+  const cache = cacheLib.createTtlCache({ ttlMs: 60000, maxEntries: 10, now: function () { return 1000; } });
+  await cache.get('k', async function () { calls.n += 1; return []; });
+  const again = await cache.get('k', async function () { calls.n += 1; return []; });
+  assert.strictEqual(calls.n, 2);
+  assert.strictEqual(again.cached, false);
+});
+test('entries expire after the ttl', async function () {
+  let t = 1000;
+  const calls = { n: 0 };
+  const cache = cacheLib.createTtlCache({ ttlMs: 1000, maxEntries: 10, now: function () { return t; } });
+  await cache.get('k', async function () { calls.n += 1; return [{ url: 'a' }]; });
+  t = 2500;
+  const fresh = await cache.get('k', async function () { calls.n += 1; return [{ url: 'b' }]; });
+  assert.strictEqual(calls.n, 2);
+  assert.strictEqual(fresh.value[0].url, 'b');
+});
+test('oldest entries are evicted past maxEntries', async function () {
+  const cache = cacheLib.createTtlCache({ ttlMs: 60000, maxEntries: 2, now: function () { return 1000; } });
+  const mk = function (id) { return async function () { return [{ url: id }]; }; };
+  await cache.get('a', mk('a'));
+  await cache.get('b', mk('b'));
+  await cache.get('c', mk('c'));
+  assert.strictEqual(cache.size(), 2);
+  const a = await cache.get('a', mk('a2'));
+  assert.strictEqual(a.value[0].url, 'a2');
+  assert.strictEqual(a.cached, false);
+});
+test('concurrent identical requests join a single producer', async function () {
+  const calls = { n: 0 };
+  const cache = cacheLib.createTtlCache({ ttlMs: 60000, maxEntries: 10, now: function () { return 1000; } });
+  const producer = async function () {
+    calls.n += 1;
+    await new Promise(function (resolve) { setImmediate(resolve); });
+    return [{ url: 'x' }];
+  };
+  const out = await Promise.all([cache.get('k', producer), cache.get('k', producer)]);
+  assert.strictEqual(calls.n, 1);
+  assert.strictEqual(out[0].value[0].url, 'x');
+  assert.strictEqual(out[1].value[0].url, 'x');
 });
 
 main();

@@ -90,12 +90,12 @@ function finalizeStreams(streams, options) {
     return !util.isKnownBelowFloor(streamHeight(stream), opts.minQuality);
   });
 
-  const deduped = util.dedupeStreams(filtered, function (a, b) {
+  const compare = function (a, b) {
     return compareStreams(a, b, ranks);
-  });
-  deduped.sort(function (a, b) {
-    return compareStreams(a, b, ranks);
-  });
+  };
+
+  const deduped = util.dedupeStreams(filtered, compare);
+  deduped.sort(compare);
 
   const limit = Number(opts.resultLimit) || 0;
   return limit > 0 && deduped.length > limit ? deduped.slice(0, limit) : deduped;

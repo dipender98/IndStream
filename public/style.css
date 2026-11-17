@@ -10,7 +10,7 @@
   --ink: #e9e9e6;
   --text: #dcdcd9;
   --muted: #a0a09d;
-  --faint: #7c7c79;
+  --faint: #8b8b88;
   --line: rgba(255, 255, 255, .075);
   --line-strong: rgba(255, 255, 255, .13);
   --line-glare: rgba(255, 255, 255, .11);
@@ -72,7 +72,7 @@ img, svg, canvas { max-width: 100%; }
 }
 ::selection { background: rgba(255, 255, 255, .22); color: #fff; }
 .hidden, [hidden] { display: none !important; }
-.muted { color: var(--muted); }
+
 
 /* ---------- Ambient light & grain ---------- */
 .aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
@@ -97,7 +97,8 @@ img, svg, canvas { max-width: 100%; }
   transition: top var(--t-med);
 }
 .skip-link:focus { top: 16px; }
-.sidebar-backdrop { position: fixed; inset: 0; z-index: 35; background: rgba(3, 3, 6, .72); }
+.sidebar-backdrop { position: fixed; inset: 0; z-index: 35; background: rgba(3, 3, 6, .72); display: none; }
+@media (max-width: 900px) { .sidebar-backdrop:not([hidden]) { display: block; } }
 
 /* =========================================================
    FLOATING GLASS RAIL
@@ -115,7 +116,7 @@ img, svg, canvas { max-width: 100%; }
 }
 .brand-block { display: flex; align-items: center; gap: 12px; padding: 8px 8px 16px; border-bottom: 1px solid var(--line); }
 .brand-mark { display: flex; flex: none; border-radius: var(--r-s); }
-.logo { width: 40px; height: 40px; border-radius: var(--r-s); box-shadow: 0 0 0 1px var(--line-strong), 0 6px 18px rgba(0, 0, 0, .5); }
+
 .brand-text { min-width: 0; }
 .brand-name { font-size: 1.02rem; font-weight: 700; letter-spacing: -.025em; color: var(--ink); }
 .brand-sub {
@@ -609,7 +610,7 @@ img, svg, canvas { max-width: 100%; }
   background: rgba(255, 255, 255, .03);
   color: var(--muted); font-family: var(--font-mono); font-size: .53rem; font-weight: 500; letter-spacing: .05em;
 }
-.tag.fast { color: #7ef0bd; border-color: rgba(61, 220, 151, .3); background: rgba(61, 220, 151, .07); }
+
 .check-circle {
   position: absolute; top: 10px; right: 10px;
   width: 21px; height: 21px; display: flex; align-items: center; justify-content: center;
@@ -888,11 +889,8 @@ kbd { padding: 2px 7px; border: 1px solid var(--line-strong); border-bottom-widt
   .stream-mock { display: none; }
   .hero-inner { grid-template-columns: 1fr; }
   .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ha-ridge { width: 100%; }
-  .hero-veil { background: linear-gradient(90deg, rgba(5, 5, 8, .93), rgba(5, 5, 8, .78) 55%, rgba(5, 5, 8, .35)), linear-gradient(0deg, rgba(5, 5, 8, .8), transparent 40%); }
 }
 @media (max-width: 900px) {
-  .sidebar-backdrop:not([hidden]) { display: block; }
   .sidebar {
     top: 12px; left: 12px; bottom: 12px; width: min(300px, calc(100vw - 60px));
     padding: 14px; align-items: stretch; transform: translateX(calc(-100% - 24px));
@@ -906,6 +904,9 @@ kbd { padding: 2px 7px; border: 1px solid var(--line-strong); border-bottom-widt
   .main { margin-left: 0; padding: 0 16px 36px; }
   .hamburger { display: inline-flex !important; }
   .live-pill { display: none; }
+  .step-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tuner-bar { padding: 8px 10px; }
+  .tuner-btn { padding: 0 10px; }
   .steps-strip { flex-direction: column; gap: 12px; }
   .step-connector { width: 1px; height: 16px; background: linear-gradient(180deg, var(--accent-line), transparent); margin-left: 12px; }
 }
@@ -924,9 +925,6 @@ kbd { padding: 2px 7px; border: 1px solid var(--line-strong); border-bottom-widt
   .profiles-grid, .provider-grid, .health-grid { grid-template-columns: 1fr; }
   .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .segmented { flex-direction: column; padding: 5px; }
-  .tuner-bar { flex-wrap: wrap; }
-  .tuner-btn.next { margin-left: auto; }
-  .tuner-steps { order: 3; flex: 0 0 100%; justify-content: center; }
   .step-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .hint-keyboard { display: none; }
   .account-big { align-items: flex-start; flex-direction: column; }

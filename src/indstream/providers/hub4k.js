@@ -38,23 +38,25 @@ module.exports = {
 
     const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
 
+    const baseProbes = await Promise.all(BASES.map(function (candidate) {
+      if (Date.now() > deadline) return Promise.resolve(null);
+      return net.getText(candidate + '/?s=' + encodeURIComponent(title), {
+        timeoutMs: 5000,
+        headers: { Referer: candidate + '/' },
+      }).then(function (h) { return h ? { base: candidate, html: h } : null; }, function () { return null; });
+    }));
     let base = '';
     let searchHtml = '';
     let fallback = null;
-    for (let i = 0; i < BASES.length; i += 1) {
-      if (Date.now() > deadline) break;
-      const candidate = BASES[i];
-      const h = await net.getText(candidate + '/?s=' + encodeURIComponent(title), {
-        timeoutMs: 5000,
-        headers: { Referer: candidate + '/' },
-      });
-      if (!h) continue;
-      if (hubParseCards(h, candidate).length) {
-        base = candidate;
-        searchHtml = h;
+    for (let i = 0; i < baseProbes.length; i += 1) {
+      const probe = baseProbes[i];
+      if (!probe) continue;
+      if (hubParseCards(probe.html, probe.base).length) {
+        base = probe.base;
+        searchHtml = probe.html;
         break;
       }
-      if (!fallback) fallback = { base: candidate, html: h };
+      if (!fallback) fallback = probe;
     }
     if (!base) {
       if (!fallback) return [];

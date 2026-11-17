@@ -110,11 +110,17 @@ function metaBits(provider, raw, ctx) {
   const res = resolutionOf(raw);
   const specs = parseSpecs(specTextOf(raw));
   const size = String(raw && raw.size || '').trim();
-  return { providerName: providerName, title: title, year: year, res: res, specs: specs, size: size };
+  const metaLanguage = util.languageNames(meta && meta.originalLanguage)[0] || '';
+  return { providerName: providerName, title: title, year: year, res: res, specs: specs, size: size, originalLanguage: metaLanguage };
 }
 
 function languageNamesOf(raw) {
   return util.languageNames(raw && raw.language);
+}
+
+// Display lines cap at 3 audio languages; over that renders as Multi.
+function displayAudioNames(raw, bits) {
+  return util.capDisplayLanguages(languageNamesOf(raw), bits.originalLanguage);
 }
 
 function subNamesOf(raw) {
@@ -174,8 +180,8 @@ function sizeSourceLine(bits) {
   return '🔍 ' + bits.providerName;
 }
 
-function audioFlagsLine(raw) {
-  const names = languageNamesOf(raw);
+function audioFlagsLine(raw, originalLanguage) {
+  const names = util.capDisplayLanguages(languageNamesOf(raw), originalLanguage);
   const subs = subNamesOf(raw);
   const audio = flagOnlyOf(names);
   const sub = flagOnlyOf(subs);
@@ -198,7 +204,7 @@ function renderLightgdrive(bits, raw, ctx) {
   const media = joinPresent([hdrLine(bits), audioLine(bits)], ' ');
   if (media) lines.push(media);
   lines.push(sizeSourceLine(bits));
-  const audio = audioFlagsLine(raw);
+  const audio = audioFlagsLine(raw, bits.originalLanguage);
   if (audio) lines.push(audio);
   return { name: bits.providerName + ' ' + bits.res, title: lines.join('\n') };
 }
@@ -208,7 +214,7 @@ function renderGdrive(bits, raw, ctx) {
   const specs = gdriveSpecsLine(bits);
   if (specs) lines.push(specs);
   lines.push(sizeSourceLine(bits));
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   if (names.length) lines.push('🌎 ' + names.join(' | '));
   if (bits.specs.filename) lines.push('📁 ' + bits.specs.filename + '/' + bits.specs.filename);
   return { name: bits.providerName + ' ' + bits.res, title: lines.join('\n') };
@@ -225,7 +231,7 @@ function renderMinimalistic(bits, raw, ctx) {
   if (media) lines.push(media);
   const parts = [];
   if (bits.size) parts.push('📦 ' + bits.size);
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   if (names.length) parts.push('🌎 ' + names.join(' • '));
   const subs = subNamesOf(raw);
   if (subs.length) parts.push('📝 ' + subs.join(' • '));
@@ -240,7 +246,7 @@ function renderPrism(bits, raw, ctx) {
   const name = is4k ? '🔥4K UHD' : is1080 ? '🚀 FHD' : '🚀 ' + bits.res;
   const epLong = episodeLong(ctx);
   const lines = [];
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   const subs = subNamesOf(raw);
   const flagPart = flagOnlyOf(names).join(' / ');
   const subPart = flagOnlyOf(subs).join(' ');
@@ -283,7 +289,7 @@ function renderTorrentioMinimalist(bits, raw, ctx) {
   lines.push(bits.title + (ep ? ' - ' + ep : ''));
   const spec = [plainSpecsLine(bits), bits.size, bits.providerName].filter(Boolean).join(' | ');
   lines.push(spec);
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   const subs = subNamesOf(raw);
   let audioLineOut = names.length ? 'Audio: ' + names.join(',') : '';
   if (subs.length) audioLineOut += (audioLineOut ? ' | ' : '') + 'Subs: ' + subs.join(',');
@@ -304,7 +310,7 @@ function renderMediafusionPro(bits, raw, ctx) {
     .concat(bits.specs.channels ? [bits.specs.channels] : []);
   lines.push('⚙️ Specs: ' + tokens.join(' • '));
   lines.push(bits.size ? '📦 Size: ' + bits.size + ' • Host: ' + bits.providerName : '📦 Host: ' + bits.providerName);
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   const subs = subNamesOf(raw);
   if (names.length) lines.push('🔊 Audio: ' + names.join(','));
   if (subs.length) lines.push('📝 Subs: ' + subs.join(','));
@@ -316,7 +322,7 @@ function renderTorrentio(bits, raw, ctx) {
   if (bits.specs.filename) lines.push(bits.specs.filename);
   if (bits.size) lines.push('💾' + bits.size + '⚙️' + bits.providerName);
   else lines.push('⚙️' + bits.providerName);
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   const subs = subNamesOf(raw);
   let line = flagOnlyOf(names).join(' / ');
   if (subs.length) line += (line ? ' Subs / ' : 'Subs / ') + flagOnlyOf(subs).join(' / ');
@@ -328,7 +334,7 @@ function renderTorbox(bits, raw, ctx) {
   const lines = [];
   lines.push('Quality: ' + (bits.specs.source || bits.res));
   lines.push('Name: ' + (bits.specs.filename || 'Unknown'));
-  const names = languageNamesOf(raw);
+  const names = displayAudioNames(raw, bits);
   const subs = subNamesOf(raw);
   const parts = [];
   if (bits.size) parts.push('Size: ' + bits.size);

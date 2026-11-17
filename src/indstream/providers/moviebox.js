@@ -24,7 +24,7 @@ module.exports = {
   name: 'MovieBox',
   speed: 'normal',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 4000,
+  raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceMoviebox',
     label: 'MovieBox',
@@ -69,12 +69,18 @@ module.exports = {
 
     const out = [];
     const seen = {};
-    for (let i = 0; i < subjects.length; i += 1) {
+    const eligible = subjects.filter(function (ref) {
+      return !(type === 'tv' && ref.seasonEnd > 0 && ref.seasonEnd < seasonKey);
+    }).slice(0, 3);
+    const jobs = await Promise.allSettled(eligible.map(function (ref) {
+      if (Date.now() > deadline) return Promise.resolve([]);
+      return subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx);
+    }));
+    for (let i = 0; i < jobs.length; i += 1) {
       if (Date.now() > deadline) break;
-      const ref = subjects[i];
-      if (type === 'tv' && ref.seasonEnd > 0 && ref.seasonEnd < seasonKey) continue;
-      const streams = await subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx);
-      streams.forEach(function (s) {
+      const job = jobs[i];
+      if (job.status !== 'fulfilled' || !job.value) continue;
+      job.value.forEach(function (s) {
         if (seen[s.url]) return;
         seen[s.url] = true;
         out.push(s);

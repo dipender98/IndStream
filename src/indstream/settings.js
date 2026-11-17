@@ -5,7 +5,7 @@ const styles = require('./styles');
 const CORE_DEFAULTS = {
   minQuality: '720',
   resultLimit: '40',
-  requestTimeout: '15',
+  requestTimeout: '5',
   probeQuality: false,
   includeDash: true,
   debug: false,
@@ -53,8 +53,9 @@ const SETTINGS_LAYOUT = [
     key: 'requestTimeout',
     label: 'Provider timeout',
     description: 'Upper bound for a single provider. Providers that finish sooner still return first.',
-    defaultValue: '15',
+    defaultValue: '5',
     options: [
+      { label: '5 seconds', value: '5' },
       { label: '10 seconds', value: '10' },
       { label: '15 seconds', value: '15' },
       { label: '25 seconds', value: '25' },
@@ -135,13 +136,13 @@ function getSettings() {
   const settings = {
     minQuality: Number(pick(merged.minQuality, ['0', '720', '1080'], DEFAULTS.minQuality)),
     resultLimit: Number(pick(merged.resultLimit, ['0', '20', '40', '80'], DEFAULTS.resultLimit)),
-    requestTimeout: Number(pick(merged.requestTimeout, ['10', '15', '25'], DEFAULTS.requestTimeout)),
+    requestTimeout: Number(pick(merged.requestTimeout, ['5', '10', '15', '25'], DEFAULTS.requestTimeout)),
     probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
     includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
     debug: normalizeBool(merged.debug, DEFAULTS.debug),
     streamStyle: pick(merged.streamStyle, styles.STYLE_IDS, DEFAULTS.streamStyle),
   };
-  if (!settings.requestTimeout) settings.requestTimeout = 15;
+  if (!settings.requestTimeout) settings.requestTimeout = 5;
   return settings;
 }
 

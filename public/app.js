@@ -1,34 +1,57 @@
 const PROVIDERS = [
-  { id: 'hdhub', name: 'HdHub', mark: 'HH', tags: ['4K', '1080p', 'Very Fast'], fast: true },
-  { id: 'vidrift', name: 'Vidrift', mark: 'VR', tags: ['1080p', 'Very Fast', 'HLS'], fast: true },
-  { id: 'bingr', name: 'Bingr', mark: 'BG', tags: ['1080p', 'Fast', 'HLS'], fast: true },
-  { id: 'moviebox', name: 'MovieBox', mark: 'MB', tags: ['4K', '1080p', 'Multi-Audio'], fast: false },
-  { id: 'hub4k', name: '4KHDHub', mark: '4K', tags: ['4K', '1080p', 'Web'], fast: false },
-  { id: 'fsl', name: 'FSL', mark: 'FS', tags: ['Web', 'Hindi'], fast: false },
+  { id: 'hdhub', name: 'HdHub', mark: 'HH', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download', 'Very Fast'] },
+  { id: 'vidrift', name: 'Vidrift', mark: 'VR', tags: ['1080p', 'Stream', 'Very Fast'] },
+  { id: 'bingr', name: 'Bingr', mark: 'BG', tags: ['1080p', 'Stream', 'Download', 'Fast'] },
+  { id: 'moviebox', name: 'MovieBox', mark: 'MB', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download'] },
+  { id: 'hub4k', name: '4KHDHub', mark: '4K', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download'] },
+  { id: 'netmirror', name: 'NetMirror', mark: 'NM', tags: ['Multi-Audio', 'Stream', 'Download', 'Fast'] },
+  { id: 'atlantic', name: 'Atlantic', mark: 'AT', tags: ['1080p', 'Multi-Audio', 'Stream', 'Very Fast'] },
+  { id: 'vidly', name: 'Vidly', mark: 'VL', tags: ['1080p', 'Stream', 'Fast'] },
 ];
 
-const LANGS = ['Hindi', 'English', 'Tamil', 'Telugu', 'Malayalam', 'Kannada',
+const LANGS = ['Original', 'Hindi', 'English', 'Multi', 'Tamil', 'Telugu', 'Malayalam', 'Kannada',
   'Bengali', 'Urdu', 'Marathi', 'Punjabi', 'Arabic', 'Russian', 'Chinese',
   'Japanese', 'Korean', 'French', 'Spanish', 'Portuguese', 'Indonesian',
   'Vietnamese', 'Thai', 'Turkish', 'German', 'Italian', 'Dutch', 'Polish', 'Nepali'];
 
 const DEFAULT_CFG = {
   p: ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'],
-  langs: [],
+  langs: ['Original', 'Hindi', 'English', 'Multi'],
   langStrict: false,
   streamStyle: 'lightgdrive',
   minQuality: '720',
   resultLimit: '40',
-  requestTimeout: '15',
+  requestTimeout: '5',
   includeDash: true,
   probeQuality: false,
   debug: false,
 };
 
+var cfgSyncEnabled = false;
+var cfgPushTimer = 0;
+
+function pushCfg() {
+  if (!cfgSyncEnabled) return;
+  clearTimeout(cfgPushTimer);
+  cfgPushTimer = setTimeout(function () {
+    var cfg = currentCfg();
+    try {
+      fetch('/api/cfg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cfg: cfg }),
+      }).catch(function () {});
+    } catch (e) {}
+  }, 600);
+}
+
 const LS_KEY = 'indstream.cfg.v3';
+
+const LS_LANG_MIGRATE = 'indstream.langDefaults.v4';
 const LS_WELCOME = 'indstream.welcome.dismissed';
 const LS_PROFILES = 'indstream.profiles.v1';
 const LS_ACTIVE = 'indstream.activeProfile.v1';
+let interactive = false;
 
 function safeGet(key) {
   try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -43,14 +66,22 @@ function safeSet(key, value) {
 function sanitizeCfg(raw) {
   const merged = Object.assign({}, DEFAULT_CFG, raw || {});
   const providerIds = PROVIDERS.map(function (p) { return p.id; });
-  merged.p = Array.isArray(merged.p) ? merged.p.filter(function (id) { return providerIds.indexOf(id) >= 0; }) : DEFAULT_CFG.p.slice();
-  if (!merged.p.length) merged.p = DEFAULT_CFG.p.slice();
-  merged.langs = Array.isArray(merged.langs) ? merged.langs.filter(function (lang) { return LANGS.indexOf(lang) >= 0; }) : [];
+  merged.p = Array.isArray(merged.p) ? merged.p.filter(function (id) { return providerIds.indexOf(id) >= 0; }) : [];
+  const storedLangs = merged.langs;
+  if (!Array.isArray(storedLangs)) {
+    merged.langs = DEFAULT_CFG.langs.slice();
+    safeSet(LS_LANG_MIGRATE, '1');
+  } else {
+    merged.langs = storedLangs.filter(function (lang) { return LANGS.indexOf(lang) >= 0; });
+    if (!merged.langs.length && safeGet(LS_LANG_MIGRATE) !== '1' && safeSet(LS_LANG_MIGRATE, '1')) {
+      merged.langs = DEFAULT_CFG.langs.slice();
+    }
+  }
   merged.langStrict = !!merged.langStrict;
   merged.streamStyle = typeof merged.streamStyle === 'string' ? merged.streamStyle : DEFAULT_CFG.streamStyle;
   merged.minQuality = ['0', '720', '1080'].indexOf(String(merged.minQuality)) >= 0 ? String(merged.minQuality) : DEFAULT_CFG.minQuality;
   merged.resultLimit = ['0', '20', '40', '80'].indexOf(String(merged.resultLimit)) >= 0 ? String(merged.resultLimit) : DEFAULT_CFG.resultLimit;
-  merged.requestTimeout = ['10', '15', '25'].indexOf(String(merged.requestTimeout)) >= 0 ? String(merged.requestTimeout) : DEFAULT_CFG.requestTimeout;
+  merged.requestTimeout = ['5', '10', '15', '25'].indexOf(String(merged.requestTimeout)) >= 0 ? String(merged.requestTimeout) : DEFAULT_CFG.requestTimeout;
   merged.includeDash = !!merged.includeDash;
   merged.probeQuality = !!merged.probeQuality;
   merged.debug = !!merged.debug;
@@ -100,7 +131,7 @@ function saveCfg(cfg) {
   return false;
 }
 function trapFocus(container, event) {
-  const nodes = Array.from(container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+  const nodes = Array.from(container.querySelectorAll('button:not([tabindex="-1"]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
     .filter(function (el) { return !el.hidden && (el.offsetWidth || el.offsetHeight || el.getClientRects().length); });
   if (!nodes.length) return;
   const first = nodes[0];
@@ -142,7 +173,7 @@ function currentCfg() {
   const langsOrdered = prevL.filter(function (l) { return langs.indexOf(l) >= 0; })
     .concat(langs.filter(function (l) { return prevL.indexOf(l) < 0; }));
   return {
-    p: p.length ? p : DEFAULT_CFG.p.slice(),
+    p: p,
     langs: langsOrdered,
     langStrict: document.getElementById('langStrict').checked,
     streamStyle: document.getElementById('streamStyle').value,
@@ -207,6 +238,7 @@ function manifestUrl(cfg) {
 }
 
 function flashSaved() {
+  if (!interactive) return;
   const bar = document.querySelector('.saved-line');
   if (!bar) return;
   clearTimeout(flashSaved._t);
@@ -234,6 +266,7 @@ function updateAll() {
   setText('sourcesCount', cfg.p.length + ' selected');
   updatePreview(document.getElementById('streamStyle').value);
   renderProfiles();
+  pushCfg();
 }
 
 function renderProfiles() {
@@ -241,12 +274,8 @@ function renderProfiles() {
   if (!grid) return;
   const profiles = loadProfiles();
   const activeId = activeProfileId(profiles);
-  const count = document.getElementById('profilesCount');
-  if (count) count.textContent = profiles.length;
   const badge = document.getElementById('profilesBadge');
   if (badge) badge.textContent = profiles.length;
-  const nameEl = document.getElementById('activeProfileName');
-  if (nameEl) nameEl.textContent = (profiles.find(function (p) { return p.id === activeId; }) || profiles[0]).name;
   grid.innerHTML = '';
   profiles.forEach(function (p) {
     const cfg = sanitizeCfg(p.cfg);
@@ -358,8 +387,9 @@ function updatePreview(style) {
 
 function copyText(text) {
   const done = function () { toast('Addon URL copied — paste it in Nuvio or Stremio'); };
+  const fail = function () { toast('Copy failed — select the URL text and copy it manually'); };
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    return navigator.clipboard.writeText(text).then(done, done);
+    return navigator.clipboard.writeText(text).then(done, fail);
   }
   const ta = document.createElement('textarea');
   ta.value = text;
@@ -367,10 +397,11 @@ function copyText(text) {
   ta.style.cssText = 'position:fixed;left:-9999px;top:0';
   document.body.appendChild(ta);
   ta.select();
-  try { document.execCommand('copy'); } catch (e) {}
+  var copied = false;
+  try { copied = document.execCommand('copy'); } catch (e) {}
   document.body.removeChild(ta);
-  done();
-  return Promise.resolve();
+  if (copied) done(); else fail();
+  return Promise.resolve(copied);
 }
 
 function buildProviderCards() {
@@ -385,7 +416,7 @@ function buildProviderCards() {
     btn.innerHTML =
       '<span class="provider-mark" aria-hidden="true">' + pr.mark + '</span>' +
       '<span class="provider-copy"><span class="provider-name">' + pr.name + '</span>' +
-      '<span class="chip-tags">' + pr.tags.map(function (t) { return '<span class="tag' + (t === 'Very Fast' || t === 'Fast' ? ' fast' : '') + '">' + t + '</span>'; }).join('') + '</span>' +
+      '<span class="chip-tags">' + pr.tags.map(function (t) { return '<span class="tag">' + t + '</span>'; }).join('') + '</span>' +
       '</span>' +
       '<span class="check-circle" aria-hidden="true"></span>';
     btn.addEventListener('click', function () {
@@ -470,6 +501,12 @@ async function loadAccount() {
     const data = await res.json();
     const signedIn = !!(data.signedIn && data.user);
     loginConfigured = !!data.loginEnabled;
+    if (signedIn && data.cfg && typeof data.cfg === 'object') {
+      cfgSyncEnabled = true;
+      const merged = sanitizeCfg(data.cfg);
+      saveCfg(merged);
+      applyCfg(merged);
+    }
     const name = signedIn ? (data.user.name || 'Account') : 'Guest';
     if (note) {
       note.textContent = signedIn
@@ -562,9 +599,7 @@ function updateWizard(name) {
   steps.innerHTML = '';
   WIZARD_STEPS.forEach(function (step, i) {
     const el = document.createElement('button');
-    el.type = 'button';
     el.className = 'tuner-step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
-    el.type = 'button';
     el.innerHTML = '<span class="tick">' + (i < idx ? '✓' : (i + 1)) + '</span><span class="step-name">' + step.label + '</span>';
     el.addEventListener('click', function () { setSection(step.id); });
     steps.appendChild(el);
@@ -614,16 +649,16 @@ function setSection(name) {
   document.querySelectorAll('.panel').forEach(function (p) {
     p.classList.toggle('hidden', p.id !== 'panel-' + name);
   });
+  updateWizard(name);
+  closeDrawer();
+  const t = SECTION_TITLES[name] || ['Install', ''];
+  document.getElementById('sectionTitle').textContent = t[0];
+  document.getElementById('sectionSub').textContent = t[1];
   const panel = document.getElementById('panel-' + name);
   if (panel) {
     panel.setAttribute('tabindex', '-1');
     panel.focus({ preventScroll: true });
   }
-  const t = SECTION_TITLES[name] || ['Install', ''];
-  document.getElementById('sectionTitle').textContent = t[0];
-  document.getElementById('sectionSub').textContent = t[1];
-  updateWizard(name);
-  closeDrawer();
   if (name === 'status' && !healthChecked) checkHealth();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
@@ -647,8 +682,8 @@ function closeDrawer() {
   document.getElementById('sidebarBackdrop').hidden = true;
   document.getElementById('hamburger').setAttribute('aria-expanded', 'false');
   document.body.style.overflow = '';
-  const hamburger = document.getElementById('hamburger');
-  if (hamburger) hamburger.focus();
+  const current = document.querySelector('.panel:not(.hidden)');
+  if (current) { current.setAttribute('tabindex', '-1'); current.focus(); }
 }
 
 function setupDrawer() {
@@ -698,14 +733,15 @@ function setupWelcomeModal() {
 
 function setupActions() {
   const url = function () { return manifestUrl(currentCfg()); };
+  const copy = function () {
+    const cfg = currentCfg();
+    if (!cfg.p.length) { toast('Select at least one source to copy the addon URL'); return; }
+    copyText(manifestUrl(cfg));
+  };
   const installBtn = document.getElementById('installBtn');
-  if (installBtn) installBtn.addEventListener('click', function () { copyText(url()); });
-  const copyInstall = document.getElementById('copyInstall');
-  if (copyInstall) copyInstall.addEventListener('click', function () { copyText(url()); });
+  if (installBtn) installBtn.addEventListener('click', copy);
   const copyUrlBtn = document.getElementById('copyUrlBtn');
-  if (copyUrlBtn) copyUrlBtn.addEventListener('click', function () { copyText(url()); });
-  const clearBtn = document.getElementById('clearBtn');
-  if (clearBtn) clearBtn.addEventListener('click', function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); });
+  if (copyUrlBtn) copyUrlBtn.addEventListener('click', copy);
   document.getElementById('sourcesAll').addEventListener('click', function () {
     document.querySelectorAll('#providers .provider-card').forEach(function (el) {
       el.classList.add('active');
@@ -717,7 +753,7 @@ function setupActions() {
   document.getElementById('sourcesNone').addEventListener('click', function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); });
   document.getElementById('newProfileBtn').addEventListener('click', function () { createProfile(loadCfg()); });
   document.getElementById('importProfileBtn').addEventListener('click', function () {
-    const url = prompt('Paste the addon URL to import', window.location.origin + '/manifest.json');
+    const url = prompt('Paste the addon URL to import', '');
     if (url) importFromUrl(url);
   });
   const installGoogleBtn = document.getElementById('installGoogleBtn');
@@ -730,9 +766,6 @@ function setupActions() {
   if (logoutBtn) logoutBtn.addEventListener('click', function () { window.location.href = '/auth/logout'; });
   const signOutBtn = document.getElementById('signOutBtn');
   if (signOutBtn) signOutBtn.addEventListener('click', function () { window.location.href = '/auth/logout'; });
-  const notice = document.getElementById('notice');
-  const noticeClose = document.getElementById('noticeClose');
-  if (notice && noticeClose) noticeClose.addEventListener('click', function () { notice.remove(); });
 }
 
 function setupSegmented() {
@@ -761,6 +794,17 @@ async function checkHealth() {
   healthChecked = true;
   const man = document.getElementById('healthManifest');
   const sub = document.getElementById('healthStreams');
+  const ver = document.getElementById('healthVersion');
+  const rt = document.getElementById('healthRuntime');
+  try {
+    const v = await fetch('/api/version');
+    const vd = await v.json();
+    if (ver) ver.textContent = (vd.version || '—');
+    if (rt) rt.textContent = (vd.runtime || '—');
+  } catch (e) {
+    if (ver) ver.textContent = 'unavailable';
+    if (rt) rt.textContent = 'unavailable';
+  }
   try {
     const mf = await fetch('/manifest.json');
     man.textContent = mf.ok ? 'OK' : 'HTTP ' + mf.status;
@@ -792,6 +836,7 @@ setupPalette();
 setupNav();
 setupWizard();
 setupDrawer();
+window.matchMedia('(min-width: 901px)').addEventListener('change', function (e) { if (e.matches) closeDrawer(); });
 setupSegmented();
 setupActions();
 setupWelcomeModal();
@@ -809,6 +854,7 @@ loadStyles();
   }
 })();
 applyCfg(loadCfg());
+interactive = true;
 loadAccount();
 setupHealth();
 
@@ -860,6 +906,7 @@ function setupPalette() {
       item.classList.toggle('active', i === index);
       item.setAttribute('aria-selected', String(i === index));
     });
+    input.setAttribute('aria-activedescendant', filtered.length ? 'palette-opt-' + index : '');
     var active = list.querySelectorAll('.palette-item')[index];
     if (active) active.scrollIntoView({ block: 'nearest' });
   }
@@ -870,12 +917,14 @@ function setupPalette() {
       var empty = document.createElement('li');
       empty.className = 'palette-empty';
       empty.setAttribute('role', 'option');
+      empty.setAttribute('aria-selected', 'false');
       empty.textContent = 'No matching commands';
       list.appendChild(empty);
       return;
     }
     filtered.forEach(function (a, i) {
       var li = document.createElement('li');
+      li.id = 'palette-opt-' + i;
       li.className = 'palette-item' + (i === index ? ' active' : '');
       li.setAttribute('role', 'option');
       li.setAttribute('aria-selected', String(i === index));
@@ -918,6 +967,7 @@ function setupPalette() {
     var modalOpen = modal && !modal.classList.contains('hidden');
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
+      if (modalOpen) return;
       if (palette.classList.contains('hidden')) { openPalette(); } else { closePalette(); }
       return;
     }
@@ -963,7 +1013,7 @@ function setupSpatialNav() {
     var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
     if (typing) return;
     var wizard = document.getElementById('wizardBar');
-    if (wizard && wizard.classList.contains('show')) return;
+    if (wizard && wizard.classList.contains('show') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
     var welcome = document.getElementById('welcomeModal');
     var palette = document.getElementById('palette');
     if ((welcome && !welcome.classList.contains('hidden')) || (palette && !palette.classList.contains('hidden'))) return;
@@ -1006,8 +1056,7 @@ function updateStats(cfg) {
   var styleSel = document.getElementById('streamStyle');
   var opt = styleSel && styleSel.selectedOptions && styleSel.selectedOptions[0];
   setText('statStyle', opt ? opt.textContent.trim() : (cfg.streamStyle || '—'));
-  var totalEl = document.querySelector('#panel-install .stat-value small');
-  if (totalEl) totalEl.textContent = '/ ' + total + ' active';
+  setText('statTotal', '/ ' + total + ' active');
 }
 
 /* Derived UI (stats, ranking) refreshes whenever the state changes. */
@@ -1134,7 +1183,7 @@ function setupRankList(listId) {
   });
   list.addEventListener('dragleave', function (e) {
     var row = e.target.closest('.rank-item');
-    if (row) row.classList.remove('drag-over');
+    if (row && (!e.relatedTarget || !row.contains(e.relatedTarget))) row.classList.remove('drag-over');
   });
   list.addEventListener('drop', function (e) {
     e.preventDefault();

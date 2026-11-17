@@ -43,19 +43,26 @@ module.exports = {
     const out = [];
     const seen = {};
     const deadline = ctx.deadline || (Date.now() + ctx.timeoutMs);
-    for (let i = 0; i < SRVS.length; i += 1) {
+
+    const texts = await Promise.all(SRVS.map(function (srv) {
+      if (Date.now() > deadline) return Promise.resolve('');
+      if (srv === 's40' && type === 'tv') {
+        return net.getText(API + '/aphelion-tv/' + id + '/' + (ctx.season || 1) + '/' + (ctx.episode || 1), {
+          timeoutMs: 4000,
+          headers: { Referer: REFERER },
+          deadline: deadline,
+        });
+      }
+      return net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
+        timeoutMs: 4000,
+        headers: postHeaders,
+        deadline: deadline,
+      });
+    }));
+
+    for (let i = 0; i < SRVS.length && out.length < 6 && Date.now() <= deadline; i += 1) {
       const srv = SRVS[i];
-      if (out.length >= 6 || Date.now() > deadline) break;
-      const text =
-        srv === 's40' && type === 'tv'
-          ? await net.getText(API + '/aphelion-tv/' + id + '/' + (ctx.season || 1) + '/' + (ctx.episode || 1), {
-              timeoutMs: 4000,
-              headers: { Referer: REFERER },
-            })
-          : await net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
-              timeoutMs: 4000,
-              headers: postHeaders,
-            });
+      const text = texts[i];
       if (!text) continue;
       if (isChallengeHtml(text)) {
         ctx.log('bingr: ' + srv + ' blocked by challenge page');

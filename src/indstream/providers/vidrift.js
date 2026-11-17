@@ -11,11 +11,11 @@ module.exports = {
   name: 'Vidrift',
   speed: 'fast',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 4000,
+  raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceVidrift',
     label: 'Vidrift',
-    description: 'Embed player with direct HLS/MP4 links.',
+    description: 'Boot-token HLS player with per-audio-language renditions.',
   },
 
   async resolve(ctx) {
@@ -31,67 +31,108 @@ module.exports = {
     }
     if (type === 'tv' && (season <= 0 || episode <= 0)) return [];
 
-    const page = type === 'movie' ? BASE + '/embed/movie/' + ctx.tmdbId : BASE + '/embed/tv/' + ctx.tmdbId + '/' + season + '/' + episode;
-    const html = await net.getText(page, {
-      timeoutMs: ctx.timeoutMs,
-      headers: { Referer: BASE + '/' },
+    const path = type === 'movie'
+      ? '/api/boot/movie/' + ctx.tmdbId
+      : '/api/boot/tv/' + ctx.tmdbId + '/' + season + '/' + episode;
+    const boot = await net.getJson(BASE + path, {
+      timeoutMs: Math.min(ctx.timeoutMs || 4000, 8000),
+      headers: { 'User-Agent': http.DEFAULT_UA, Accept: 'application/json', Referer: BASE + '/' },
     });
-    if (!html) {
-      ctx.log('vidrift: embed page unreachable (' + page + ')');
+    if (!boot) {
+      ctx.log('vidrift: boot endpoint unreachable');
+      return [];
+    }
+    const meta = boot.meta || null;
+    if (!meta) {
+      ctx.log('vidrift: boot payload missing meta');
       return [];
     }
 
     const out = [];
-    vidriftStreams(html).forEach(function (pair) {
-      const rel = pair[0];
-      const label = pair[1];
-      const abs = /^https?:/i.test(rel) ? rel : BASE + (rel.charAt(0) === '/' ? rel : '/' + rel);
-      out.push({
-        provider: module.exports.name,
-        url: abs,
-        type: abs.indexOf('.m3u8') >= 0 ? 'hls' : 'mp4',
-        quality: '',
-        height: 0,
-        language: label || '',
-        size: '',
-        title: '',
-        headers: { 'User-Agent': http.DEFAULT_UA, Referer: BASE + '/' },
-      });
+    const seen = {};
+    const streams = vidriftStreams(meta);
+    streams.forEach(function (s) {
+      if (seen[s.url]) return;
+      seen[s.url] = true;
+      s.provider = module.exports.name;
+      s.headers = { 'User-Agent': http.DEFAULT_UA, Referer: BASE + '/' };
+      out.push(s);
     });
-    if (!out.length) {
-      if (html.indexOf('embedMeta') >= 0) ctx.log('vidrift: embedMeta present but no usable stream urls');
-      else if (html.indexOf('iframe') >= 0 || html.indexOf('Embed this page') >= 0) ctx.log('vidrift: embed gated (iframe wall)');
-      else ctx.log('vidrift: no embedMeta in page');
+
+    if (out.length && ctx.deadline && Date.now() < ctx.deadline) {
+      await Promise.all(out.map(function (stream) {
+        const subUrl = stream._subtitleListUrl;
+        delete stream._subtitleListUrl;
+        if (!subUrl) return Promise.resolve();
+        return net.getJson(BASE + subUrl, { timeoutMs: 3000 }).then(function (json) {
+          const tracks = json && Array.isArray(json.tracks) ? json.tracks : [];
+          const subtitles = [];
+          tracks.slice(0, 30).forEach(function (track) {
+            if (!track || typeof track !== 'object') return;
+            const rel = track.url ? String(track.url) : '';
+            if (!rel) return;
+            subtitles.push({
+              id: 'vidrift-' + (track.code || subtitles.length),
+              url: rel.indexOf('http') === 0 ? rel : BASE + (rel.charAt(0) === '/' ? rel : '/' + rel),
+              lang: track.lang || '',
+              label: track.label || track.lang || '',
+            });
+          });
+          if (subtitles.length) stream.subtitles = subtitles;
+        }, function () {
+          /* subtitle tracks are best effort */
+        });
+      }));
+    } else {
+      out.forEach(function (stream) {
+        delete stream._subtitleListUrl;
+      });
     }
     if (out.length) await tmdb.awaitMeta(ctx, 400);
     return out;
   },
 };
 
-function vidriftStreams(html) {
-  const mi = html.indexOf('var embedMeta');
-  const brace = mi >= 0 ? html.indexOf('{', mi) : -1;
-  const json = brace >= 0 ? util.extractBalancedJson(html, brace) : '';
-  let meta = null;
-  try {
-    meta = json ? JSON.parse(json) : null;
-  } catch (error) {
-    meta = null;
-  }
-  if (!meta) return [];
-
+function vidriftStreams(meta) {
   const out = [];
-  const arr = meta.orionStreams;
-  if (Array.isArray(arr)) {
-    arr.forEach(function (o) {
-      if (!o || typeof o !== 'object') return;
-      const u = o.url;
-      if (!u || (u.indexOf('.m3u8') < 0 && u.indexOf('.mp4') < 0)) return;
-      out.push([u, vidriftLabel(o.name)]);
+  const arr = Array.isArray(meta && meta.orionStreams) ? meta.orionStreams : [];
+  arr.forEach(function (s) {
+    if (!s || typeof s !== 'object') return;
+    const rel = String(s.url || '').trim();
+    if (!rel) return;
+    const abs = rel.indexOf('http') === 0 ? rel : BASE + (rel.charAt(0) === '/' ? rel : '/' + rel);
+    let height = 0;
+    const rungs = Array.isArray(s.rungs) ? s.rungs : [];
+    rungs.forEach(function (rung) {
+      const h = Number(rung && rung.height) || 0;
+      if (h > height) height = h;
     });
-  }
-  if (!out.length && meta.evionUrl && meta.evionUrl.indexOf('.m3u8') >= 0) {
-    out.push([meta.evionUrl, '']);
+    const stream = {
+      provider: 'Vidrift',
+      url: abs,
+      type: 'hls',
+      quality: util.qualityLabel(height),
+      height: height,
+      language: vidriftLabel(s.name),
+      size: '',
+      title: '',
+      _subtitleListUrl:
+        typeof s.subtitleListUrl === 'string' && s.subtitleListUrl.trim() ? s.subtitleListUrl.trim() : '',
+    };
+    out.push(stream);
+  });
+  const evion = meta && meta.evionUrl ? String(meta.evionUrl) : '';
+  if (!out.length && evion.indexOf('.m3u8') >= 0) {
+    out.push({
+      provider: 'Vidrift',
+      url: evion,
+      type: 'hls',
+      quality: '',
+      height: 0,
+      language: '',
+      size: '',
+      title: '',
+    });
   }
   return out;
 }

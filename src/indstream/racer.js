@@ -2,15 +2,15 @@
 
 const http = require('./http');
 
-// After the first stream, keep waiting for providers running under their own caps.
+// After the first stream, keep waiting briefly for laggards; hard stop bounds the wait.
 const GRACE_MS = 5000;
-const OVERALL_MAX_MS = 14000;
+const OVERALL_MAX_MS = 90000;
 
-// Each provider owns its race budget; settings set the upper bound.
+// The UI timeout is the per-provider budget; providers fall back to their own cap.
 function capOf(provider, settings) {
-  const own = Number(provider.raceTimeoutMs) || 12000;
-  const ceiling = (Number(settings.requestTimeout) || 15) * 1000 + 5000;
-  return Math.min(own, ceiling);
+  const uiMs = Number(settings && settings.requestTimeout);
+  if (Number.isFinite(uiMs) && uiMs > 0) return Math.floor(uiMs * 1000);
+  return Number(provider.raceTimeoutMs) || 12000;
 }
 
 // Runs providers concurrently and resolves with partial results.

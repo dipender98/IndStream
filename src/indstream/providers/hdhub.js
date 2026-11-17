@@ -11,7 +11,7 @@ module.exports = {
   name: 'HdHub',
   speed: 'very-fast',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 3000,
+  raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceHdhub',
     label: 'HdHub',

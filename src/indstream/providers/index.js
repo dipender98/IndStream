@@ -5,11 +5,13 @@ const vidrift = require('./vidrift');
 const bingr = require('./bingr');
 const moviebox = require('./moviebox');
 const hub4k = require('./hub4k');
-const fsl = require('./fsl');
+const netmirror = require('./netmirror');
+const atlantic = require('./atlantic');
+const vidly = require('./vidly');
 
 // Every entry is an independent provider. The racer runs them concurrently;
 // none of them knows about the others.
-const PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
+const PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly];
 
 const BY_ID = {};
 PROVIDERS.forEach(function (provider) {

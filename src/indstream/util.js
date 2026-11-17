@@ -147,12 +147,13 @@ function languageNames(raw) {
   return out;
 }
 
-function languageLabel(raw, originalLanguage) {
+// Language labels resolve from the source's own declaration only.
+function languageLabel(raw) {
   const text = String(raw == null ? '' : raw).trim();
-  if (!text) return originalLanguage ? languageLabel(originalLanguage) : '';
+  if (!text) return '';
   const lower = text.toLowerCase();
   if (lower === 'original' || lower === 'orig' || lower === 'org' || lower === 'default') {
-    return originalLanguage ? languageLabel(originalLanguage) || 'Original' : 'Original';
+    return 'Original';
   }
   const names = languageNames(text);
   if (names.length === 1) return names[0];
@@ -422,14 +423,46 @@ function stripQualityText(value) {
     .trim();
 }
 
-function displayLanguageNamesFixed(audioLabel, mediaLabel) {
+// Original first, then Hindi, then English, then anything else, stable for ties.
+const DISPLAY_LANGUAGE_HINDI = 1;
+const DISPLAY_LANGUAGE_ENGLISH = 2;
+const DISPLAY_LANGUAGE_OTHER = 3;
+
+function sortDisplayLanguages(names, originalLanguage) {
+  const original = String(originalLanguage || '').trim();
+  const indexed = [];
+  (names || []).forEach(function (name, index) {
+    let rank = DISPLAY_LANGUAGE_OTHER;
+    if (original && name === original) rank = 0;
+    else if (name === 'Hindi') rank = DISPLAY_LANGUAGE_HINDI;
+    else if (name === 'English') rank = DISPLAY_LANGUAGE_ENGLISH;
+    indexed.push({ name: name, index: index, rank: rank });
+  });
+  indexed.sort(function (a, b) {
+    return a.rank - b.rank || a.index - b.index;
+  });
+  const out = [];
+  indexed.forEach(function (entry) {
+    if (out.indexOf(entry.name) < 0) out.push(entry.name);
+  });
+  return out;
+}
+
+// At most three audio languages on a display line; more render as Multi.
+function capDisplayLanguages(names, originalLanguage) {
+  const ordered = sortDisplayLanguages(names, originalLanguage);
+  return ordered.length > 3 ? ['Multi'] : ordered;
+}
+
+function displayLanguageNamesFixed(audioLabel, mediaLabel, originalLanguage) {
   const audio = languageNames(audioLabel);
   const media = languageNames(mediaLabel);
-  if (audio.length >= 2 && audio.length >= media.length) return audio;
-  if (media.length > audio.length) return media;
-  if (audio.length) return audio;
-  if (media.length) return media;
-  return [];
+  let names = [];
+  if (audio.length >= 2 && audio.length >= media.length) names = audio;
+  else if (media.length > audio.length) names = media;
+  else if (audio.length) names = audio;
+  else if (media.length) names = media;
+  return capDisplayLanguages(names, originalLanguage);
 }
 
 function languageTagPart(label, names) {
@@ -445,13 +478,13 @@ function languageTagPart(label, names) {
   return f ? '(' + f + ' ' + single + ')' : '(' + label + ')';
 }
 
-function displayName(serverName, audioLabel, subIndicator, sizeLabel, mediaLabel) {
+function displayName(serverName, audioLabel, subIndicator, sizeLabel, mediaLabel, originalLanguage) {
   const rawName = String(serverName == null ? '' : serverName).trim() || 'Server';
   let cleanName = stripQualityText(rawName) || 'Server';
   const composed = subIndicator ? (cleanName + ' ' + String(subIndicator).trim()).trim() : cleanName;
   let named = stripQualityText(String(composed).replace(TRAILING_LANGUAGE_RE, '')).trim() || 'Server';
   named = stripQualityText(named).trim() || 'Server';
-  const names = displayLanguageNamesFixed(audioLabel, mediaLabel);
+  const names = displayLanguageNamesFixed(audioLabel, mediaLabel, originalLanguage);
   const tag = names.length === 1 ? names[0]
     : (names.length > 1 ? names.join(', ')
       : (languageLabel(audioLabel) || languageLabel(mediaLabel) || 'Unknown'));
@@ -490,6 +523,8 @@ module.exports = {
   episodeMatches: episodeMatches,
   seasonPackMatches: seasonPackMatches,
   episodeOrSeason: episodeOrSeason,
+  sortDisplayLanguages: sortDisplayLanguages,
+  capDisplayLanguages: capDisplayLanguages,
   sleep: sleep,
   displayName: displayName,
   flagOf: flagOf,
