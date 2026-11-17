@@ -3,11 +3,13 @@
 A [Nuvio](https://nuvio.tv) / Stremio addon for movies and series streams,
 hosted on Fly.io.
 
-Configure: https://indstream.fly.dev/
-Install (addon URL): https://indstream.fly.dev/manifest.json
-
+Configure:
 ```
 https://indstream.fly.dev/
+```
+
+Install (addon URL):
+```
 https://indstream.fly.dev/manifest.json
 ```
 
