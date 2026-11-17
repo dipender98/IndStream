@@ -1,7 +1,8 @@
 'use strict';
 
 const factory = require('../factory');
-const api = factory.createPlugin('fsl');
+const provider = require('../providers/fsl');
+const api = factory.createPlugin(provider);
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = api;

@@ -21,10 +21,10 @@ Use logic and judgment on every task. If two rules conflict, correctness wins.
 
 ```
 src/indstream/
-  index.js        getStreams + onSettings entry points
+  entries/        one bundle entry per scraper, each passing its provider
   racer.js        concurrent provider racer, budgets, abort, partial results
   finalize.js     normalization, floor, deterministic dedupe/sort, result limit
-  settings.js     plugin-level settings schema, built from provider toggle metadata
+  settings.js     per-scraper settings schema
   http.js         fetch wrapper, deadline/signal propagation, text/json helpers
   tmdb.js         TMDB metadata + IMDb <-> TMDB resolution
   util.js         quality, language, matching, HLS parsing, shared helpers
@@ -86,12 +86,12 @@ module.exports = {
 ## 6. Build, test, git
 
 ```bash
-npm run build     # bundles src/indstream into providers/indstream.js
+npm run build     # bundles every src/indstream/entries/<id>.js into providers/<id>.js
 npm test          # offline logic tests
 npm run smoke     # live probe (network; optional)
 ```
 
-- Never edit `providers/indstream.js` by hand. After changing `src/`, run `npm run build` and commit source plus bundle together.
+- Never edit the generated files under `providers/` by hand. After changing `src/`, run `npm run build` and commit source plus bundles together.
 - Commit only when asked. Never push, tag, or bump versions until the user explicitly says so.
 - When bumping, update `manifest.json`, `package.json`, and `package-lock.json` together.
 - Describe the change in the commit message, scaled to its size.

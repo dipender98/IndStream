@@ -1,8 +1,8 @@
 {
   "name": "indstream",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "private": true,
-  "description": "IndStream — independent stream providers raced by one Nuvio plugin",
+  "description": "IndStream — independent Nuvio scrapers, one per server",
   "scripts": {
     "build": "node build.js",
     "build:watch": "node build.js --watch",

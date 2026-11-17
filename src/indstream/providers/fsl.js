@@ -3,6 +3,7 @@
 const http = require('../http');
 const html = require('../html');
 const util = require('../util');
+const tmdb = require('../tmdb');
 const filehost = require('../filehost');
 
 const SEEDS = [
@@ -27,15 +28,15 @@ module.exports = {
   name: 'FSL',
   speed: 'slow',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 2000,
+  raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceFsl',
     label: 'FSL',
-    description: 'Fast file links from release blogs. Heaviest source, so it runs last.',
+    description: 'Fast file links from release blogs. Heaviest source.',
   },
 
   async resolve(ctx) {
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
+    const meta = await tmdb.awaitMeta(ctx);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
     if (!title) {

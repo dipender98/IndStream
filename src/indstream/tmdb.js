@@ -152,6 +152,31 @@ async function resolveMeta(value, type, opts) {
   return fetchMeta(String(value == null ? '' : value).trim(), type, opts);
 }
 
+function applyMeta(scope, meta) {
+  if (!meta) return meta;
+  scope.meta = meta;
+  if (!scope.tmdbId && Number(meta.id)) scope.tmdbId = Number(meta.id);
+  if (!scope.imdbId && meta.imdbId) scope.imdbId = meta.imdbId;
+  return meta;
+}
+
+// Waits for the shared metadata lookup without outliving the provider budget.
+function awaitMeta(ctx, capMs) {
+  const scope = ctx || {};
+  if (scope.meta) return Promise.resolve(applyMeta(scope, scope.meta));
+  if (!scope.metaPromise) return Promise.resolve(null);
+  const cap = Number(capMs) > 0 ? Number(capMs) : 3000;
+  let wait = cap;
+  if (scope.deadline) {
+    const remaining = scope.deadline - Date.now();
+    if (remaining <= 0) return Promise.resolve(null);
+    wait = Math.min(wait, remaining);
+  }
+  return http.withTimeout(scope.metaPromise, wait, null).then(function (meta) {
+    return applyMeta(scope, meta);
+  });
+}
+
 async function resolveImdbId(tmdbId, type, meta, opts) {
   const id = String(tmdbId || '').trim();
   if (!id) return '';
@@ -174,6 +199,7 @@ module.exports = {
   fetchMeta: fetchMeta,
   findMetaByImdb: findMetaByImdb,
   resolveMeta: resolveMeta,
+  awaitMeta: awaitMeta,
   resolveImdbId: resolveImdbId,
   _test: {
     firstFindResult: firstFindResult,

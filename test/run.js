@@ -4,12 +4,14 @@ const assert = require('assert');
 
 const util = require('../src/indstream/util');
 const html = require('../src/indstream/html');
+const factory = require('../src/indstream/factory');
 const http = require('../src/indstream/http');
 const finalize = require('../src/indstream/finalize');
 const settings = require('../src/indstream/settings');
 const tmdb = require('../src/indstream/tmdb');
 const providers = require('../src/indstream/providers');
 const racer = require('../src/indstream/racer');
+const hdhub = require('../src/indstream/providers/hdhub');
 const vidrift = require('../src/indstream/providers/vidrift');
 const bingr = require('../src/indstream/providers/bingr');
 const moviebox = require('../src/indstream/providers/moviebox');
@@ -221,7 +223,7 @@ test('defaults', function () {
   assert.strictEqual(s.resultLimit, 40);
   assert.strictEqual(s.includeDash, true);
 });
-test('override and source disable', function () {
+test('override', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({
     minQuality: '1080',
     resultLimit: '20',
@@ -285,6 +287,27 @@ test('external abort signal cancels a request', async function () {
   }
 });
 
+section('hdhub');
+test('streamPath builds movie and tv paths from ids without metadata', async function () {
+  assert.strictEqual(await hdhub._test.streamPath({ type: 'movie', tmdbId: 27205 }), 'tmdb:27205');
+  assert.strictEqual(
+    await hdhub._test.streamPath({ type: 'tv', tmdbId: 1399, season: 2, episode: 3 }),
+    'tmdb:1399:2:3'
+  );
+  assert.strictEqual(await hdhub._test.streamPath({ type: 'movie', imdbId: 'tt1375666' }), 'tt1375666');
+  assert.strictEqual(
+    await hdhub._test.streamPath({ type: 'tv', imdbId: 'tt0944947', season: 1, episode: 5 }),
+    'tt0944947:1:5'
+  );
+});
+test('streamPath falls back to metadata only when no id exists', async function () {
+  const meta = { id: 27205, imdbId: 'tt1375666' };
+  assert.strictEqual(
+    await hdhub._test.streamPath({ type: 'movie', meta: meta, metaPromise: Promise.resolve(meta) }),
+    'tt1375666'
+  );
+});
+
 section('vidrift');
 test('vidriftStreams parses orionStreams', function () {
   const fixture =
@@ -307,6 +330,10 @@ test('bingrBody shape', function () {
   assert.strictEqual(body.srv, 's40');
   assert.strictEqual(body.t, 'tv');
   assert.strictEqual(body.query.season, 1);
+});
+test('bingrBody omits absent title metadata', function () {
+  const body = bingr._test.bingrBody('s70', 'movie', '27205', '', '', 0, 0);
+  assert.deepStrictEqual(body.query, {});
 });
 test('bingrSources parses', function () {
   const json = JSON.stringify({ sources: [
@@ -474,6 +501,23 @@ test('firstFindResult picks the requested media type', function () {
   assert.strictEqual(tmdb._test.firstFindResult(raw, 'tv').id, 1399);
   assert.strictEqual(tmdb._test.firstFindResult(null, 'movie'), null);
 });
+test('awaitMeta reuses resolved metadata and respects expired budgets', async function () {
+  const meta = { id: 27205, title: 'Inception', imdbId: 'tt1375666' };
+  assert.strictEqual(await tmdb.awaitMeta({ meta: meta }), meta);
+  assert.strictEqual(await tmdb.awaitMeta({ metaPromise: Promise.resolve(meta) }), meta);
+  assert.strictEqual(
+    await tmdb.awaitMeta({ metaPromise: new Promise(function () {}), deadline: Date.now() - 1 }),
+    null
+  );
+});
+test('awaitMeta fills ids on the provider scope', async function () {
+  const meta = { id: 27205, title: 'Inception', imdbId: 'tt1375666' };
+  const scope = { metaPromise: Promise.resolve(meta), tmdbId: 0, imdbId: '' };
+  assert.strictEqual(await tmdb.awaitMeta(scope), meta);
+  assert.strictEqual(scope.meta, meta);
+  assert.strictEqual(scope.tmdbId, 27205);
+  assert.strictEqual(scope.imdbId, 'tt1375666');
+});
 
 section('providers');
 test('registry contract', function () {
@@ -491,13 +535,12 @@ test('registry contract', function () {
     assert.strictEqual(providers.BY_ID[provider.id], provider);
   });
 });
-test('settings are shared (no per-provider toggles)', function () {
+test('settings have no per-provider toggles', function () {
   const layout = settings.onSettings();
   const providerToggleKeys = layout.filter(function (item) {
     return item.key && /^source[A-Z]/.test(item.key);
   });
   assert.strictEqual(providerToggleKeys.length, 0);
-  assert.strictEqual(Object.keys(settings.PROVIDER_SETTINGS).length, 0);
 });
 test('enabled filters by source toggle and media type', function () {
   const fake = [
@@ -548,6 +591,37 @@ test('racer returns fast results and isolates failures', async function () {
   assert.strictEqual(out[0].provider, 'Fast');
   assert.ok(logs.some(function (message) { return message.indexOf('done:') >= 0; }));
 });
+test('racer normalizes with metadata resolved during provider work', async function () {
+  let releaseMeta = null;
+  const metaPromise = new Promise(function (resolve) { releaseMeta = resolve; });
+  const out = await racer.race(
+    [
+      {
+        id: 'metadata',
+        name: 'Metadata',
+        raceTimeoutMs: 1000,
+        resolve: function () {
+          return new Promise(function (resolve) {
+            releaseMeta({ title: 'Inception' });
+            setTimeout(function () {
+              resolve([{ url: 'https://example.com/1.m3u8' }]);
+            }, 10);
+          });
+        },
+      },
+    ],
+    {
+      settings: { requestTimeout: 10 },
+      log: function () {},
+      metaPromise: metaPromise,
+    },
+    function (raw, provider, ctx) {
+      return { url: raw.url, title: ctx.meta && ctx.meta.title ? ctx.meta.title : '' };
+    }
+  );
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].title, 'Inception');
+});
 test('racer aborts unfinished providers when it finishes', async function () {
   let aborted = false;
   const out = await racer.race(
@@ -584,6 +658,36 @@ test('racer aborts unfinished providers when it finishes', async function () {
   await new Promise(function (resolve) { setTimeout(resolve, 50); });
   assert.strictEqual(out.length, 1);
   assert.strictEqual(aborted, true);
+});
+
+section('factory');
+test('provider work starts before metadata resolves', async function () {
+  const original = tmdb.resolveMeta;
+  let releaseMeta = null;
+  const gate = new Promise(function (resolve) { releaseMeta = resolve; });
+  let started = false;
+  tmdb.resolveMeta = function () { return gate; };
+  try {
+    const provider = {
+      id: 'fake',
+      name: 'Fake',
+      supports: { movie: true, tv: true },
+      raceTimeoutMs: 1000,
+      resolve: async function () {
+        started = true;
+        return [{ url: 'https://example.com/1.m3u8', type: 'hls', height: 1080 }];
+      },
+    };
+    const api = factory.createPlugin(provider);
+    const pending = api.getStreams('tt1375666', 'movie', null, null);
+    await new Promise(function (resolve) { setTimeout(resolve, 20); });
+    assert.strictEqual(started, true);
+    releaseMeta(null);
+    const streams = await pending;
+    assert.strictEqual(streams.length, 1);
+  } finally {
+    tmdb.resolveMeta = original;
+  }
 });
 
 main();

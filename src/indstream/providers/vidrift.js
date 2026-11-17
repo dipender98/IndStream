@@ -2,6 +2,7 @@
 
 const http = require('../http');
 const util = require('../util');
+const tmdb = require('../tmdb');
 
 const BASE = 'https://embed.vidrift.net';
 
@@ -10,7 +11,7 @@ module.exports = {
   name: 'Vidrift',
   speed: 'fast',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 5000,
+  raceTimeoutMs: 4000,
   toggle: {
     key: 'sourceVidrift',
     label: 'Vidrift',
@@ -23,6 +24,7 @@ module.exports = {
     const season = Number(ctx.season) || 0;
     const episode = Number(ctx.episode) || 0;
     if (ctx.deadline && Date.now() >= ctx.deadline) return [];
+    if (!ctx.tmdbId) await tmdb.awaitMeta(ctx);
     if (!ctx.tmdbId) {
       ctx.log('vidrift: missing tmdb id, skipping');
       return [];
@@ -61,6 +63,7 @@ module.exports = {
       else if (html.indexOf('iframe') >= 0 || html.indexOf('Embed this page') >= 0) ctx.log('vidrift: embed gated (iframe wall)');
       else ctx.log('vidrift: no embedMeta in page');
     }
+    if (out.length) await tmdb.awaitMeta(ctx, 400);
     return out;
   },
 };

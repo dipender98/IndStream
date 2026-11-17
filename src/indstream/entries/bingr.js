@@ -1,7 +1,8 @@
 'use strict';
 
 const factory = require('../factory');
-const api = factory.createPlugin('bingr');
+const provider = require('../providers/bingr');
+const api = factory.createPlugin(provider);
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = api;

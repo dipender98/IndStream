@@ -453,6 +453,28 @@ var require_tmdb = __commonJS({
         return fetchMeta(String(value == null ? "" : value).trim(), type, opts);
       });
     }
+    function applyMeta(scope, meta) {
+      if (!meta) return meta;
+      scope.meta = meta;
+      if (!scope.tmdbId && Number(meta.id)) scope.tmdbId = Number(meta.id);
+      if (!scope.imdbId && meta.imdbId) scope.imdbId = meta.imdbId;
+      return meta;
+    }
+    function awaitMeta(ctx, capMs) {
+      const scope = ctx || {};
+      if (scope.meta) return Promise.resolve(applyMeta(scope, scope.meta));
+      if (!scope.metaPromise) return Promise.resolve(null);
+      const cap = Number(capMs) > 0 ? Number(capMs) : 3e3;
+      let wait = cap;
+      if (scope.deadline) {
+        const remaining = scope.deadline - Date.now();
+        if (remaining <= 0) return Promise.resolve(null);
+        wait = Math.min(wait, remaining);
+      }
+      return http.withTimeout(scope.metaPromise, wait, null).then(function(meta) {
+        return applyMeta(scope, meta);
+      });
+    }
     function resolveImdbId(tmdbId, type, meta, opts) {
       return __async(this, null, function* () {
         const id = String(tmdbId || "").trim();
@@ -476,6 +498,7 @@ var require_tmdb = __commonJS({
       fetchMeta,
       findMetaByImdb,
       resolveMeta,
+      awaitMeta,
       resolveImdbId,
       _test: {
         firstFindResult
@@ -500,7 +523,7 @@ var require_settings = __commonJS({
     var SETTINGS_LAYOUT = [
       {
         type: "info",
-        label: "Shared settings for every IndStream provider. Configure once here; all providers read these values."
+        label: "Settings for this IndStream server. Each server keeps its own copy."
       },
       {
         type: "header",
@@ -602,8 +625,7 @@ var require_settings = __commonJS({
         requestTimeout: Number(pick(merged.requestTimeout, ["10", "15", "25"], DEFAULTS.requestTimeout)),
         probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
         includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
-        debug: normalizeBool(merged.debug, DEFAULTS.debug),
-        sources: {}
+        debug: normalizeBool(merged.debug, DEFAULTS.debug)
       };
       if (!settings.requestTimeout) settings.requestTimeout = 15;
       return settings;
@@ -611,16 +633,116 @@ var require_settings = __commonJS({
     function onSettings() {
       return SETTINGS_LAYOUT;
     }
-    function onSettingsFor() {
-      return SETTINGS_LAYOUT;
-    }
     module2.exports = {
       DEFAULTS,
       SETTINGS_LAYOUT,
-      PROVIDER_SETTINGS: {},
       getSettings,
-      onSettings,
-      onSettingsFor
+      onSettings
+    };
+  }
+});
+
+// src/indstream/racer.js
+var require_racer = __commonJS({
+  "src/indstream/racer.js"(exports2, module2) {
+    "use strict";
+    var http = require_http();
+    var GRACE_MS = 1e3;
+    var OVERALL_MAX_MS = 14e3;
+    function capOf(provider2, settings) {
+      const own = Number(provider2.raceTimeoutMs) || 12e3;
+      const ceiling = (Number(settings.requestTimeout) || 15) * 1e3 + 5e3;
+      return Math.min(own, ceiling);
+    }
+    function race(providers, context, normalize) {
+      return new Promise(function(resolve) {
+        const total = providers.length;
+        const collected = [];
+        const guards = [];
+        const controllers = [];
+        let settled = 0;
+        let finished = false;
+        let graceTimer = null;
+        if (!total) {
+          resolve(collected);
+          return;
+        }
+        const caps = providers.map(function(provider2) {
+          return capOf(provider2, context.settings);
+        });
+        const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9e3);
+        const overallTimer = setTimeout(finish, overallMs);
+        function finish() {
+          if (finished) return;
+          finished = true;
+          clearTimeout(overallTimer);
+          if (graceTimer) clearTimeout(graceTimer);
+          guards.forEach(function(guard) {
+            if (guard && typeof guard.cancel === "function") guard.cancel();
+          });
+          controllers.forEach(function(controller) {
+            http.abort(controller);
+          });
+          context.log("done: " + collected.length + " streams from " + settled + "/" + total + " providers");
+          resolve(collected.slice());
+        }
+        function onFirstStream() {
+          if (graceTimer) return;
+          graceTimer = setTimeout(finish, GRACE_MS);
+        }
+        function settle() {
+          settled += 1;
+          if (settled >= total) finish();
+        }
+        providers.forEach(function(provider2, i) {
+          const cap = caps[i];
+          const controller = http.createAbortController();
+          if (controller) controllers.push(controller);
+          const reserve = Math.min(1e3, Math.max(250, Math.floor(cap / 5)));
+          const scope = Object.assign({}, context, {
+            deadline: Date.now() + cap - reserve,
+            timeoutMs: Math.max(1e3, cap - reserve),
+            signal: controller ? controller.signal : void 0
+          });
+          scope.http = http.scope(scope);
+          if (scope.metaPromise) {
+            scope.metaPromise.then(function(meta) {
+              if (meta && !scope.meta) scope.meta = meta;
+            });
+          }
+          const startedAt = Date.now();
+          const work = Promise.resolve().then(function() {
+            return provider2.resolve(scope);
+          });
+          const guard = http.withTimeout(work, cap, [], function() {
+            http.abort(controller);
+          });
+          guards.push(guard);
+          guard.then(function(list) {
+            if (finished) return;
+            const normalized = [];
+            (list || []).forEach(function(raw) {
+              try {
+                const stream = normalize(raw, provider2, scope);
+                if (stream) normalized.push(stream);
+              } catch (error) {
+              }
+            });
+            context.log(provider2.name + ": " + normalized.length + " streams in " + (Date.now() - startedAt) + "ms");
+            if (normalized.length) {
+              Array.prototype.push.apply(collected, normalized);
+              onFirstStream();
+            }
+            settle();
+          });
+        });
+      });
+    }
+    module2.exports = {
+      GRACE_MS,
+      OVERALL_MAX_MS,
+      capOf,
+      race
     };
   }
 });
@@ -1134,8 +1256,8 @@ var require_util = __commonJS({
       const sizePart = String(sizeLabel == null ? "" : sizeLabel).trim();
       return [named, tagPart, sizePart].filter(Boolean).join(" ");
     }
-    function streamTitle(provider, raw, ctx) {
-      const providerName = String(provider && (provider.name || provider.id) || "IndStream").trim() || "IndStream";
+    function streamTitle(provider2, raw, ctx) {
+      const providerName = String(provider2 && (provider2.name || provider2.id) || "IndStream").trim() || "IndStream";
       const height = Number(raw && raw.height) || 0;
       const quality = String(raw && raw.quality || "").trim();
       const resolution = quality || (height ? height + "p" : "Auto");
@@ -1217,1610 +1339,6 @@ var require_util = __commonJS({
   }
 });
 
-// src/indstream/providers/hdhub.js
-var require_hdhub = __commonJS({
-  "src/indstream/providers/hdhub.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var util = require_util();
-    var tmdb = require_tmdb();
-    var BASE = "https://hdhub.thevolecitor.qzz.io";
-    module2.exports = {
-      id: "hdhub",
-      name: "HdHub",
-      speed: "very-fast",
-      supports: { movie: true, tv: true },
-      raceTimeoutMs: 5e3,
-      toggle: {
-        key: "sourceHdhub",
-        label: "HdHub",
-        description: "Fast aggregator: instant HLS streams plus 4K file links."
-      },
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const net = ctx.http || http;
-          const type = ctx.type;
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
-          let imdbId = meta && meta.imdbId || ctx.imdbId || "";
-          if (!imdbId && ctx.tmdbId) {
-            imdbId = yield tmdb.resolveImdbId(ctx.tmdbId, type, meta, ctx);
-          }
-          let pathId = "";
-          if (imdbId) {
-            pathId = "tt" + String(imdbId).replace(/^tt/, "");
-            if (type === "tv" || type === "series") {
-              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
-            }
-          } else if (ctx.tmdbId) {
-            pathId = "tmdb:" + ctx.tmdbId;
-            if (type === "tv" || type === "series") {
-              pathId += ":" + (Number(ctx.season) || 1) + ":" + (Number(ctx.episode) || 1);
-            }
-          }
-          if (!pathId) return [];
-          const kind = type === "tv" || type === "series" ? "series" : "movie";
-          const url = BASE + "/stream/" + kind + "/" + pathId + ".json";
-          const json = yield net.getJson(url, { timeoutMs: ctx.timeoutMs });
-          if (!json || !Array.isArray(json.streams)) return [];
-          const out = [];
-          const seen = {};
-          json.streams.forEach(function(s) {
-            if (!s || !s.url) return;
-            const name = String(s.name || "");
-            if (/donation|discord/i.test(name)) return;
-            if (/hubdrive\.bar/i.test(s.url)) return;
-            const desc = String(s.description || s.title || "");
-            const height = util.parseHeight(name + " " + desc);
-            const language = util.languageLabel(desc) || util.languageLabel(name) || "";
-            const size = util.normalizeSizeToken(desc);
-            const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url) || /googleusercontent/i.test(s.url);
-            const entry = {
-              provider: module2.exports.name,
-              url: s.url,
-              type: isHls ? "hls" : "mp4",
-              quality: util.qualityLabel(height),
-              height,
-              language,
-              size,
-              title: "",
-              headers: { "User-Agent": http.DEFAULT_UA }
-            };
-            if (seen[entry.url]) return;
-            seen[entry.url] = true;
-            out.push(entry);
-          });
-          ctx.log("hdhub: " + out.length + " streams");
-          return out;
-        });
-      }
-    };
-  }
-});
-
-// src/indstream/providers/vidrift.js
-var require_vidrift = __commonJS({
-  "src/indstream/providers/vidrift.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var util = require_util();
-    var BASE = "https://embed.vidrift.net";
-    module2.exports = {
-      id: "vidrift",
-      name: "Vidrift",
-      speed: "fast",
-      supports: { movie: true, tv: true },
-      raceTimeoutMs: 5e3,
-      toggle: {
-        key: "sourceVidrift",
-        label: "Vidrift",
-        description: "Embed player with direct HLS/MP4 links."
-      },
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const net = ctx.http || http;
-          const type = ctx.type;
-          const season = Number(ctx.season) || 0;
-          const episode = Number(ctx.episode) || 0;
-          if (ctx.deadline && Date.now() >= ctx.deadline) return [];
-          if (!ctx.tmdbId) {
-            ctx.log("vidrift: missing tmdb id, skipping");
-            return [];
-          }
-          if (type === "tv" && (season <= 0 || episode <= 0)) return [];
-          const page = type === "movie" ? BASE + "/embed/movie/" + ctx.tmdbId : BASE + "/embed/tv/" + ctx.tmdbId + "/" + season + "/" + episode;
-          const html = yield net.getText(page, {
-            timeoutMs: ctx.timeoutMs,
-            headers: { Referer: BASE + "/" }
-          });
-          if (!html) {
-            ctx.log("vidrift: embed page unreachable (" + page + ")");
-            return [];
-          }
-          const out = [];
-          vidriftStreams(html).forEach(function(pair) {
-            const rel = pair[0];
-            const label = pair[1];
-            const abs = /^https?:/i.test(rel) ? rel : BASE + (rel.charAt(0) === "/" ? rel : "/" + rel);
-            out.push({
-              provider: module2.exports.name,
-              url: abs,
-              type: abs.indexOf(".m3u8") >= 0 ? "hls" : "mp4",
-              quality: "",
-              height: 0,
-              language: label || "",
-              size: "",
-              title: "",
-              headers: { "User-Agent": http.DEFAULT_UA, Referer: BASE + "/" }
-            });
-          });
-          if (!out.length) {
-            if (html.indexOf("embedMeta") >= 0) ctx.log("vidrift: embedMeta present but no usable stream urls");
-            else if (html.indexOf("iframe") >= 0 || html.indexOf("Embed this page") >= 0) ctx.log("vidrift: embed gated (iframe wall)");
-            else ctx.log("vidrift: no embedMeta in page");
-          }
-          return out;
-        });
-      }
-    };
-    function vidriftStreams(html) {
-      const mi = html.indexOf("var embedMeta");
-      const brace = mi >= 0 ? html.indexOf("{", mi) : -1;
-      const json = brace >= 0 ? util.extractBalancedJson(html, brace) : "";
-      let meta = null;
-      try {
-        meta = json ? JSON.parse(json) : null;
-      } catch (error) {
-        meta = null;
-      }
-      if (!meta) return [];
-      const out = [];
-      const arr = meta.orionStreams;
-      if (Array.isArray(arr)) {
-        arr.forEach(function(o) {
-          if (!o || typeof o !== "object") return;
-          const u = o.url;
-          if (!u || u.indexOf(".m3u8") < 0 && u.indexOf(".mp4") < 0) return;
-          out.push([u, vidriftLabel(o.name)]);
-        });
-      }
-      if (!out.length && meta.evionUrl && meta.evionUrl.indexOf(".m3u8") >= 0) {
-        out.push([meta.evionUrl, ""]);
-      }
-      return out;
-    }
-    function vidriftLabel(name) {
-      const text = String(name || "");
-      const tokens = text.split(/[^A-Za-z]+/).filter(Boolean);
-      const last = tokens[tokens.length - 1] || "";
-      const lower = last.toLowerCase();
-      const known = ["hindi", "tamil", "telugu", "english", "kannada", "malayalam", "bengali", "marathi", "punjabi", "original"];
-      if (known.indexOf(lower) < 0) return "";
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    }
-    module2.exports._test = {
-      vidriftStreams,
-      vidriftLabel
-    };
-  }
-});
-
-// src/indstream/providers/bingr.js
-var require_bingr = __commonJS({
-  "src/indstream/providers/bingr.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var util = require_util();
-    var API = "https://api.bingr.one/api/stream";
-    var REFERER = "https://bingr.one/";
-    var SRVS = ["s40", "s70", "s80", "s81", "s62", "s63", "s30", "s60", "s61", "s31", "s3"];
-    module2.exports = {
-      id: "bingr",
-      name: "Bingr",
-      speed: "very-fast",
-      supports: { movie: true, tv: true },
-      raceTimeoutMs: 5e3,
-      toggle: {
-        key: "sourceBingr",
-        label: "Bingr",
-        description: "Multi-server JSON API. Usually the fastest source."
-      },
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const net = ctx.http || http;
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
-          const title = meta && meta.title ? meta.title : "";
-          const year = meta && meta.year ? meta.year : "";
-          const type = ctx.type;
-          const id = String(ctx.tmdbId || "");
-          if (!title || !id) {
-            ctx.log("bingr: missing " + (!title ? "title" : "id") + ", skipping");
-            return [];
-          }
-          const postHeaders = {
-            "Content-Type": "application/json",
-            Origin: "https://bingr.one",
-            Referer: REFERER,
-            "User-Agent": http.DEFAULT_UA
-          };
-          const out = [];
-          const seen = {};
-          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
-          for (let i = 0; i < SRVS.length; i += 1) {
-            const srv = SRVS[i];
-            if (out.length >= 6 || Date.now() > deadline) break;
-            const text = srv === "s40" && type === "tv" ? yield net.getText(API + "/aphelion-tv/" + id + "/" + (ctx.season || 1) + "/" + (ctx.episode || 1), {
-              timeoutMs: 4e3,
-              headers: { Referer: REFERER }
-            }) : yield net.postText(API, bingrBody(srv, type, id, title, year, ctx.season, ctx.episode), {
-              timeoutMs: 4e3,
-              headers: postHeaders
-            });
-            if (!text) continue;
-            if (isChallengeHtml(text)) {
-              ctx.log("bingr: " + srv + " blocked by challenge page");
-              continue;
-            }
-            bingrSources(text).forEach(function(s) {
-              if (seen[s.url]) return;
-              seen[s.url] = true;
-              const isDash = s.url.indexOf(".mpd") >= 0;
-              const isHls = s.url.indexOf(".m3u8") >= 0;
-              out.push({
-                provider: module2.exports.name,
-                url: s.url,
-                type: isDash ? "dash" : isHls ? "hls" : "mp4",
-                quality: util.qualityLabel(util.parseHeight(s.quality || s.label)),
-                height: util.parseHeight(s.quality || s.label),
-                language: s.language || "",
-                size: "",
-                title: "",
-                headers: { Referer: REFERER, "User-Agent": http.DEFAULT_UA }
-              });
-            });
-          }
-          return out;
-        });
-      }
-    };
-    function bingrBody(srv, type, id, title, year, season, episode) {
-      const query = { title, year };
-      if (type === "tv") {
-        query.season = Number(season) || 1;
-        query.episode = Number(episode) || 1;
-      }
-      return { srv, t: type === "tv" ? "tv" : "movie", id, query };
-    }
-    function isChallengeHtml(text) {
-      const t = String(text || "");
-      if (!t) return false;
-      return t.indexOf("<!DOCTYPE") >= 0 || t.indexOf("<html") >= 0 || t.indexOf("Attention Required") >= 0 || t.indexOf("Just a moment") >= 0;
-    }
-    function bingrSources(jsonText) {
-      if (isChallengeHtml(jsonText)) return [];
-      let root = null;
-      try {
-        root = JSON.parse(jsonText);
-      } catch (error) {
-        return [];
-      }
-      const arr = root && Array.isArray(root.sources) ? root.sources : [];
-      const out = [];
-      arr.forEach(function(o) {
-        if (!o || typeof o !== "object") return;
-        const url = o.url;
-        if (!url || url.indexOf("http") !== 0) return;
-        out.push({ url, quality: o.quality || "", label: o.label || "", language: o.language || "" });
-      });
-      return out;
-    }
-    module2.exports._test = {
-      bingrBody,
-      bingrSources,
-      isChallengeHtml
-    };
-  }
-});
-
-// src/indstream/providers/moviebox.js
-var require_moviebox = __commonJS({
-  "src/indstream/providers/moviebox.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var util = require_util();
-    var HOST = "h5-api.aoneroom.com";
-    var BASE = "https://" + HOST;
-    var REFERER = "https://movieboxonline.net/";
-    var TOKEN_TTL_MS = 30 * 60 * 1e3;
-    var tokenCache = "";
-    var tokenAt = 0;
-    var lastPlayAt = 0;
-    var SEASON_END_RE = /\s+S(\d+)(?:\s*-\s*S?(\d+))?$/i;
-    var SEASON_SUFFIX_RE = /\s+S\d+(?:\s*-\s*S?\d+)?$/i;
-    var BRACKET_REMOVE_RE = /\s*[\(\[][^)\]]*[\)\]]/g;
-    var YEAR_RE = /\s*\d{4}/;
-    module2.exports = {
-      id: "moviebox",
-      name: "MovieBox",
-      speed: "normal",
-      supports: { movie: true, tv: true },
-      raceTimeoutMs: 2e3,
-      toggle: {
-        key: "sourceMoviebox",
-        label: "MovieBox",
-        description: "Title-keyed catalogue with download and playback renditions."
-      },
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
-          const title = meta && meta.title ? meta.title : "";
-          const type = ctx.type;
-          if (!title) {
-            ctx.log("moviebox: missing title, skipping");
-            return [];
-          }
-          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
-          const seasonKey = Number(ctx.season) > 0 ? Number(ctx.season) : 1;
-          const episodeKey = Number(ctx.episode) > 0 ? Number(ctx.episode) : 1;
-          const subjectType = type === "movie" ? 1 : 2;
-          const token = yield fetchBearer(false, ctx);
-          if (!token) return [];
-          let baseHeaders = headersFor(token);
-          let items = yield searchItems(baseHeaders, title, subjectType, ctx);
-          if ((!items || !items.length) && Date.now() < deadline - 2e3) {
-            const fresh = yield fetchBearer(true, ctx);
-            if (fresh) {
-              baseHeaders = headersFor(fresh);
-              items = yield searchItems(baseHeaders, title, subjectType, ctx);
-            }
-          }
-          if (!items || !items.length) return [];
-          const subjects = matchSubjects(items, title, type, seasonKey);
-          if (!subjects.length) {
-            const titles = items.slice(0, 5).map(function(it) {
-              return it && it.title ? String(it.title) : "?";
-            }).join(" | ");
-            ctx.log('moviebox: no title match for "' + title + '"; search returned: ' + titles);
-            return [];
-          }
-          const out = [];
-          const seen = {};
-          for (let i = 0; i < subjects.length; i += 1) {
-            if (Date.now() > deadline) break;
-            const ref = subjects[i];
-            if (type === "tv" && ref.seasonEnd > 0 && ref.seasonEnd < seasonKey) continue;
-            const streams = yield subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx);
-            streams.forEach(function(s) {
-              if (seen[s.url]) return;
-              seen[s.url] = true;
-              out.push(s);
-            });
-            if (out.length >= 12) break;
-          }
-          return out;
-        });
-      }
-    };
-    function searchItems(baseHeaders, title, subjectType, ctx) {
-      return __async(this, null, function* () {
-        const net = ctx.http || http;
-        const json = yield net.postJson(BASE + "/wefeed-h5api-bff/subject/search", {
-          keyword: title,
-          page: 1,
-          perPage: 24,
-          subjectType
-        }, {
-          timeoutMs: Math.min(ctx.timeoutMs, 15e3),
-          headers: baseHeaders
-        });
-        if (!json) return null;
-        const data = unwrapData(json);
-        return Array.isArray(data.items) ? data.items : null;
-      });
-    }
-    function headersFor(token) {
-      return {
-        "X-Client-Info": '{"timezone":"Africa/Nairobi"}',
-        "Accept-Language": "en-US,en;q=0.5",
-        Accept: "application/json",
-        Referer: BASE,
-        Host: HOST,
-        Connection: "keep-alive",
-        Authorization: "Bearer " + token,
-        "User-Agent": http.DEFAULT_UA
-      };
-    }
-    function fetchBearer(forceRefresh, ctx) {
-      return __async(this, null, function* () {
-        if (!forceRefresh && tokenCache && Date.now() - tokenAt < TOKEN_TTL_MS) return tokenCache;
-        const net = ctx && ctx.http || http;
-        const res = yield net.request(BASE + "/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox", {
-          timeoutMs: 8e3
-        });
-        const xUser = res.headers && res.headers.get ? res.headers.get("x-user") : "";
-        if (!xUser) return null;
-        let token = "";
-        try {
-          token = JSON.parse(xUser).token || "";
-        } catch (error) {
-          token = "";
-        }
-        if (!token) return null;
-        tokenCache = token;
-        tokenAt = Date.now();
-        return token;
-      });
-    }
-    function unwrapData(json) {
-      if (!json || typeof json !== "object") return {};
-      const d = json.data && typeof json.data === "object" ? json.data : json;
-      return d.data && typeof d.data === "object" ? d.data : d;
-    }
-    function seasonEndOf(rawTitle) {
-      const match = String(rawTitle).match(SEASON_END_RE);
-      if (!match) return 0;
-      return Number(match[2] || match[1]) || 0;
-    }
-    function matchSubjects(items, title, type, seasonKey) {
-      const norm = function(t) {
-        return String(t || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-      };
-      const titleNorm = norm(title);
-      const out = [];
-      items.forEach(function(item) {
-        if (!item || typeof item !== "object") return;
-        const id = String(item.subjectId || "");
-        if (!id) return;
-        const rawTitle = String(item.title || "");
-        const seasonEnd = seasonEndOf(rawTitle);
-        const audioTag = "";
-        const clean = rawTitle.replace(SEASON_SUFFIX_RE, "").replace(BRACKET_REMOVE_RE, "").replace(YEAR_RE, "").trim();
-        const cleanNorm = norm(clean);
-        if (cleanNorm !== titleNorm) {
-          const prefixForward = titleNorm.length >= 4 && cleanNorm.indexOf(titleNorm) === 0;
-          const prefixReverse = cleanNorm.length >= 4 && titleNorm.indexOf(cleanNorm) === 0;
-          if (!prefixForward && !prefixReverse) return;
-        }
-        out.push({ id, seasonEnd, audioTag, detailPath: String(item.detailPath || "") });
-      });
-      return out;
-    }
-    function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx) {
-      return __async(this, null, function* () {
-        const net = ctx.http || http;
-        let detailPath = ref.detailPath;
-        if (!detailPath) {
-          const json = yield net.getJson(BASE + "/wefeed-h5-bff/web/post/list/subject?id=" + ref.id, {
-            timeoutMs: 8e3,
-            headers: baseHeaders
-          });
-          const data = unwrapData(json);
-          const items = Array.isArray(data.items) ? data.items : [];
-          detailPath = items.length && items[0].subject ? String(items[0].subject.detailPath || "") : "";
-        }
-        if (!detailPath) return [];
-        const reqHeaders = Object.assign({}, baseHeaders, {
-          Referer: "https://fmoviesunblocked.net/spa/videoPlayPage/movies/" + detailPath + "?id=" + ref.id + "&type=/movie/detail",
-          Origin: "https://fmoviesunblocked.net"
-        });
-        const params = "subjectId=" + ref.id + (type === "tv" ? "&se=" + seasonKey + "&ep=" + episodeKey : "") + "&detailPath=" + detailPath;
-        const out = [];
-        const seen = {};
-        const add = function(arr, dash) {
-          if (!Array.isArray(arr)) return;
-          arr.forEach(function(s) {
-            if (!s || typeof s !== "object") return;
-            if (s.vipLocked) return;
-            const rawUrl = String(s.url || "");
-            if (!rawUrl) return;
-            const sign = String(s.signCookie || "");
-            const cookie = cloudFrontCookie(sign);
-            let finalUrl = rawUrl;
-            let isDashEntry = dash;
-            if (dash) {
-              const manifest = dashManifestFromPolicy(sign);
-              if (manifest) {
-                finalUrl = manifest;
-              } else if (rawUrl.indexOf(".mpd") < 0 || isNoticeUrl(rawUrl)) {
-                return;
-              }
-              isDashEntry = true;
-            } else {
-              if (isNoticeUrl(rawUrl)) return;
-              if (rawUrl.indexOf(".mpd") >= 0) isDashEntry = true;
-            }
-            if (seen[finalUrl]) return;
-            seen[finalUrl] = true;
-            const resolution = parseInt(s.resolutions, 10) || parseInt(s.resolution, 10) || 0;
-            const headers = { Referer: REFERER, "User-Agent": http.DEFAULT_UA };
-            if (cookie) headers.Cookie = cookie;
-            const isMpd = isDashEntry || finalUrl.indexOf(".mpd") >= 0;
-            out.push({
-              provider: module2.exports.name,
-              url: finalUrl,
-              type: isMpd ? "dash" : finalUrl.indexOf(".m3u8") >= 0 ? "hls" : "mp4",
-              quality: util.qualityLabel(resolution),
-              height: resolution,
-              language: "",
-              size: "",
-              title: "",
-              headers
-            });
-          });
-        };
-        const downloadJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/download?" + params, {
-          timeoutMs: 8e3,
-          headers: reqHeaders
-        });
-        add(unwrapData(downloadJson).downloads, false);
-        if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-        yield util.sleep(Math.max(0, 200 - (Date.now() - lastPlayAt)));
-        if (ctx.deadline && Date.now() >= ctx.deadline) return out;
-        lastPlayAt = Date.now();
-        const playJson = yield net.getJson(BASE + "/wefeed-h5api-bff/subject/play?" + params, {
-          timeoutMs: 8e3,
-          headers: reqHeaders
-        });
-        const play = unwrapData(playJson);
-        add(play.streams, false);
-        add(play.dash, true);
-        return out;
-      });
-    }
-    function cloudFrontCookie(signCookie) {
-      if (!signCookie) return "";
-      const parts = String(signCookie).split(";").map(function(item) {
-        return item.trim();
-      }).filter(function(item) {
-        const eq = item.indexOf("=");
-        return eq > 0 && item.slice(eq + 1).replace(/"/g, "").trim();
-      });
-      return parts.join("; ");
-    }
-    function isNoticeUrl(url) {
-      return String(url || "").indexOf("macdn.aoneroom.com/other/") >= 0;
-    }
-    function dashManifestFromPolicy(signCookie) {
-      if (!signCookie) return "";
-      const raw = String(signCookie).split(";").map(function(item) {
-        return item.trim();
-      }).filter(function(item) {
-        return item.indexOf("CloudFront-Policy=") === 0;
-      })[0] || "";
-      if (!raw) return "";
-      let std = raw.slice("CloudFront-Policy=".length).trim().replace(/^"|"$/g, "");
-      if (!std) return "";
-      std = std.replace(/-/g, "+").replace(/~/g, "/").replace(/_/g, "=").replace(/\s+/g, "");
-      let stripped = std.replace(/=+$/, "");
-      if (!stripped || stripped.indexOf("=") >= 0 || stripped.length % 4 === 1) return "";
-      const pad = (4 - stripped.length % 4) % 4;
-      std = stripped + "====".slice(0, pad);
-      const json = util.b64decode(std);
-      if (!json) return "";
-      let resource = "";
-      try {
-        const parsed = JSON.parse(json);
-        resource = parsed.Statement && parsed.Statement[0] && parsed.Statement[0].Resource || "";
-      } catch (error) {
-        return "";
-      }
-      if (!resource || resource.indexOf("http") !== 0) return "";
-      let base = resource.trim().replace(/\*+$/, "").replace(/\/+$/, "");
-      return /\.mpd$/i.test(base) ? base : base + "/index.mpd";
-    }
-    module2.exports._test = {
-      cloudFrontCookie,
-      isNoticeUrl,
-      dashManifestFromPolicy,
-      matchSubjects,
-      seasonEndOf,
-      unwrapData
-    };
-  }
-});
-
-// src/indstream/html.js
-var require_html = __commonJS({
-  "src/indstream/html.js"(exports2, module2) {
-    "use strict";
-    var util = require_util();
-    function attrMap(tagText) {
-      const out = {};
-      const source = String(tagText || "");
-      const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
-      let match;
-      while (match = re.exec(source)) {
-        const name = match[1].toLowerCase();
-        const value = match[2] != null ? match[2] : match[3] != null ? match[3] : match[4];
-        out[name] = util.decodeEntities(value || "");
-      }
-      return out;
-    }
-    function hasClass(attrs, token) {
-      if (!token) return true;
-      const list = String(attrs && attrs.class || "").split(/\s+/);
-      return list.indexOf(token) >= 0;
-    }
-    function eachTag(html, tagName) {
-      const source = String(html || "");
-      const name = String(tagName || "div");
-      const openRe = new RegExp("<" + name + "\\b[^>]*>", "gi");
-      const closeToken = "</" + name + ">";
-      const out = [];
-      let match;
-      while (match = openRe.exec(source)) {
-        const close = source.toLowerCase().indexOf(closeToken, openRe.lastIndex);
-        if (close < 0) break;
-        out.push({
-          attrs: attrMap(match[0]),
-          inner: source.slice(openRe.lastIndex, close),
-          outer: source.slice(match.index, close + closeToken.length),
-          start: match.index,
-          end: close + closeToken.length
-        });
-        openRe.lastIndex = close + closeToken.length;
-      }
-      return out;
-    }
-    function blocks(html, tagName, classToken) {
-      const source = String(html || "");
-      const name = String(tagName || "div");
-      const openRe = new RegExp("<" + name + "\\b[^>]*>", "gi");
-      const closeToken = "</" + name + ">";
-      const scanRe = new RegExp("<\\/?" + name + "\\b[^>]*>", "gi");
-      const out = [];
-      let match;
-      while (match = openRe.exec(source)) {
-        const attrs = attrMap(match[0]);
-        if (!hasClass(attrs, classToken)) continue;
-        let depth = 1;
-        let end = -1;
-        scanRe.lastIndex = openRe.lastIndex;
-        let token;
-        while (token = scanRe.exec(source)) {
-          if (token[0].charAt(1) === "/") depth -= 1;
-          else depth += 1;
-          if (depth === 0) {
-            end = token.index;
-            break;
-          }
-        }
-        if (end < 0) break;
-        out.push({
-          attrs,
-          inner: source.slice(openRe.lastIndex, end),
-          outer: source.slice(match.index, end + closeToken.length),
-          start: match.index,
-          end: end + closeToken.length
-        });
-        openRe.lastIndex = end + closeToken.length;
-      }
-      return out;
-    }
-    function anchors(html) {
-      const out = [];
-      const re = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
-      let match;
-      while (match = re.exec(String(html || ""))) {
-        const attrs = attrMap(match[1]);
-        if (!attrs.href) continue;
-        out.push({ href: attrs.href, text: util.stripTags(match[2]), attrs });
-      }
-      return out;
-    }
-    function orderedTokens(html) {
-      const out = [];
-      const re = /<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>|<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
-      const source = String(html || "");
-      let match;
-      while (match = re.exec(source)) {
-        if (match[1]) {
-          const text = util.stripTags(match[2]);
-          if (text) out.push({ kind: "heading", text });
-        } else {
-          const attrs = attrMap(match[3]);
-          if (!attrs.href) continue;
-          out.push({ kind: "anchor", href: attrs.href, text: util.stripTags(match[4]), attrs });
-        }
-      }
-      return out;
-    }
-    function firstTag(html, tagName, classToken) {
-      const list = eachTag(html, tagName);
-      for (let i = 0; i < list.length; i += 1) {
-        if (hasClass(list[i].attrs, classToken)) return list[i];
-      }
-      return null;
-    }
-    function textOf(html) {
-      return util.stripTags(html);
-    }
-    module2.exports = {
-      blocks,
-      anchors,
-      orderedTokens,
-      eachTag,
-      firstTag,
-      textOf
-    };
-  }
-});
-
-// src/indstream/filehost.js
-var require_filehost = __commonJS({
-  "src/indstream/filehost.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var html = require_html();
-    var util = require_util();
-    var ROTATOR_BLOB_RE = /'o'\s*,\s*'([A-Za-z0-9+/=]{16,})[^']*'/;
-    var ROTATOR_WP_BLOB_RE = /ck\('_wp_http_\d+','([^']+)'/;
-    var ROTATOR_O_TOKEN_RE = /"o"\s*:\s*"([A-Za-z0-9+/=]{10,})/;
-    var JS_LOCATION_RE = /(?:window\.)?location(?:\.href)?\s*=\s*['"](https?:\/\/[^'"]+)['"]/i;
-    var META_REFRESH_RE = /<meta\s+http-equiv=["']refresh["'][^>]*content=["'][^;]*;\s*url=([^"']+)/i;
-    var STORED_REDIRECT_RE = /s\('o','([A-Za-z0-9+/=]+)'/;
-    var DIRECT_URL_RE = /https?:\/\/[^\s"'<\\]+/;
-    var REURL_VAR_RE = /var\s+reurl\s*=\s*"([^"]+)"/;
-    var HUB_DRIVE_NEXT_RE = /https?:\/\/hubcloud\.[a-z.]+\/drive\/[A-Za-z0-9]+/;
-    var TOKEN_URL_ABS_RE = /https?:\/\/[^"' ]*?(?:hubcloud|hubdrive)\.php\?[^"' ]+/;
-    var TOKEN_URL_REL_RE = /(?:hubcloud|hubdrive)\.php\?[^"' ]+/;
-    var GOOGLE_VIDEO_RE = /(https?:\/\/video-downloads\.googleusercontent\.com\/[^"'\s<>]+)/;
-    var PIXELDRAIN_SHORT_RE = /pixeldrain\.[a-z]+\/u\/([a-zA-Z0-9]+)/;
-    var ARCHIVE_URL_RE = /\.(?:zip|rar|7z|tar|gz)(?:[?#]|$)/i;
-    var BTN_CLASS_RE = /\bbtn\b/;
-    function isArchiveUrl(url) {
-      return ARCHIVE_URL_RE.test(String(url || ""));
-    }
-    function rotatorTarget(pageHtml) {
-      const blob = (pageHtml.match(ROTATOR_BLOB_RE) || [])[1] || (pageHtml.match(ROTATOR_WP_BLOB_RE) || [])[1];
-      if (!blob) return "";
-      const l1 = util.b64decode(blob);
-      if (!l1) return "";
-      const l2 = util.b64decode(l1);
-      if (!l2) return "";
-      const jsonText = util.b64decode(util.rot13(l2));
-      if (!jsonText) return "";
-      const oToken = (jsonText.match(ROTATOR_O_TOKEN_RE) || [])[1];
-      let wrapped = null;
-      try {
-        wrapped = JSON.parse(jsonText);
-      } catch (error) {
-        if (oToken && util.b64decode(oToken).indexOf("http") === 0) {
-          try {
-            wrapped = JSON.parse('{"o":"' + oToken + '"}');
-          } catch (inner) {
-            wrapped = null;
-          }
-        }
-      }
-      if (!wrapped || typeof wrapped !== "object") return "";
-      const url = util.b64decode(wrapped.o || "").trim();
-      return url.indexOf("http") === 0 ? url : "";
-    }
-    function jsRedirectTarget(pageHtml) {
-      const location = (pageHtml.match(JS_LOCATION_RE) || [])[1];
-      if (location) return location;
-      const metaUrl = (pageHtml.match(META_REFRESH_RE) || [])[1];
-      if (metaUrl) return metaUrl.trim();
-      const stored = (pageHtml.match(STORED_REDIRECT_RE) || [])[1];
-      if (!stored) return "";
-      let payload = stored;
-      for (let i = 0; i < 6; i += 1) {
-        const decoded = util.b64decode(payload);
-        if (!decoded) return "";
-        const direct = decoded.match(DIRECT_URL_RE);
-        if (direct) return direct[0];
-        payload = decoded;
-      }
-      return "";
-    }
-    function hubFileButtons(pageHtml) {
-      const headQ = util.parseHeight((html.firstTag(pageHtml, "div", "card-header") || {}).inner || "");
-      const out = [];
-      const seen = {};
-      html.anchors(pageHtml).forEach(function(a) {
-        if (!BTN_CLASS_RE.test(a.attrs.class || "")) return;
-        let url = a.href;
-        if (url.indexOf("http") !== 0) return;
-        if (isArchiveUrl(url)) return;
-        if (/facebook\.|twitter\.|t\.me|\/tg\/|pixel\.|\/admin/.test(url)) return;
-        const pixel = url.match(PIXELDRAIN_SHORT_RE);
-        if (pixel) url = url.replace("/u/" + pixel[1], "/api/file/" + pixel[1]);
-        if (seen[url]) return;
-        seen[url] = true;
-        const q = util.parseHeight(a.text);
-        out.push({ url, quality: q > 0 ? q + "p" : headQ > 0 ? headQ + "p" : "", language: util.languageLabel(a.text) });
-      });
-      return out;
-    }
-    function hubDriveFiles(driveUrl, referer, client) {
-      return __async(this, null, function* () {
-        const net = client || http;
-        const url = String(driveUrl || "");
-        if (/hubdrive\.|hubcdn\./i.test(url)) {
-          const index = yield net.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
-          if (!index) return [];
-          const reurl = (index.match(REURL_VAR_RE) || [])[1];
-          if (reurl) {
-            const direct = util.b64decode(reurl.slice(reurl.indexOf("r=") + 2).replace(/-/g, "+").replace(/_/g, "/"));
-            if (direct) {
-              const link = direct.slice(direct.indexOf("link=") + 5);
-              if (link.indexOf("http") === 0) return [{ url: link, quality: util.qualityText(link), language: "" }];
-            }
-          }
-          const next = (index.match(HUB_DRIVE_NEXT_RE) || [])[0];
-          return next ? hubDriveFiles(next, url, net) : [];
-        }
-        const page = yield net.getText(url, { timeoutMs: 1e4, headers: { Referer: referer } });
-        if (!page) return [];
-        const google = googleVideoLink(page, url);
-        if (google) return [{ url: google, quality: util.qualityText(page), language: "" }];
-        const tokenAbs = (page.match(TOKEN_URL_ABS_RE) || [])[0];
-        const tokenRel = (page.match(TOKEN_URL_REL_RE) || [])[0];
-        if (!tokenAbs && !tokenRel) return [];
-        const origin = util.originOf(url);
-        const tokenUrl = tokenAbs || origin + "/" + tokenRel;
-        const tokenPage = yield net.getText(tokenUrl, { timeoutMs: 1e4, headers: { Referer: url } });
-        if (!tokenPage) return [];
-        return hubFileButtons(tokenPage).slice(0, 4);
-      });
-    }
-    function googleVideoLink(htmlText, finalUrl) {
-      let raw = (htmlText.match(GOOGLE_VIDEO_RE) || [])[1];
-      if (!raw) {
-        const after = finalUrl.split("dl.php?link=")[1] || "";
-        if (after.indexOf("http") === 0) raw = after;
-      }
-      if (!raw) return "";
-      let decoded = "";
-      try {
-        decoded = decodeURIComponent(raw.replace(/&amp;/g, "&"));
-      } catch (error) {
-        decoded = raw.replace(/&amp;/g, "&");
-      }
-      return decoded.indexOf("http") === 0 ? decoded : "";
-    }
-    var VCLOUD_BTN_RE = /<a\b[^>]*href="([^"]+)"[^>]*>\s*(?:<[^>]+>\s*)*([^<]*(?:Download|Server|File)[^<]*)(?:<[^>]+>\s*)*<\/a>/gi;
-    var VCLOUD_ATOB_RE = /var\s+url\s*=\s*atob\s*\(\s*atob\s*\(\s*['"]([A-Za-z0-9+/=]{16,})['"]\s*\)\s*\)/;
-    var BRACKET_LABEL_RE = /\[([^\]]+)]/;
-    var R2_HOST_RE = /(r2\.cloudflarestorage\.com|r2\.dev)/i;
-    var GPDL_URL_RE = /https?:\/\/[^"' ]*gpdl[^"' ]*hubcloud[^"' ]+/i;
-    var VCLOUD_EPISODE_TAG_RE = /\bS\d{1,2}[\s._-]?E\d{1,3}\b/i;
-    var HTML_TITLE_RE = /<title>([^<]+)<\/title>/i;
-    var ARCHIVE_TITLE_RE = /archive(?:\.org)?|web\.archive|\.zip|\.rar|\.7z|\.tar|\.gz/i;
-    function vcloudDoubleAtob(blob) {
-      const inner = util.b64decode(blob.trim());
-      if (!inner) return "";
-      return util.b64decode(inner.trim());
-    }
-    function vcloudPageMatchesEpisode(pageTitle, type, season, episode) {
-      if (type !== "tv" || !season || !episode) return true;
-      return !VCLOUD_EPISODE_TAG_RE.test(pageTitle) || util.episodeMatches(pageTitle, season, episode);
-    }
-    function vcloudR2Links(vcloudUrl, referer, type, season, episode, ctx) {
-      return __async(this, null, function* () {
-        const net = ctx && ctx.http ? ctx.http : http;
-        const timeoutMs = typeof ctx === "number" ? ctx : ctx && ctx.timeoutMs || 15e3;
-        const page = yield net.getText(vcloudUrl, { timeoutMs, headers: { Referer: referer } });
-        if (!page) return [];
-        const pageTitle = (page.match(HTML_TITLE_RE) || [])[1] || "";
-        if (ARCHIVE_TITLE_RE.test(pageTitle) || /complete season/i.test(pageTitle)) return [];
-        if (!vcloudPageMatchesEpisode(pageTitle, type, season, episode)) return [];
-        const blob = (page.match(VCLOUD_ATOB_RE) || [])[1];
-        if (!blob) return [];
-        const tokenUrl = vcloudDoubleAtob(blob);
-        if (!tokenUrl || tokenUrl.indexOf("http") !== 0) return [];
-        const token = yield net.getText(tokenUrl, { timeoutMs, headers: { Referer: vcloudUrl } });
-        if (!token) return [];
-        const out = [];
-        const seen = {};
-        const origin = util.originOf(tokenUrl);
-        let match;
-        VCLOUD_BTN_RE.lastIndex = 0;
-        while (match = VCLOUD_BTN_RE.exec(token)) {
-          const raw = match[1].trim();
-          const inner = match[2].trim();
-          const bracket = inner.match(BRACKET_LABEL_RE);
-          const label = (bracket ? bracket[1] : inner).trim();
-          const abs = raw.indexOf("http") === 0 ? raw : origin + (raw.charAt(0) === "/" ? raw : "/" + raw);
-          if (isArchiveUrl(abs)) continue;
-          if (R2_HOST_RE.test(abs) && !seen[abs]) {
-            seen[abs] = true;
-            out.push({ url: abs, label: label.slice(0, 20) });
-          }
-        }
-        const gpdl = token.match(GPDL_URL_RE) || [];
-        for (let i = 0; i < gpdl.length; i += 1) {
-          const files = yield hubDriveFiles(gpdl[i], tokenUrl, net);
-          files.forEach(function(file) {
-            if (!seen[file.url]) {
-              seen[file.url] = true;
-              out.push({ url: file.url, label: file.quality });
-            }
-          });
-        }
-        return out;
-      });
-    }
-    module2.exports = {
-      rotatorTarget,
-      jsRedirectTarget,
-      hubDriveFiles,
-      vcloudR2Links,
-      _test: {
-        hubFileButtons
-      }
-    };
-  }
-});
-
-// src/indstream/providers/hub4k.js
-var require_hub4k = __commonJS({
-  "src/indstream/providers/hub4k.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var html = require_html();
-    var util = require_util();
-    var filehost = require_filehost();
-    var BASES = ["https://4khdhub.one", "https://4khdhub.com"];
-    var HUB_LANG_RE = /\b(hindi|english|tamil|telugu|malayalam|kannada|bengali|marathi|punjabi|dual|multi)\b/i;
-    var HUB_OTHER_LANG_RE = /english|dual|multi|tamil|telugu|malayalam|kannada|bengali|marathi|punjabi|urdu|japanese|korean|chinese/;
-    var HUB_QUALITY_RE = /\b(2160p|1440p|1080p|720p|480p)\b/i;
-    var HUB_GATEWAY_HOST_RE = /greenmotors|hubcloud|hubdrive/i;
-    var OG_TITLE_RE = /<meta\s+property="og:title"\s+content="([^"]+)"/i;
-    var HTML_TITLE_RE = /<title>([^<]+)<\/title>/i;
-    module2.exports = {
-      id: "hub4k",
-      name: "4KHDHub",
-      speed: "slow",
-      supports: { movie: true, tv: true },
-      raceTimeoutMs: 3e3,
-      toggle: {
-        key: "sourceHub4k",
-        label: "4KHDHub",
-        description: "4K-first release pages resolved through file-host gateways."
-      },
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const net = ctx.http || http;
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
-          const title = meta && meta.title ? meta.title : "";
-          const year = meta && meta.year ? meta.year : "";
-          if (!title) {
-            ctx.log("hub4k: missing title, skipping");
-            return [];
-          }
-          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
-          let base = "";
-          let searchHtml = "";
-          let fallback = null;
-          for (let i = 0; i < BASES.length; i += 1) {
-            if (Date.now() > deadline) break;
-            const candidate = BASES[i];
-            const h = yield net.getText(candidate + "/?s=" + encodeURIComponent(title), {
-              timeoutMs: 5e3,
-              headers: { Referer: candidate + "/" }
-            });
-            if (!h) continue;
-            if (hubParseCards(h, candidate).length) {
-              base = candidate;
-              searchHtml = h;
-              break;
-            }
-            if (!fallback) fallback = { base: candidate, html: h };
-          }
-          if (!base) {
-            if (!fallback) return [];
-            base = fallback.base;
-            searchHtml = fallback.html;
-          }
-          const cards = hubParseCards(searchHtml, base);
-          if (!cards.length) return [];
-          const ranked = cards.map(function(card) {
-            return { card, score: util.titleScore(title, card.title, year, util.titleYearOf(card.title)) };
-          }).sort(function(a, b) {
-            return b.score - a.score;
-          }).slice(0, 3);
-          if (!ranked.length || ranked[0].score < 0.6) return [];
-          const out = [];
-          const seen = {};
-          for (let i = 0; i < Math.min(2, ranked.length); i += 1) {
-            if (Date.now() > deadline) break;
-            const card = ranked[i].card;
-            const post = yield net.getText(card.url, {
-              timeoutMs: 5e3,
-              headers: { Referer: base + "/" }
-            });
-            if (!post) continue;
-            if (!hubPostYearOk(post, year)) continue;
-            const items = util.episodeOrSeason(hub4kItems(post), function(it) {
-              return it.title;
-            }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
-            for (let j = 0; j < items.length; j += 1) {
-              if (Date.now() > deadline) break;
-              const item = items[j];
-              const langNames = util.languageNames(item.languages);
-              const lang = langNames.join(", ");
-              const audioLang = util.languageLabel(item.languages) || lang;
-              const priority = hubLangOf(item.languages);
-              for (let g = 0; g < item.gatewayUrls.length; g += 1) {
-                if (Date.now() > deadline) break;
-                const gateway = item.gatewayUrls[g];
-                const gwPage = yield net.getText(gateway, {
-                  timeoutMs: 6e3,
-                  headers: { Referer: card.url }
-                });
-                if (!gwPage) continue;
-                let resolvedDrive = "";
-                [filehost.rotatorTarget(gwPage), filehost.jsRedirectTarget(gwPage)].forEach(function(target) {
-                  if (target && !resolvedDrive) resolvedDrive = util.resolveUrl(gateway, target);
-                });
-                if (!resolvedDrive) continue;
-                let finalDrive = resolvedDrive;
-                if (/hubdrive\./i.test(resolvedDrive)) {
-                  const innerPage = yield net.getText(resolvedDrive, {
-                    timeoutMs: 5e3,
-                    headers: { Referer: card.url }
-                  });
-                  if (!innerPage) continue;
-                  let mirror = "";
-                  html.anchors(innerPage).forEach(function(a) {
-                    if (!mirror && /hubcloud/i.test(a.href)) mirror = util.resolveUrl(resolvedDrive, a.href);
-                  });
-                  if (!mirror || mirror.indexOf("http") !== 0) continue;
-                  finalDrive = mirror;
-                }
-                const referer = util.originOf(finalDrive) || "https://hubcloud.ist/";
-                const files = yield filehost.hubDriveFiles(finalDrive, card.url, net);
-                for (let f = 0; f < files.length; f += 1) {
-                  if (Date.now() > deadline) break;
-                  const file = files[f];
-                  const qText = file.quality || (item.title.match(HUB_QUALITY_RE) || [])[0] || "";
-                  const fileAudio = util.languageLabel(file.language);
-                  const audio = fileAudio || audioLang || lang;
-                  if (seen[file.url]) continue;
-                  seen[file.url] = true;
-                  out.push({
-                    provider: module2.exports.name,
-                    url: file.url,
-                    type: file.url.indexOf(".m3u8") >= 0 ? "hls" : file.url.indexOf(".mpd") >= 0 ? "dash" : "mp4",
-                    quality: util.qualityLabel(util.parseHeight(qText || item.title)),
-                    height: util.parseHeight(qText || item.title),
-                    language: audio,
-                    size: item.size,
-                    title: (module2.exports.name + " " + qText).trim(),
-                    headers: { Referer: referer, "User-Agent": http.DEFAULT_UA }
-                  });
-                  if (out.length >= 6) break;
-                }
-                if (out.length >= 6) break;
-              }
-              if (out.length >= 6) break;
-            }
-            if (out.length) break;
-          }
-          return out;
-        });
-      }
-    };
-    function hubParseCards(htmlText, base) {
-      const out = [];
-      const seen = {};
-      html.anchors(htmlText).forEach(function(a) {
-        if (!/movie-card/.test(a.attrs.class || "")) return;
-        const href = util.resolveUrl(base, a.href).trim();
-        if (href.indexOf("http") !== 0) return;
-        const title = String(a.attrs["aria-label"] || "").replace(/ details$/i, "").trim() || a.text.trim();
-        if (!title || seen[href]) return;
-        seen[href] = true;
-        out.push({ url: href, title });
-      });
-      return out;
-    }
-    function hubPostYearOk(htmlText, year) {
-      if (!year) return true;
-      const title = (htmlText.match(OG_TITLE_RE) || [])[1] || (htmlText.match(HTML_TITLE_RE) || [])[1] || "";
-      return title.indexOf(year) >= 0;
-    }
-    function hub4kItems(htmlText) {
-      const out = [];
-      html.blocks(htmlText, "div", "download-item").forEach(function(block) {
-        html.blocks(block.inner, "div", "episode-download-item").forEach(function(ep) {
-          out.push(itemFromBlock(ep));
-        });
-        const item = itemFromBlock(block);
-        if (item) out.push(item);
-      });
-      return out.filter(function(item) {
-        return item.gatewayUrls.length > 0;
-      });
-    }
-    function itemFromBlock(block) {
-      const header = html.firstTag(block.inner, "div", "download-header");
-      const headerInner = header ? header.inner : block.inner;
-      const title = html.firstTag(headerInner, "div", "flex-1") || html.firstTag(headerInner, "div", "font-semibold") || html.firstTag(block.inner, "div", "file-title") || html.firstTag(block.inner, "div", "episode-file-title");
-      const titleText = (title ? html.textOf(title.inner) : html.textOf(headerInner)).trim();
-      if (!titleText) return null;
-      const badges = [];
-      html.eachTag(block.inner, "span").forEach(function(s) {
-        if (/badge/.test(s.attrs.class || "")) badges.push(html.textOf(s.inner).trim());
-      });
-      if (!badges.length) {
-        html.eachTag(block.inner, "code").forEach(function(c) {
-          html.eachTag(c.inner, "span").forEach(function(s) {
-            badges.push(html.textOf(s.inner).trim());
-          });
-        });
-      }
-      let size = "";
-      badges.forEach(function(badge) {
-        const tok = util.normalizeSizeToken(badge);
-        if (tok && !size) {
-          size = tok;
-        }
-      });
-      const langs = badges.filter(function(badge) {
-        return HUB_LANG_RE.test(badge);
-      }).filter(function(v, i, arr) {
-        return arr.indexOf(v) === i;
-      }).join(" ");
-      const gateways = [];
-      const seen = {};
-      html.anchors(block.inner).forEach(function(a) {
-        if (a.href.indexOf("http") !== 0) return;
-        if (!HUB_GATEWAY_HOST_RE.test(a.href)) return;
-        if (seen[a.href]) return;
-        seen[a.href] = true;
-        gateways.push({ url: a.href, cloud: /hubcloud/i.test(a.text) });
-      });
-      gateways.sort(function(a, b) {
-        return Number(b.cloud) - Number(a.cloud);
-      });
-      return { title: titleText, size, languages: langs, gatewayUrls: gateways.map(function(g) {
-        return g.url;
-      }) };
-    }
-    function hubLangOf(languages) {
-      const s = String(languages || "").toLowerCase();
-      if (s.indexOf("hindi") >= 0 && HUB_OTHER_LANG_RE.test(s)) return "Multi";
-      if (s.indexOf("hindi") >= 0) return "Hindi";
-      return util.languageLabel(languages);
-    }
-    module2.exports._test = {
-      hubParseCards,
-      hubPostYearOk,
-      hub4kItems,
-      hubLangOf
-    };
-  }
-});
-
-// src/indstream/providers/fsl.js
-var require_fsl = __commonJS({
-  "src/indstream/providers/fsl.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var html = require_html();
-    var util = require_util();
-    var filehost = require_filehost();
-    var SEEDS = [
-      { family: "vegamovies", seed: "https://new1.vegamovies.lease", bootstrap: "https://new2.vegamovies.futbol" },
-      { family: "rogmovies", seed: "https://rogmovies.one", bootstrap: null }
-    ];
-    var FSL_LANDING_PROBE = "/?re=vg&t=2";
-    var FSL_GATEWAY_LINK_RE = /https?:\/\/[a-z0-9.\-]*(?:nexdrive|gdflix|filepress|vcloud)\.[a-z]{2,10}\/[^\s"'<\\]+/i;
-    var DOWNLOAD_HEADING_RE = /(\d{3,4}p\b|4K|\d+(?:\.\d+)?\s?(?:GB|MB)|\/ZiP|\/ZIP|\bZIP\b|Batch|Season\s*\d|\bPack\b|DUAL\s*[- ]?AUDIO|HINDI|TAMIL|TELUGU|\bEP(?:\.|ISODE)?\s*\d|S\d{1,2}[\s._-]?E\d{1,3})/i;
-    var HEADING_SIZE_RE = /\[\s*(\d+(?:\.\d+)?\s*(?:GB|MB)(?:\/E\b|\/EP\b|\/ZiP|\/ZIP)?)\s*]/i;
-    var SERVER_LABEL_ACTION_RE = /^(?:download|file|watch|play|get|stream|online)\b/i;
-    var SERVER_LABEL_TRAILING_RE = /\s*\bserver\b\s*$/i;
-    var QUALITY_TEXT_RE = /\b(2160p|1440p|1080p|720p|480p|4k)\b/i;
-    var FASTDL_LINK_RE = /https?:\/\/fastdl\.[a-z]{2,10}\/embed(?:\.php)?\?download=[A-Za-z0-9_\-]+/gi;
-    var VCLOUD_LINK_RE = /https?:\/\/vcloud\.[a-z]{2,10}\/[A-Za-z0-9_\-]{6,}/g;
-    var baseCache = {};
-    module2.exports = {
-      id: "fsl",
-      name: "FSL",
-      speed: "slow",
-      supports: { movie: true, tv: true },
-      raceTimeoutMs: 2e3,
-      toggle: {
-        key: "sourceFsl",
-        label: "FSL",
-        description: "Fast file links from release blogs. Heaviest source, so it runs last."
-      },
-      resolve(ctx) {
-        return __async(this, null, function* () {
-          const meta = yield http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3e3, null);
-          const title = meta && meta.title ? meta.title : "";
-          const year = meta && meta.year ? meta.year : "";
-          if (!title) {
-            ctx.log("fsl: missing title, skipping");
-            return [];
-          }
-          const deadline = ctx.deadline || Date.now() + ctx.timeoutMs;
-          const out = [];
-          const seen = {};
-          for (let s = 0; s < SEEDS.length; s += 1) {
-            if (Date.now() > deadline) break;
-            const seed = SEEDS[s];
-            const base = yield fslBase(seed, ctx);
-            if (!base) continue;
-            const json = yield fslGet(base + "/ts-search.php?q=" + encodeURIComponent(title) + "&page=1", base, 5e3, ctx);
-            if (!json) continue;
-            const hits = fslSearchHits(json);
-            if (!hits.length) continue;
-            const ranked = hits.map(function(hit) {
-              return { hit, score: util.titleScore(title, hit.title, year, util.titleYearOf(hit.title)) };
-            }).filter(function(row) {
-              return !year || !util.titleYearOf(row.hit.title) || row.score > 0.5;
-            }).sort(function(a, b) {
-              return b.score - a.score;
-            }).slice(0, 2);
-            for (let r = 0; r < ranked.length; r += 1) {
-              if (Date.now() > deadline) break;
-              const permalink = util.resolveUrl(base, ranked[r].hit.permalink);
-              const post = yield fslGet(permalink, base, 6e3, ctx);
-              if (!post) continue;
-              const groups = util.episodeOrSeason(fslGroups(post), function(g) {
-                return g.heading;
-              }, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0).slice(0, 4);
-              for (let g = 0; g < groups.length; g += 1) {
-                if (Date.now() > deadline) break;
-                const group = groups[g];
-                const size = headingSizeOf(group.heading);
-                const priorityLang = releaseLanguageOf(group.heading);
-                const lang = util.languageLabel(group.heading) || priorityLang;
-                const qText = (group.heading.match(/\b(2160p|1440p|1080p|720p|480p)\b/i) || [])[0] || "";
-                let perGroup = 0;
-                for (let gw = 0; gw < group.gateways.length; gw += 1) {
-                  if (Date.now() > deadline) break;
-                  const gateway = group.gateways[gw];
-                  let cloudLinks = [];
-                  if (/vcloud\./i.test(gateway)) {
-                    cloudLinks = [gateway];
-                  } else {
-                    const expanded = yield fslGet(gateway, base, 8e3, ctx);
-                    if (!expanded) continue;
-                    cloudLinks = gatewayLinksOf(expanded).cloud;
-                  }
-                  const ordered = episodeFirstOrder(cloudLinks, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0);
-                  for (let v = 0; v < ordered.length; v += 1) {
-                    if (Date.now() > deadline) break;
-                    const links = yield filehost.vcloudR2Links(ordered[v], gateway, ctx.type, Number(ctx.season) || 0, Number(ctx.episode) || 0, ctx);
-                    for (let l = 0; l < links.length; l += 1) {
-                      if (Date.now() > deadline) break;
-                      const link = links[l];
-                      if (seen[link.url]) continue;
-                      seen[link.url] = true;
-                      const serverName = [fslServerLabel(link.label, module2.exports.name), qText].filter(Boolean).join(" ");
-                      out.push({
-                        provider: module2.exports.name,
-                        url: link.url,
-                        type: link.url.indexOf(".m3u8") >= 0 ? "hls" : link.url.indexOf(".mpd") >= 0 ? "dash" : "mp4",
-                        quality: util.qualityLabel(util.parseHeight(qText || group.heading)),
-                        height: util.parseHeight(qText || group.heading),
-                        language: lang,
-                        size,
-                        title: serverName,
-                        headers: { Referer: util.originOf(link.url), "User-Agent": http.DEFAULT_UA }
-                      });
-                      perGroup += 1;
-                      if (perGroup >= 2) break;
-                    }
-                    if (perGroup >= 2) break;
-                  }
-                  if (perGroup >= 2) break;
-                }
-                if (out.length >= 6) break;
-              }
-              if (out.length) break;
-            }
-            if (out.length) break;
-          }
-          return out;
-        });
-      }
-    };
-    function fslGet(url, referer, timeoutMs, ctx) {
-      return __async(this, null, function* () {
-        const net = ctx && ctx.http || http;
-        const maxTimeout = ctx && ctx.timeoutMs || 3e4;
-        const t = Math.min(timeoutMs || 12e3, maxTimeout);
-        const res = yield net.request(url, { timeoutMs: t, headers: { Referer: referer || url } });
-        return res.ok ? res.text : "";
-      });
-    }
-    function fslBase(seed, ctx) {
-      return __async(this, null, function* () {
-        const cached = baseCache[seed.family];
-        if (cached && Date.now() - cached.at < 30 * 60 * 1e3) return cached.base;
-        const live = yield fslLive(seed, ctx);
-        if (!live) return "";
-        const liveBase = fslDomainPick(live.html, seed.family) || util.originOf(live.url);
-        baseCache[seed.family] = { base: liveBase, at: Date.now() };
-        return liveBase;
-      });
-    }
-    function fslLive(seed, ctx) {
-      return __async(this, null, function* () {
-        let html0 = yield fslGet(seed.seed, seed.seed, 6e3, ctx);
-        let url0 = seed.seed;
-        if (!html0 && seed.bootstrap) {
-          html0 = yield fslGet(seed.bootstrap, seed.bootstrap, 6e3, ctx);
-          url0 = seed.bootstrap || url0;
-        }
-        if (!html0) return null;
-        if (!fslIsLanding(html0)) return { html: html0, url: url0 };
-        const origin = util.originOf(url0);
-        if (!origin) return null;
-        const probed = yield fslGet(origin + FSL_LANDING_PROBE, origin, 12e3, ctx);
-        if (!probed || fslIsLanding(probed)) return null;
-        return { html: probed, url: origin };
-      });
-    }
-    function fslIsLanding(htmlText) {
-      return htmlText.indexOf("qikly.pro/host") >= 0 || htmlText.indexOf('id="stx"') >= 0;
-    }
-    function fslDomainPick(htmlText, family) {
-      const counts = {};
-      const re = new RegExp("https?:\\/\\/[a-z0-9.\\-]*" + family + "\\.[a-z]{2,10}", "ig");
-      let match;
-      while (match = re.exec(htmlText)) {
-        const value = match[0].toLowerCase();
-        if (value.indexOf("apk") >= 0 || value.slice(-4) === ".cfd") continue;
-        counts[value] = (counts[value] || 0) + 1;
-      }
-      let best = "";
-      let bestCount = 0;
-      Object.keys(counts).forEach(function(key) {
-        if (counts[key] > bestCount) {
-          best = key;
-          bestCount = counts[key];
-        }
-      });
-      return best;
-    }
-    function fslSearchHits(jsonText) {
-      let root = null;
-      try {
-        root = JSON.parse(jsonText);
-      } catch (error) {
-        return [];
-      }
-      const out = [];
-      (Array.isArray(root.hits) ? root.hits : []).forEach(function(hit) {
-        const doc = hit && hit.document ? hit.document : {};
-        const permalink = String(doc.permalink || "");
-        const title = String(doc.post_title || "");
-        if (permalink && title) out.push({ permalink, title });
-      });
-      return out;
-    }
-    function fslGroups(htmlText) {
-      const groups = [];
-      let heading = "";
-      let anchors = [];
-      const close = function() {
-        if (anchors.length && heading) groups.push({ heading, gateways: anchors.filter(function(v, i) {
-          return anchors.indexOf(v) === i;
-        }) });
-        anchors = [];
-      };
-      html.orderedTokens(htmlText).forEach(function(token) {
-        if (token.kind === "heading") {
-          const t = token.text.trim();
-          if (t && t.length < 220) {
-            if (anchors.length) close();
-            heading = downloadHeadingShaped(t) ? t : "";
-          }
-        } else {
-          if (FSL_GATEWAY_LINK_RE.test(token.href)) {
-            anchors.push(/vcloud\./i.test(token.href) ? token.href : token.href.replace(/\/+$/, "") + "/");
-          }
-        }
-      });
-      close();
-      const merged = {};
-      groups.forEach(function(group) {
-        if (!merged[group.heading]) merged[group.heading] = [];
-        merged[group.heading] = merged[group.heading].concat(group.gateways);
-      });
-      return Object.keys(merged).map(function(key) {
-        return { heading: key, gateways: merged[key].filter(function(v, i) {
-          return merged[key].indexOf(v) === i;
-        }) };
-      }).filter(function(group) {
-        return group.gateways.length > 0;
-      });
-    }
-    function downloadHeadingShaped(text) {
-      return DOWNLOAD_HEADING_RE.test(text);
-    }
-    function headingSizeOf(heading) {
-      const match = heading.match(HEADING_SIZE_RE);
-      if (match) return util.normalizeSizeToken(match[1]).replace("/ZIP", "");
-      return util.normalizeSizeToken(heading);
-    }
-    function releaseLanguageOf(text) {
-      const upper = String(text || "").toUpperCase();
-      if (/\bHINDI\b/.test(upper)) return "Hindi";
-      if (/\bTAMIL\b/.test(upper)) return "Tamil";
-      if (/\bTELUGU\b/.test(upper)) return "Telugu";
-      if (/\b(?:MULTI|DUAL|BOTH)\b/.test(upper)) return "Multi";
-      if (/\bENGLISH\b|\bENG\b/.test(upper)) return "English";
-      return "";
-    }
-    function fslServerLabel(tag, fallback) {
-      const label = String(tag == null ? "" : tag).trim();
-      if (!label) return fallback;
-      if (util.languageLabel(label)) return fallback;
-      if (SERVER_LABEL_ACTION_RE.test(label)) return fallback;
-      if (QUALITY_TEXT_RE.test(label)) return fallback;
-      return label.replace(SERVER_LABEL_TRAILING_RE, "").trim() || fallback;
-    }
-    function gatewayLinksOf(htmlText) {
-      const normalized = String(htmlText || "").replace(/\\\//g, "/");
-      const fastdl = [];
-      const vcloud = [];
-      let match;
-      FASTDL_LINK_RE.lastIndex = 0;
-      while (match = FASTDL_LINK_RE.exec(normalized)) {
-        if (fastdl.indexOf(match[0]) < 0) fastdl.push(match[0]);
-      }
-      VCLOUD_LINK_RE.lastIndex = 0;
-      while (match = VCLOUD_LINK_RE.exec(htmlText)) {
-        if (vcloud.indexOf(match[0]) < 0) vcloud.push(match[0]);
-      }
-      return { fastdl, cloud: vcloud };
-    }
-    function episodeFirstOrder(all, type, season, episode) {
-      const list = all || [];
-      if (type !== "tv" || !season || !episode || list.length <= 1) return list;
-      const start = Math.max(0, Math.min(episode - 1, list.length - 1));
-      return list.slice(start).concat(list.slice(0, start));
-    }
-    module2.exports._test = {
-      fslIsLanding,
-      fslDomainPick,
-      fslSearchHits,
-      fslGroups,
-      headingSizeOf,
-      releaseLanguageOf,
-      fslServerLabel,
-      gatewayLinksOf,
-      episodeFirstOrder
-    };
-  }
-});
-
-// src/indstream/providers/index.js
-var require_providers = __commonJS({
-  "src/indstream/providers/index.js"(exports2, module2) {
-    "use strict";
-    var hdhub = require_hdhub();
-    var vidrift = require_vidrift();
-    var bingr = require_bingr();
-    var moviebox = require_moviebox();
-    var hub4k = require_hub4k();
-    var fsl = require_fsl();
-    var PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
-    var BY_ID = {};
-    PROVIDERS.forEach(function(provider) {
-      BY_ID[provider.id] = provider;
-    });
-    function enabled(sources, type, list) {
-      return (list || PROVIDERS).filter(function(provider) {
-        if (sources && sources[provider.id] === false) return false;
-        if (provider.supports && provider.supports[type] === false) return false;
-        return true;
-      });
-    }
-    module2.exports = {
-      PROVIDERS,
-      BY_ID,
-      enabled
-    };
-  }
-});
-
-// src/indstream/racer.js
-var require_racer = __commonJS({
-  "src/indstream/racer.js"(exports2, module2) {
-    "use strict";
-    var http = require_http();
-    var GRACE_MS = 1e3;
-    var OVERALL_MAX_MS = 14e3;
-    function capOf(provider, settings) {
-      const own = Number(provider.raceTimeoutMs) || 12e3;
-      const ceiling = (Number(settings.requestTimeout) || 15) * 1e3 + 5e3;
-      return Math.min(own, ceiling);
-    }
-    function race(providers, context, normalize) {
-      return new Promise(function(resolve) {
-        const total = providers.length;
-        const collected = [];
-        const guards = [];
-        const controllers = [];
-        let settled = 0;
-        let finished = false;
-        let graceTimer = null;
-        if (!total) {
-          resolve(collected);
-          return;
-        }
-        const caps = providers.map(function(provider) {
-          return capOf(provider, context.settings);
-        });
-        const overallMs = Math.min(OVERALL_MAX_MS, Math.max.apply(null, caps) + 9e3);
-        const overallTimer = setTimeout(finish, overallMs);
-        function finish() {
-          if (finished) return;
-          finished = true;
-          clearTimeout(overallTimer);
-          if (graceTimer) clearTimeout(graceTimer);
-          guards.forEach(function(guard) {
-            if (guard && typeof guard.cancel === "function") guard.cancel();
-          });
-          controllers.forEach(function(controller) {
-            http.abort(controller);
-          });
-          context.log("done: " + collected.length + " streams from " + settled + "/" + total + " providers");
-          resolve(collected.slice());
-        }
-        function onFirstStream() {
-          if (graceTimer) return;
-          graceTimer = setTimeout(finish, GRACE_MS);
-        }
-        function settle() {
-          settled += 1;
-          if (settled >= total) finish();
-        }
-        providers.forEach(function(provider, i) {
-          const cap = caps[i];
-          const controller = http.createAbortController();
-          if (controller) controllers.push(controller);
-          const scope = Object.assign({}, context, {
-            deadline: Date.now() + cap - 1e3,
-            timeoutMs: Math.max(1e3, cap - 1e3),
-            signal: controller ? controller.signal : void 0
-          });
-          scope.http = http.scope(scope);
-          const startedAt = Date.now();
-          const work = Promise.resolve().then(function() {
-            return provider.resolve(scope);
-          });
-          const guard = http.withTimeout(work, cap, [], function() {
-            http.abort(controller);
-          });
-          guards.push(guard);
-          guard.then(function(list) {
-            if (finished) return;
-            const normalized = [];
-            (list || []).forEach(function(raw) {
-              try {
-                const stream = normalize(raw, provider, context);
-                if (stream) normalized.push(stream);
-              } catch (error) {
-              }
-            });
-            context.log(provider.name + ": " + normalized.length + " streams in " + (Date.now() - startedAt) + "ms");
-            if (normalized.length) {
-              Array.prototype.push.apply(collected, normalized);
-              onFirstStream();
-            }
-            settle();
-          });
-        });
-      });
-    }
-    module2.exports = {
-      GRACE_MS,
-      OVERALL_MAX_MS,
-      capOf,
-      race
-    };
-  }
-});
-
 // src/indstream/finalize.js
 var require_finalize = __commonJS({
   "src/indstream/finalize.js"(exports2, module2) {
@@ -2830,7 +1348,7 @@ var require_finalize = __commonJS({
       if (!stream) return 0;
       return Number(stream.height) || util.parseHeight(stream.quality);
     }
-    function normalizeStream(raw, provider, ctx) {
+    function normalizeStream(raw, provider2, ctx) {
       if (!raw || !raw.url) return null;
       const url = String(raw.url);
       const type = raw.type || (url.indexOf(".m3u8") >= 0 ? "hls" : url.indexOf(".mpd") >= 0 ? "dash" : "mp4");
@@ -2838,16 +1356,16 @@ var require_finalize = __commonJS({
       const quality = raw.quality || util.qualityLabel(declaredHeight);
       const height = declaredHeight || util.parseHeight(quality);
       const stream = {
-        title: util.streamTitle(provider, raw, ctx),
-        name: provider.name || "",
+        title: util.streamTitle(provider2, raw, ctx),
+        name: provider2.name || "",
         url,
         type,
         quality,
         height,
         size: raw.size || "",
         language: raw.language || "",
-        provider: provider.name || "",
-        providerId: provider.id || "",
+        provider: provider2.name || "",
+        providerId: provider2.id || "",
         headers: raw.headers || {}
       };
       if (Array.isArray(raw.subtitles) && raw.subtitles.length) {
@@ -2858,9 +1376,9 @@ var require_finalize = __commonJS({
     function rankMaps(providers) {
       const byId = {};
       const byName = {};
-      (providers || []).forEach(function(provider, index) {
-        if (provider.id) byId[provider.id] = index;
-        if (provider.name) byName[provider.name] = index;
+      (providers || []).forEach(function(provider2, index) {
+        if (provider2.id) byId[provider2.id] = index;
+        if (provider2.name) byName[provider2.name] = index;
       });
       return { byId, byName };
     }
@@ -2926,7 +1444,6 @@ var require_factory = __commonJS({
     var http = require_http();
     var tmdb = require_tmdb();
     var settings = require_settings();
-    var providers = require_providers();
     var racer = require_racer();
     var finalize = require_finalize();
     var util = require_util();
@@ -2956,13 +1473,11 @@ var require_factory = __commonJS({
         return stream;
       });
     }
-    function createPlugin(providerId, options) {
-      const opts = options || {};
-      const settingsOnly = !!opts.settingsOnly;
-      const singleProvider = providerId ? providers.BY_ID[providerId] : null;
+    function createPlugin(provider2) {
+      const activeProvider = provider2 || {};
+      const providerList = provider2 ? [provider2] : [];
       function getStreams(mediaId, mediaType, season, episode) {
         return __async(this, null, function* () {
-          if (settingsOnly) return [];
           const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
           const s = settings.getSettings();
           const inputId = String(mediaId == null ? "" : mediaId).trim();
@@ -3009,13 +1524,7 @@ var require_factory = __commonJS({
           });
           context.metaPromise = metaPromise;
           context.meta = null;
-          if (inputImdbId) yield metaPromise;
-          let wanted;
-          if (singleProvider) {
-            wanted = providers.enabled(s.sources, type, [singleProvider]);
-          } else {
-            wanted = providers.enabled(s.sources, type);
-          }
+          const wanted = !activeProvider.supports || activeProvider.supports[type] !== false ? providerList : [];
           if (!wanted.length) return [];
           let streams = yield racer.race(wanted, context, finalize.normalizeStream);
           if (s.probeQuality) {
@@ -3027,15 +1536,12 @@ var require_factory = __commonJS({
             minQuality: s.minQuality,
             includeDash: s.includeDash,
             resultLimit: s.resultLimit,
-            providers: singleProvider ? [singleProvider] : providers.PROVIDERS
+            providers: providerList
           });
         });
       }
       function onSettings() {
         return __async(this, null, function* () {
-          if (singleProvider) {
-            return settings.onSettingsFor([providerId]);
-          }
           return settings.onSettings();
         });
       }
@@ -3051,9 +1557,120 @@ var require_factory = __commonJS({
   }
 });
 
+// src/indstream/providers/vidrift.js
+var require_vidrift = __commonJS({
+  "src/indstream/providers/vidrift.js"(exports2, module2) {
+    "use strict";
+    var http = require_http();
+    var util = require_util();
+    var tmdb = require_tmdb();
+    var BASE = "https://embed.vidrift.net";
+    module2.exports = {
+      id: "vidrift",
+      name: "Vidrift",
+      speed: "fast",
+      supports: { movie: true, tv: true },
+      raceTimeoutMs: 4e3,
+      toggle: {
+        key: "sourceVidrift",
+        label: "Vidrift",
+        description: "Embed player with direct HLS/MP4 links."
+      },
+      resolve(ctx) {
+        return __async(this, null, function* () {
+          const net = ctx.http || http;
+          const type = ctx.type;
+          const season = Number(ctx.season) || 0;
+          const episode = Number(ctx.episode) || 0;
+          if (ctx.deadline && Date.now() >= ctx.deadline) return [];
+          if (!ctx.tmdbId) yield tmdb.awaitMeta(ctx);
+          if (!ctx.tmdbId) {
+            ctx.log("vidrift: missing tmdb id, skipping");
+            return [];
+          }
+          if (type === "tv" && (season <= 0 || episode <= 0)) return [];
+          const page = type === "movie" ? BASE + "/embed/movie/" + ctx.tmdbId : BASE + "/embed/tv/" + ctx.tmdbId + "/" + season + "/" + episode;
+          const html = yield net.getText(page, {
+            timeoutMs: ctx.timeoutMs,
+            headers: { Referer: BASE + "/" }
+          });
+          if (!html) {
+            ctx.log("vidrift: embed page unreachable (" + page + ")");
+            return [];
+          }
+          const out = [];
+          vidriftStreams(html).forEach(function(pair) {
+            const rel = pair[0];
+            const label = pair[1];
+            const abs = /^https?:/i.test(rel) ? rel : BASE + (rel.charAt(0) === "/" ? rel : "/" + rel);
+            out.push({
+              provider: module2.exports.name,
+              url: abs,
+              type: abs.indexOf(".m3u8") >= 0 ? "hls" : "mp4",
+              quality: "",
+              height: 0,
+              language: label || "",
+              size: "",
+              title: "",
+              headers: { "User-Agent": http.DEFAULT_UA, Referer: BASE + "/" }
+            });
+          });
+          if (!out.length) {
+            if (html.indexOf("embedMeta") >= 0) ctx.log("vidrift: embedMeta present but no usable stream urls");
+            else if (html.indexOf("iframe") >= 0 || html.indexOf("Embed this page") >= 0) ctx.log("vidrift: embed gated (iframe wall)");
+            else ctx.log("vidrift: no embedMeta in page");
+          }
+          if (out.length) yield tmdb.awaitMeta(ctx, 400);
+          return out;
+        });
+      }
+    };
+    function vidriftStreams(html) {
+      const mi = html.indexOf("var embedMeta");
+      const brace = mi >= 0 ? html.indexOf("{", mi) : -1;
+      const json = brace >= 0 ? util.extractBalancedJson(html, brace) : "";
+      let meta = null;
+      try {
+        meta = json ? JSON.parse(json) : null;
+      } catch (error) {
+        meta = null;
+      }
+      if (!meta) return [];
+      const out = [];
+      const arr = meta.orionStreams;
+      if (Array.isArray(arr)) {
+        arr.forEach(function(o) {
+          if (!o || typeof o !== "object") return;
+          const u = o.url;
+          if (!u || u.indexOf(".m3u8") < 0 && u.indexOf(".mp4") < 0) return;
+          out.push([u, vidriftLabel(o.name)]);
+        });
+      }
+      if (!out.length && meta.evionUrl && meta.evionUrl.indexOf(".m3u8") >= 0) {
+        out.push([meta.evionUrl, ""]);
+      }
+      return out;
+    }
+    function vidriftLabel(name) {
+      const text = String(name || "");
+      const tokens = text.split(/[^A-Za-z]+/).filter(Boolean);
+      const last = tokens[tokens.length - 1] || "";
+      const lower = last.toLowerCase();
+      const known = ["hindi", "tamil", "telugu", "english", "kannada", "malayalam", "bengali", "marathi", "punjabi", "original"];
+      if (known.indexOf(lower) < 0) return "";
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    }
+    module2.exports._test = {
+      vidriftStreams,
+      vidriftLabel
+    };
+  }
+});
+
 // src/indstream/entries/vidrift.js
 var factory = require_factory();
-var api = factory.createPlugin("vidrift");
+var provider = require_vidrift();
+var api = factory.createPlugin(provider);
 if (typeof module !== "undefined" && module.exports) {
   module.exports = api;
 }

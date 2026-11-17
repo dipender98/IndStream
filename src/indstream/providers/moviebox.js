@@ -2,6 +2,7 @@
 
 const http = require('../http');
 const util = require('../util');
+const tmdb = require('../tmdb');
 
 const HOST = 'h5-api.aoneroom.com';
 const BASE = 'https://' + HOST;
@@ -23,7 +24,7 @@ module.exports = {
   name: 'MovieBox',
   speed: 'normal',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 2000,
+  raceTimeoutMs: 4000,
   toggle: {
     key: 'sourceMoviebox',
     label: 'MovieBox',
@@ -31,7 +32,7 @@ module.exports = {
   },
 
   async resolve(ctx) {
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
+    const meta = await tmdb.awaitMeta(ctx);
     const title = meta && meta.title ? meta.title : '';
     const type = ctx.type;
     if (!title) {

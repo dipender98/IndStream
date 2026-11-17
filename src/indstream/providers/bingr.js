@@ -2,6 +2,7 @@
 
 const http = require('../http');
 const util = require('../util');
+const tmdb = require('../tmdb');
 
 const API = 'https://api.bingr.one/api/stream';
 const REFERER = 'https://bingr.one/';
@@ -21,13 +22,14 @@ module.exports = {
 
   async resolve(ctx) {
     const net = ctx.http || http;
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
+    if (!ctx.tmdbId) await tmdb.awaitMeta(ctx);
+    const meta = ctx.meta || null;
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
     const type = ctx.type;
     const id = String(ctx.tmdbId || '');
-    if (!title || !id) {
-      ctx.log('bingr: missing ' + (!title ? 'title' : 'id') + ', skipping');
+    if (!id) {
+      ctx.log('bingr: missing id, skipping');
       return [];
     }
 
@@ -77,12 +79,15 @@ module.exports = {
         });
       });
     }
+    if (out.length) await tmdb.awaitMeta(ctx, 400);
     return out;
   },
 };
 
 function bingrBody(srv, type, id, title, year, season, episode) {
-  const query = { title: title, year: year };
+  const query = {};
+  if (title) query.title = title;
+  if (year) query.year = year;
   if (type === 'tv') {
     query.season = Number(season) || 1;
     query.episode = Number(episode) || 1;

@@ -3,6 +3,7 @@
 const http = require('../http');
 const html = require('../html');
 const util = require('../util');
+const tmdb = require('../tmdb');
 const filehost = require('../filehost');
 
 const BASES = ['https://4khdhub.one', 'https://4khdhub.com'];
@@ -18,7 +19,7 @@ module.exports = {
   name: '4KHDHub',
   speed: 'slow',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 3000,
+  raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceHub4k',
     label: '4KHDHub',
@@ -27,7 +28,7 @@ module.exports = {
 
   async resolve(ctx) {
     const net = ctx.http || http;
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
+    const meta = await tmdb.awaitMeta(ctx);
     const title = meta && meta.title ? meta.title : '';
     const year = meta && meta.year ? meta.year : '';
     if (!title) {

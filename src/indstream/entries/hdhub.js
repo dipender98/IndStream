@@ -1,7 +1,8 @@
 'use strict';
 
 const factory = require('../factory');
-const api = factory.createPlugin('hdhub');
+const provider = require('../providers/hdhub');
+const api = factory.createPlugin(provider);
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = api;

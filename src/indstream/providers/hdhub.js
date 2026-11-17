@@ -11,7 +11,7 @@ module.exports = {
   name: 'HdHub',
   speed: 'very-fast',
   supports: { movie: true, tv: true },
-  raceTimeoutMs: 5000,
+  raceTimeoutMs: 3000,
   toggle: {
     key: 'sourceHdhub',
     label: 'HdHub',
@@ -21,24 +21,7 @@ module.exports = {
   async resolve(ctx) {
     const net = ctx.http || http;
     const type = ctx.type;
-    const meta = await http.withTimeout(ctx.metaPromise || Promise.resolve(ctx.meta || null), 3000, null);
-    let imdbId = (meta && meta.imdbId) || ctx.imdbId || '';
-    if (!imdbId && ctx.tmdbId) {
-      imdbId = await tmdb.resolveImdbId(ctx.tmdbId, type, meta, ctx);
-    }
-
-    let pathId = '';
-    if (imdbId) {
-      pathId = 'tt' + String(imdbId).replace(/^tt/, '');
-      if (type === 'tv' || type === 'series') {
-        pathId += ':' + (Number(ctx.season) || 1) + ':' + (Number(ctx.episode) || 1);
-      }
-    } else if (ctx.tmdbId) {
-      pathId = 'tmdb:' + ctx.tmdbId;
-      if (type === 'tv' || type === 'series') {
-        pathId += ':' + (Number(ctx.season) || 1) + ':' + (Number(ctx.episode) || 1);
-      }
-    }
+    const pathId = await streamPath(ctx);
     if (!pathId) return [];
 
     const kind = type === 'tv' || type === 'series' ? 'series' : 'movie';
@@ -74,7 +57,31 @@ module.exports = {
       seen[entry.url] = true;
       out.push(entry);
     });
+    if (out.length) await tmdb.awaitMeta(ctx, 400);
     ctx.log('hdhub: ' + out.length + ' streams');
     return out;
   },
+};
+
+async function streamPath(ctx) {
+  let id = '';
+  if (ctx.imdbId) {
+    id = 'tt' + String(ctx.imdbId).replace(/^tt/i, '');
+  } else if (ctx.tmdbId) {
+    id = 'tmdb:' + ctx.tmdbId;
+  } else {
+    const meta = await tmdb.awaitMeta(ctx, 1000);
+    const imdbId = (meta && meta.imdbId) || ctx.imdbId || '';
+    if (imdbId) id = 'tt' + String(imdbId).replace(/^tt/i, '');
+    else if (meta && meta.id) id = 'tmdb:' + meta.id;
+  }
+  if (!id) return '';
+  if (ctx.type === 'tv' || ctx.type === 'series') {
+    id += ':' + (Number(ctx.season) || 1) + ':' + (Number(ctx.episode) || 1);
+  }
+  return id;
+}
+
+module.exports._test = {
+  streamPath: streamPath,
 };

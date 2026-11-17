@@ -64,12 +64,19 @@ function race(providers, context, normalize) {
       const controller = http.createAbortController();
       if (controller) controllers.push(controller);
 
+      // Keep a short reserve for cleanup, but leave most of small budgets usable.
+      const reserve = Math.min(1000, Math.max(250, Math.floor(cap / 5)));
       const scope = Object.assign({}, context, {
-        deadline: Date.now() + cap - 1000,
-        timeoutMs: Math.max(1000, cap - 1000),
+        deadline: Date.now() + cap - reserve,
+        timeoutMs: Math.max(1000, cap - reserve),
         signal: controller ? controller.signal : undefined,
       });
       scope.http = http.scope(scope);
+      if (scope.metaPromise) {
+        scope.metaPromise.then(function (meta) {
+          if (meta && !scope.meta) scope.meta = meta;
+        });
+      }
 
       const startedAt = Date.now();
       const work = Promise.resolve().then(function () {
@@ -86,7 +93,7 @@ function race(providers, context, normalize) {
         const normalized = [];
         (list || []).forEach(function (raw) {
           try {
-            const stream = normalize(raw, provider, context);
+            const stream = normalize(raw, provider, scope);
             if (stream) normalized.push(stream);
           } catch (error) {
             /* skip malformed entries, keep the rest of the provider's output */

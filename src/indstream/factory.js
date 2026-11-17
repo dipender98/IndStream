@@ -3,7 +3,6 @@
 const http = require('./http');
 const tmdb = require('./tmdb');
 const settings = require('./settings');
-const providers = require('./providers');
 const racer = require('./racer');
 const finalize = require('./finalize');
 const util = require('./util');
@@ -35,14 +34,11 @@ async function probeUnknownQuality(stream, ctx) {
   return stream;
 }
 
-function createPlugin(providerId, options) {
-  const opts = options || {};
-  const settingsOnly = !!opts.settingsOnly;
-  const singleProvider = providerId ? providers.BY_ID[providerId] : null;
+function createPlugin(provider) {
+  const activeProvider = provider || {};
+  const providerList = provider ? [provider] : [];
 
   async function getStreams(mediaId, mediaType, season, episode) {
-    if (settingsOnly) return [];
-    // rest...
     const type = mediaType === 'tv' || mediaType === 'series' ? 'tv' : 'movie';
     const s = settings.getSettings();
 
@@ -94,14 +90,9 @@ function createPlugin(providerId, options) {
     context.metaPromise = metaPromise;
     context.meta = null;
 
-    if (inputImdbId) await metaPromise;
-
-    let wanted;
-    if (singleProvider) {
-      wanted = providers.enabled(s.sources, type, [singleProvider]);
-    } else {
-      wanted = providers.enabled(s.sources, type);
-    }
+    const wanted = !activeProvider.supports || activeProvider.supports[type] !== false
+      ? providerList
+      : [];
     if (!wanted.length) return [];
 
     let streams = await racer.race(wanted, context, finalize.normalizeStream);
@@ -116,14 +107,11 @@ function createPlugin(providerId, options) {
       minQuality: s.minQuality,
       includeDash: s.includeDash,
       resultLimit: s.resultLimit,
-      providers: singleProvider ? [singleProvider] : providers.PROVIDERS,
+      providers: providerList,
     });
   }
 
   async function onSettings() {
-    if (singleProvider) {
-      return settings.onSettingsFor([providerId]);
-    }
     return settings.onSettings();
   }
 

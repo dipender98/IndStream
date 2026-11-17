@@ -14,7 +14,7 @@ const DEFAULTS = Object.assign({}, CORE_DEFAULTS);
 const SETTINGS_LAYOUT = [
   {
     type: 'info',
-    label: 'Shared settings for every IndStream provider. Configure once here; all providers read these values.',
+    label: 'Settings for this IndStream server. Each server keeps its own copy.',
   },
   {
     type: 'header',
@@ -122,7 +122,6 @@ function getSettings() {
     probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
     includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
     debug: normalizeBool(merged.debug, DEFAULTS.debug),
-    sources: {},
   };
   if (!settings.requestTimeout) settings.requestTimeout = 15;
   return settings;
@@ -132,15 +131,9 @@ function onSettings() {
   return SETTINGS_LAYOUT;
 }
 
-function onSettingsFor() {
-  return SETTINGS_LAYOUT;
-}
-
 module.exports = {
   DEFAULTS: DEFAULTS,
   SETTINGS_LAYOUT: SETTINGS_LAYOUT,
-  PROVIDER_SETTINGS: {},
   getSettings: getSettings,
   onSettings: onSettings,
-  onSettingsFor: onSettingsFor,
 };

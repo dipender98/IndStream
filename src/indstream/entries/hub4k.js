@@ -1,7 +1,8 @@
 'use strict';
 
 const factory = require('../factory');
-const api = factory.createPlugin('hub4k');
+const provider = require('../providers/hub4k');
+const api = factory.createPlugin(provider);
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = api;

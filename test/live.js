@@ -1,59 +1,86 @@
 'use strict';
 
-const plugin = require('../providers/indstream');
+const path = require('path');
+const manifest = require('../manifest.json');
 
+const ROOT = path.join(__dirname, '..');
 const TMDB = {
   inception: 27205,
   got: { id: 1399, season: 1, episode: 1 },
 };
 
+function elapsed(started) {
+  return String(Date.now() - started).padStart(5, ' ') + 'ms';
+}
+
 async function run() {
   const args = process.argv.slice(2);
   const mode = args[0] || 'movie';
   const idArg = args[1] || '';
+  const only = args[2] || '';
+  const season = Number(args[3]) || TMDB.got.season;
+  const episode = Number(args[4]) || TMDB.got.episode;
   const input = idArg || (mode === 'movie' ? TMDB.inception : TMDB.got.id);
-  console.log('IndStream live smoke (' + mode + ', id ' + input + ')');
+
+  const scrapers = manifest.scrapers.filter(function (scraper) {
+    return scraper.filename && (!only || scraper.id === only);
+  });
+  if (!scrapers.length) {
+    console.error('No scraper matched: ' + only);
+    process.exitCode = 1;
+    return;
+  }
 
   globalThis.SCRAPER_SETTINGS = JSON.stringify({
     minQuality: '720',
-    resultLimit: '20',
-    requestTimeout: '25',
+    resultLimit: '40',
+    requestTimeout: '15',
     probeQuality: false,
-    debug: true,
+    debug: false,
   });
 
-  let streams = [];
+  console.log('IndStream live probe (' + mode + ', id ' + input + ', ' + scrapers.length + ' scrapers)');
+  const apis = scrapers.map(function (scraper) {
+    return { scraper: scraper, api: require(path.join(ROOT, scraper.filename)) };
+  });
   const started = Date.now();
-  if (mode === 'movie') {
-    streams = await plugin.getStreams(input, 'movie', null, null);
-  } else {
-    streams = await plugin.getStreams(input, 'tv', TMDB.got.season, TMDB.got.episode);
-  }
-  const elapsed = Date.now() - started;
-  console.log('elapsed: ' + elapsed + 'ms');
-  console.log('total streams: ' + streams.length);
-  streams.forEach(function (s, i) {
-    console.log('  [' + i + '] ' + s.provider + ' | ' + s.quality + ' | ' + s.language + ' | ' + s.type + ' | ' + s.url.slice(0, 110));
+
+  const results = await Promise.all(
+    apis.map(async function (entry) {
+      const name = entry.scraper.name || entry.scraper.id;
+      try {
+        const streams = mode === 'tv'
+          ? await entry.api.getStreams(input, 'tv', season, episode)
+          : await entry.api.getStreams(input, 'movie', null, null);
+        console.log('[' + elapsed(started) + '] ' + name + ' -> ' + streams.length + ' streams');
+        return { scraper: entry.scraper, streams: streams, error: null };
+      } catch (error) {
+        console.log('[' + elapsed(started) + '] ' + name + ' failed: ' + (error.message || error));
+        return { scraper: entry.scraper, streams: [], error: error };
+      }
+    })
+  );
+
+  let total = 0;
+  results.forEach(function (result) {
+    total += result.streams.length;
   });
 
-  const providers = {};
-  streams.forEach(function (s) { providers[s.provider] = (providers[s.provider] || 0) + 1; });
-  console.log('per provider: ' + JSON.stringify(providers));
+  console.log('total: ' + total + ' streams in ' + (Date.now() - started) + 'ms');
 
-  if (!streams.length) {
-    console.log('SMOKE WARNING: no streams found (network-dependent)');
-    return;
-  }
-  const bad = streams.filter(function (s) { return !s.url || !s.provider; });
+  const bad = [];
+  results.forEach(function (result) {
+    result.streams.forEach(function (stream) {
+      if (!stream.url || !stream.provider) bad.push(stream);
+    });
+  });
   if (bad.length) {
-    console.log('SMOKE FAIL: streams missing url/provider');
+    console.log('SMOKE FAIL: ' + bad.length + ' streams missing url/provider');
     process.exitCode = 1;
   }
 }
 
-run().then(function () {
-  process.exit(process.exitCode || 0);
-}).catch(function (err) {
-  console.error('SMOKE ERROR:', err);
-  process.exit(1);
+run().catch(function (error) {
+  console.error('SMOKE ERROR:', error);
+  process.exitCode = 1;
 });

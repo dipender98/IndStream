@@ -1,45 +1,14 @@
 {
   "name": "IndStream",
-  "version": "1.7.2",
-  "description": "IndStream — multiple Nuvio scrapers (one per server) with a single shared settings page.",
+  "version": "1.8.0",
+  "description": "IndStream — independent Nuvio scrapers (one per server), each with its own settings.",
   "author": "dipender98",
   "scrapers": [
-    {
-      "id": "indstream",
-      "name": "IndStream",
-      "description": "Combined racer across all servers. Owns the shared settings page.",
-      "version": "1.7.2",
-      "author": "dipender98",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/indstream.js",
-      "enabled": true,
-      "hasSettings": true,
-      "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
-      "contentLanguage": [
-        "hi",
-        "en",
-        "ta",
-        "te",
-        "ml",
-        "kn",
-        "bn"
-      ],
-      "formats": [
-        "mp4",
-        "mkv",
-        "m3u8",
-        "mpd"
-      ],
-      "supportsExternalPlayer": true
-    },
     {
       "id": "hdhub",
       "name": "HdHub",
       "description": "Fast aggregator: instant HLS streams plus 4K file links.",
-      "version": "1.7.2",
+      "version": "1.8.0",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -47,6 +16,7 @@
       ],
       "filename": "providers/hdhub.js",
       "enabled": true,
+      "hasSettings": true,
       "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": [
         "hi",
@@ -69,7 +39,7 @@
       "id": "vidrift",
       "name": "Vidrift",
       "description": "Embed player with direct HLS/MP4 links.",
-      "version": "1.7.2",
+      "version": "1.8.0",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -77,6 +47,7 @@
       ],
       "filename": "providers/vidrift.js",
       "enabled": true,
+      "hasSettings": true,
       "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": [
         "hi",
@@ -99,7 +70,7 @@
       "id": "bingr",
       "name": "Bingr",
       "description": "Multi-server JSON API. Usually the fastest source.",
-      "version": "1.7.2",
+      "version": "1.8.0",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -107,6 +78,7 @@
       ],
       "filename": "providers/bingr.js",
       "enabled": true,
+      "hasSettings": true,
       "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": [
         "hi",
@@ -129,7 +101,7 @@
       "id": "moviebox",
       "name": "MovieBox",
       "description": "Title-keyed catalogue with download and playback renditions.",
-      "version": "1.7.2",
+      "version": "1.8.0",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -137,6 +109,7 @@
       ],
       "filename": "providers/moviebox.js",
       "enabled": true,
+      "hasSettings": true,
       "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": [
         "hi",
@@ -159,7 +132,7 @@
       "id": "hub4k",
       "name": "4KHDHub",
       "description": "4K-first release pages resolved through file-host gateways.",
-      "version": "1.7.2",
+      "version": "1.8.0",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -167,6 +140,7 @@
       ],
       "filename": "providers/hub4k.js",
       "enabled": true,
+      "hasSettings": true,
       "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": [
         "hi",
@@ -189,7 +163,7 @@
       "id": "fsl",
       "name": "FSL",
       "description": "Fast file links from release blogs. Heaviest source.",
-      "version": "1.7.2",
+      "version": "1.8.0",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -197,6 +171,7 @@
       ],
       "filename": "providers/fsl.js",
       "enabled": false,
+      "hasSettings": true,
       "logo": "https://raw.githubusercontent.com/dipender98/IndStream/main/assets/indstream.png",
       "contentLanguage": [
         "hi",
