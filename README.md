@@ -4,6 +4,8 @@ A [Nuvio](https://nuvio.tv) / Stremio addon for movies and series streams,
 hosted on Fly.io.
 
 Live: https://indstream.fly.dev/
+Configure: https://indstream.fly.dev/
+Install (addon URL): https://indstream.fly.dev/manifest.json
 
 ## Run locally
 
