@@ -1,8 +1,8 @@
-app = "indstream-addon"
+app = "indstream"
 primary_region = "iad"
 
 [build]
-  dockerfile = "addon/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [http_service]
   internal_port = 8080
