@@ -460,6 +460,8 @@ function loadStyles() {
   });
 }
 
+var loginConfigured = false;
+
 async function loadAccount() {
   const note = document.getElementById('installState');
   const googleBtn = document.getElementById('installGoogleBtn');
@@ -467,22 +469,23 @@ async function loadAccount() {
     const res = await fetch('/api/me');
     const data = await res.json();
     const signedIn = !!(data.signedIn && data.user);
+    loginConfigured = !!data.loginEnabled;
     const name = signedIn ? (data.user.name || 'Account') : 'Guest';
     if (note) {
       note.textContent = signedIn
         ? 'Signed in as ' + name + '. Your settings stay on this device; copy the addon URL to use it in Nuvio/Stremio.'
         : 'Guest — copy this URL and paste it into Nuvio/Stremio. Settings stay on this device.';
     }
-    if (googleBtn) googleBtn.hidden = signedIn || !data.loginEnabled;
+    if (googleBtn) googleBtn.hidden = signedIn;
     const modalGoogleBtn = document.getElementById('modalGoogleBtn');
-    if (modalGoogleBtn) modalGoogleBtn.hidden = !data.loginEnabled;
+    if (modalGoogleBtn) modalGoogleBtn.hidden = false;
     document.getElementById('accountName').textContent = name;
-    document.getElementById('accountSub').textContent = signedIn ? 'Connected · account state synced' : 'Local preferences';
+    document.getElementById('accountSub').textContent = signedIn ? 'Connected on this browser' : 'Local preferences';
     document.getElementById('bigName').textContent = name;
     document.getElementById('bigSub').textContent = signedIn
-      ? (data.user.email || 'Connected · this browser is signed in')
-      : 'Local preferences — sign in to keep your account connected.';
-    document.getElementById('googleBtn').hidden = signedIn || !data.loginEnabled;
+      ? (data.user.email || 'Connected on this browser')
+      : 'Sign in with Google — or stay local. Settings always save on this device.';
+    document.getElementById('googleBtn').hidden = signedIn;
     document.getElementById('guestBtn').hidden = signedIn;
     document.getElementById('logoutBtn').hidden = !signedIn;
     document.getElementById('signOutBtn').hidden = !signedIn;
@@ -514,6 +517,14 @@ async function loadAccount() {
     const signOutBtn = document.getElementById('signOutBtn');
     if (signOutBtn) signOutBtn.hidden = true;
   }
+}
+
+function signInWithGoogle() {
+  if (!loginConfigured) {
+    toast('Google sign-in is not configured on this instance — settings still save on this device.');
+    return;
+  }
+  window.location.href = '/auth/google';
 }
 
 const WIZARD_STEPS = [
@@ -676,7 +687,7 @@ function setupWelcomeModal() {
   }).catch(function () {});
   document.getElementById('welcomeClose').addEventListener('click', close);
   document.getElementById('modalGuestBtn').addEventListener('click', close);
-  document.getElementById('modalGoogleBtn').addEventListener('click', function () { window.location.href = '/auth/google'; });
+  document.getElementById('modalGoogleBtn').addEventListener('click', function () { signInWithGoogle(); });
   modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
   document.addEventListener('keydown', function (e) {
     if (modal.classList.contains('hidden')) return;
@@ -710,9 +721,9 @@ function setupActions() {
     if (url) importFromUrl(url);
   });
   const installGoogleBtn = document.getElementById('installGoogleBtn');
-  if (installGoogleBtn) installGoogleBtn.addEventListener('click', function () { window.location.href = '/auth/google'; });
+  if (installGoogleBtn) installGoogleBtn.addEventListener('click', signInWithGoogle);
   const googleBtn = document.getElementById('googleBtn');
-  if (googleBtn) googleBtn.addEventListener('click', function () { window.location.href = '/auth/google'; });
+  if (googleBtn) googleBtn.addEventListener('click', signInWithGoogle);
   const guestBtn = document.getElementById('guestBtn');
   if (guestBtn) guestBtn.addEventListener('click', function () { toast('Guest mode — preferences stay on this device'); });
   const logoutBtn = document.getElementById('logoutBtn');
@@ -985,29 +996,6 @@ function setupSpatialNav() {
   });
 }
 setupSpatialNav();
-
-/* Canvas toggle: AMOLED black / dim elevated surface. */
-var LS_CANVAS = 'indstream.canvas';
-var canvasToggle = document.getElementById('canvasToggle');
-function applyCanvas(mode) {
-  var dim = mode === 'dim';
-  document.documentElement.setAttribute('data-canvas', mode);
-  if (canvasToggle) {
-    canvasToggle.setAttribute('aria-pressed', String(dim));
-    var sun = canvasToggle.querySelector('.canvas-icon-sun');
-    var moon = canvasToggle.querySelector('.canvas-icon-moon');
-    if (sun) sun.style.display = dim ? 'none' : '';
-    if (moon) moon.style.display = dim ? '' : 'none';
-  }
-}
-applyCanvas(safeGet(LS_CANVAS) === 'dim' ? 'dim' : 'amoled');
-if (canvasToggle) {
-  canvasToggle.addEventListener('click', function () {
-    var next = (document.documentElement.getAttribute('data-canvas') === 'dim') ? 'amoled' : 'dim';
-    safeSet(LS_CANVAS, next);
-    applyCanvas(next);
-  });
-}
 
 /* Live setup stats on the install panel. */
 function updateStats(cfg) {

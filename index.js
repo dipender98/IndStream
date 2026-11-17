@@ -1,7 +1,6 @@
 'use strict';
 
 const http = require('http');
-const url = require('url');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -383,9 +382,9 @@ function serveStatic(req, res, filePath) {
 }
 
 async function handleRequest(req, res) {
-  const parsed = url.parse(req.url, true);
-  const pathname = parsed.pathname || '/';
-  const query = parsed.query || {};
+  const u = new URL(req.url || '/', 'http://localhost');
+  const pathname = u.pathname || '/';
+  const query = Object.fromEntries(u.searchParams.entries());
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {

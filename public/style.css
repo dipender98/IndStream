@@ -1,7 +1,4 @@
-/* IndStream 3.0 — Moonlit Graphite.
-   Neutral AMOLED canvas, quiet flat glass, titanium action material.
-   Concentric radii, Inter + IBM Plex Mono. */
-
+/* IndStream v1.0 — AMOLED. Single dark canvas. */
 :root {
   /* Neutral graphite ramp — nothing leans blue. */
   --bg: #0b0b0c;
@@ -46,13 +43,6 @@
   --focus: #9aa7e8;
   --bg-grad: radial-gradient(130% 78% at 62% -12%, rgba(255, 255, 255, .045), transparent 55%),
     linear-gradient(180deg, #101011 0%, #0d0d0e 34%, #0a0a0b 100%);
-}
-
-[data-canvas="dim"] {
-  --bg-grad: radial-gradient(130% 78% at 62% -12%, rgba(255, 255, 255, .055), transparent 55%),
-    linear-gradient(180deg, #171716 0%, #131313 40%, #101010 100%);
-  --bg-2: #161617;
-  --glass-solid: #171718;
 }
 
 * { box-sizing: border-box; }
@@ -514,7 +504,6 @@ img, svg, canvas { max-width: 100%; }
 .stat-value.small b { font-size: .98rem; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat-value small { color: var(--faint); font-size: .66rem; white-space: nowrap; }
 .stat-foot { color: var(--faint); font-size: .61rem; line-height: 1.4; margin-top: auto; }
-.canvas-icon { width: 18px; height: 18px; }
 
 /* ---------- Steps strip & ticker ---------- */
 .steps-strip {
@@ -540,7 +529,7 @@ img, svg, canvas { max-width: 100%; }
    ========================================================= */
 .profiles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 13px; }
 .profile-card {
-  display: flex; flex-direction: column; gap: 12px; padding: 17px;
+  display: flex; flex-direction: column; gap: 12px; padding: 17px; min-width: 0;
   border: 1px solid var(--line-strong); border-radius: var(--r-m);
   background: linear-gradient(165deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .025));
   box-shadow: var(--shadow-s), inset 0 1px 0 var(--line);
@@ -565,9 +554,9 @@ img, svg, canvas { max-width: 100%; }
 .profile-meta { color: var(--faint); font-size: .7rem; }
 .profile-meta strong { color: var(--muted); }
 .profile-url {
-  padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-xs);
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-xs); overflow: auto; min-width: 0;
   background: rgba(0, 0, 0, .35); color: var(--faint);
-  font-family: var(--font-mono); font-size: .55rem; white-space: nowrap; overflow-x: auto; scrollbar-width: thin;
+  font-family: var(--font-mono); font-size: .55rem; white-space: nowrap; scrollbar-width: thin;
 }
 .profile-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
 .profile-btn {
@@ -936,7 +925,8 @@ kbd { padding: 2px 7px; border: 1px solid var(--line-strong); border-bottom-widt
   .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .segmented { flex-direction: column; padding: 5px; }
   .tuner-bar { flex-wrap: wrap; }
-  .tuner-steps { order: 3; width: 100%; justify-content: center; }
+  .tuner-btn.next { margin-left: auto; }
+  .tuner-steps { order: 3; flex: 0 0 100%; justify-content: center; }
   .step-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .hint-keyboard { display: none; }
   .account-big { align-items: flex-start; flex-direction: column; }
