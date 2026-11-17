@@ -1,6 +1,9 @@
 # IndStream
 
-A [Nuvio](https://nuvio.tv) addon for movies and series streams.
+A [Nuvio](https://nuvio.tv) / Stremio addon for movies and series streams,
+hosted on Fly.io.
+
+Live: https://indstream.fly.dev/
 
 ## Run locally
 
@@ -10,13 +13,29 @@ npm start
 ```
 
 Open `http://localhost:8080/` to configure and generate your addon URL, or
-`http://localhost:8080/manifest.json` for the default config. Install in
-Nuvio/Stremio with the addon URL.
+`http://localhost:8080/manifest.json` for the default config.
 
-## Install (hosted)
+## Deploy (Fly.io, free tier)
 
-Once deployed (e.g. Fly.io), open `https://<your-host>/` to configure, then add
-the generated addon URL in Nuvio/Stremio.
+```bash
+fly auth login
+fly apps create indstream
+fly deploy
+```
+
+The app stays live at `https://indstream.fly.dev/`.
+
+## Configure
+
+Open `https://indstream.fly.dev/` (or `http://localhost:8080/`), pick your
+settings (minimum quality, result limit, timeout, DASH, probing, debug), and
+click "Generate URL". Each user gets their own configured addon URL of the
+form `https://<host>/<config>/manifest.json`.
+
+## Install
+
+Paste the addon URL into Nuvio (Settings -> Plugins/Addons -> Add by URL) or
+Stremio (Addons -> search bar).
 
 ## DMCA Notice
 
