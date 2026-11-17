@@ -106,6 +106,7 @@ module.exports = {
                   language: lang,
                   size: size,
                   title: serverName,
+                  releaseText: String(group.heading || '').slice(0, 300),
                   headers: { Referer: util.originOf(link.url), 'User-Agent': http.DEFAULT_UA },
                 });
                 perGroup += 1;

@@ -139,6 +139,7 @@ module.exports = {
               language: audio,
               size: item.size,
               title: (module.exports.name + ' ' + qText).trim(),
+              releaseText: String(item.title || '').slice(0, 300),
               headers: { Referer: referer, 'User-Agent': http.DEFAULT_UA },
             });
             if (out.length >= 6) break;

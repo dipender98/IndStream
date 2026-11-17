@@ -1,5 +1,7 @@
 'use strict';
 
+const styles = require('./styles');
+
 const CORE_DEFAULTS = {
   minQuality: '720',
   resultLimit: '40',
@@ -7,6 +9,7 @@ const CORE_DEFAULTS = {
   probeQuality: false,
   includeDash: true,
   debug: false,
+  streamStyle: styles.DEFAULT_STYLE,
 };
 
 const DEFAULTS = Object.assign({}, CORE_DEFAULTS);
@@ -73,6 +76,20 @@ const SETTINGS_LAYOUT = [
   },
   {
     type: 'header',
+    label: 'Display',
+  },
+  {
+    type: 'select',
+    key: 'streamStyle',
+    label: 'Stream style',
+    description: 'How each stream is labelled in the list. Badge shows source and quality.',
+    defaultValue: styles.DEFAULT_STYLE,
+    options: styles.STYLE_OPTIONS.map(function (opt) {
+      return { label: opt.label.replace(' (default)', ''), value: opt.id };
+    }),
+  },
+  {
+    type: 'header',
     label: 'Diagnostics',
   },
   {
@@ -122,6 +139,7 @@ function getSettings() {
     probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
     includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
     debug: normalizeBool(merged.debug, DEFAULTS.debug),
+    streamStyle: pick(merged.streamStyle, styles.STYLE_IDS, DEFAULTS.streamStyle),
   };
   if (!settings.requestTimeout) settings.requestTimeout = 15;
   return settings;

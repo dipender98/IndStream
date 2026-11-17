@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IndStream — Configure your addon</title>
+<meta name="description" content="Configure and install IndStream, a Nuvio and Stremio addon for movies and series streams.">
+<link rel="icon" href="/logo.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="/">
+      <img src="/logo.png" alt="IndStream logo" width="36" height="36">
+      <span>IndStream</span>
+    </a>
+    <div class="account" id="account">
+      <span class="chip muted" id="accountChip">Guest</span>
+      <button class="btn ghost" id="googleBtn" type="button">Sign in with Google</button>
+      <button class="btn ghost" id="guestBtn" type="button">Continue as guest</button>
+      <button class="btn ghost" id="logoutBtn" type="button" hidden>Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <h1>Your streams, your rules.</h1>
+    <p class="lead">Pick the sources and languages you want, copy the addon URL, and paste it into Nuvio or Stremio. No account needed.</p>
+    <div class="hero-actions">
+      <button class="btn primary" id="copyHero" type="button">Copy addon URL</button>
+      <a class="btn" id="openStremio" href="https://www.stremio.com/#/addons" target="_blank" rel="noopener">Open Stremio</a>
+      <a class="btn" id="testUrl" href="#" target="_blank" rel="noopener">Test streams</a>
+    </div>
+  </section>
+
+  <section class="grid">
+
+    <div class="card">
+      <h2>Sources</h2>
+      <p class="hint">Choose which servers to query. API sources answer faster; web scrapers take longer.</p>
+      <div class="chips" id="providers"></div>
+    </div>
+
+    <div class="card">
+      <h2>Language preference</h2>
+      <p class="hint">Preferred languages move to the top. Turn on strict mode to hide the others.</p>
+      <div class="chips" id="langs"></div>
+      <label class="switch">
+        <input type="checkbox" id="langStrict">
+        <span>Hide streams in other languages</span>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Quality & limits</h2>
+      <div class="field">
+        <label for="minQuality">Minimum quality</label>
+        <select id="minQuality">
+          <option value="0">Best available</option>
+          <option value="720">720p</option>
+          <option value="1080">1080p</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="resultLimit">Maximum results</label>
+        <select id="resultLimit">
+          <option value="20">20</option>
+          <option value="40">40</option>
+          <option value="80">80</option>
+          <option value="0">No limit</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="requestTimeout">Provider timeout</label>
+        <select id="requestTimeout">
+          <option value="10">10 seconds</option>
+          <option value="15">15 seconds</option>
+          <option value="25">25 seconds</option>
+        </select>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="includeDash" checked>
+        <span>Include DASH streams</span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="probeQuality">
+        <span>Probe unknown quality (slower)</span>
+      </label>
+    </div>
+
+    <div class="card install">
+      <h2>Install</h2>
+      <p class="hint">This URL already contains your choices. Install it once and it keeps working.</p>
+      <div class="urlbox">
+        <code id="manifestUrl"></code>
+        <button class="btn small" id="copyBtn" type="button">Copy</button>
+      </div>
+      <div class="install-actions">
+        <button class="btn primary" id="copyInstall" type="button">Copy manifest URL</button>
+        <a class="btn" id="openStremio2" href="https://www.stremio.com/#/addons" target="_blank" rel="noopener">Install on Stremio</a>
+      </div>
+      <p class="hint">In Nuvio: Settings &rarr; Plugins / Addons &rarr; add by URL. In Stremio: Addons &rarr; paste the URL in the search bar.</p>
+    </div>
+
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p>IndStream is not affiliated with Nuvio or any stream provider. Use responsibly and respect local law.</p>
+  <p><a href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener">Source on GitHub</a></p>
+</footer>
+
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -539,4 +539,5 @@ module.exports = {
   streamTitle: streamTitle,
   sleep: sleep,
   displayName: displayName,
+  flagOf: flagOf,
 };

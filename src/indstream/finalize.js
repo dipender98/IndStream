@@ -1,6 +1,7 @@
 'use strict';
 
 const util = require('./util');
+const styles = require('./styles');
 
 function streamHeight(stream) {
   if (!stream) return 0;
@@ -14,9 +15,11 @@ function normalizeStream(raw, provider, ctx) {
   const declaredHeight = Number(raw.height) || 0;
   const quality = raw.quality || util.qualityLabel(declaredHeight);
   const height = declaredHeight || util.parseHeight(quality);
+  const style = (ctx && ctx.settings && ctx.settings.streamStyle) || styles.DEFAULT_STYLE;
+  const rendered = styles.renderNameTitle(provider, raw, ctx, style);
   const stream = {
-    title: util.streamTitle(provider, raw, ctx),
-    name: provider.name || '',
+    title: rendered.title,
+    name: rendered.name,
     url: url,
     type: type,
     quality: quality,

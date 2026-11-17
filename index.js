@@ -2,36 +2,64 @@
 
 const http = require('http');
 const url = require('url');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 const settings = require('./src/indstream/settings');
 const tmdb = require('./src/indstream/tmdb');
 const racer = require('./src/indstream/racer');
 const finalize = require('./src/indstream/finalize');
 const httpLib = require('./src/indstream/http');
+const styles = require('./src/indstream/styles');
 
-const providers = [
-  require('./src/indstream/providers/hdhub'),
-  require('./src/indstream/providers/vidrift'),
-  require('./src/indstream/providers/bingr'),
-  require('./src/indstream/providers/moviebox'),
-  require('./src/indstream/providers/hub4k'),
-];
+const hdhub = require('./src/indstream/providers/hdhub');
+const vidrift = require('./src/indstream/providers/vidrift');
+const bingr = require('./src/indstream/providers/bingr');
+const moviebox = require('./src/indstream/providers/moviebox');
+const hub4k = require('./src/indstream/providers/hub4k');
+const fsl = require('./src/indstream/providers/fsl');
+
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, fsl];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
-const BASE_URL = process.env.BASE_URL || '';
+const ROOT = __dirname;
+const PUBLIC_DIR = path.join(ROOT, 'public');
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const SESSION_SECRET = process.env.SESSION_SECRET || '';
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+const LOGIN_ENABLED = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && SESSION_SECRET);
 
 const DEFAULT_CFG = {
+  p: ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'],
+  langs: [],
+  langStrict: false,
   minQuality: '720',
   resultLimit: '40',
   requestTimeout: '15',
-  probeQuality: false,
   includeDash: true,
+  probeQuality: false,
   debug: false,
+  streamStyle: styles.DEFAULT_STYLE,
+};
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json; charset=utf-8',
 };
 
 function normalizeCfg(raw) {
   const merged = Object.assign({}, DEFAULT_CFG, raw || {});
+  if (!Array.isArray(merged.p)) merged.p = DEFAULT_CFG.p.slice();
+  if (!Array.isArray(merged.langs)) merged.langs = [];
   globalThis.SCRAPER_SETTINGS = JSON.stringify(merged);
   const s = settings.getSettings();
   globalThis.SCRAPER_SETTINGS = undefined;
@@ -46,9 +74,8 @@ function encodeCfg(cfg) {
 function decodeCfg(seg) {
   try {
     const padded = seg.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((seg.length + 3) % 4);
-    const json = Buffer.from(padded, 'base64').toString('utf8');
-    const obj = JSON.parse(json);
-    if (!obj || typeof obj !== 'object') return null;
+    const obj = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
     return obj;
   } catch (e) {
     return null;
@@ -62,9 +89,8 @@ function shortHash(str) {
 }
 
 function makeManifest(cfg) {
-  const enc = encodeCfg(cfg);
   return {
-    id: 'com.indstream.addon.' + shortHash(enc),
+    id: 'com.indstream.addon.' + shortHash(encodeCfg(cfg)),
     version: '1.0.0',
     name: 'IndStream',
     description: 'IndStream streams for movies and series.',
@@ -74,6 +100,41 @@ function makeManifest(cfg) {
     catalogs: [],
     behaviorHints: { configurable: true, p2p: false },
   };
+}
+
+function selectedProviders(cfg) {
+  const ids = Array.isArray(cfg.p) && cfg.p.length ? cfg.p : DEFAULT_CFG.p;
+  return ALL_PROVIDERS.filter(function (p) { return ids.indexOf(p.id) >= 0; });
+}
+
+function languageRank(label, langs) {
+  const text = String(label || '').toLowerCase();
+  if (!text) return -1;
+  for (let i = 0; i < langs.length; i++) {
+    if (text.indexOf(String(langs[i]).toLowerCase()) >= 0) return i;
+  }
+  return -1;
+}
+
+function applyLanguagePreference(streams, cfg) {
+  const langs = Array.isArray(cfg.langs) ? cfg.langs.filter(Boolean) : [];
+  if (!langs.length) return streams;
+  let out = streams;
+  if (cfg.langStrict) {
+    out = out.filter(function (s) {
+      const label = String(s.language || '').trim();
+      if (!label) return true;
+      return languageRank(label, langs) >= 0;
+    });
+  }
+  return out.slice().sort(function (a, b) {
+    const ra = languageRank(a.language, langs);
+    const rb = languageRank(b.language, langs);
+    if (ra === rb) return 0;
+    if (ra < 0) return 1;
+    if (rb < 0) return -1;
+    return ra - rb;
+  });
 }
 
 async function getStreams(mediaId, mediaType, season, episode, cfg) {
@@ -117,29 +178,29 @@ async function getStreams(mediaId, mediaType, season, episode, cfg) {
   context.metaPromise = metaPromise;
   context.meta = null;
 
-  const wanted = providers.filter(function (p) {
+  const wanted = selectedProviders(cfg).filter(function (p) {
     return !p.supports || p.supports[type] !== false;
   });
   if (!wanted.length) return [];
 
-  let streams = await racer.race(wanted, context, finalize.normalizeStream);
-  return finalize.finalizeStreams(streams, {
+  const raw = await racer.race(wanted, context, finalize.normalizeStream);
+  const finalized = finalize.finalizeStreams(raw, {
     minQuality: s.minQuality,
     includeDash: s.includeDash,
     resultLimit: s.resultLimit,
     providers: wanted,
   });
+  return applyLanguagePreference(finalized, cfg);
 }
 
 function sendJson(res, status, body) {
-  const data = JSON.stringify(body);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': '*',
     'Cache-Control': 'no-store',
   });
-  res.end(data);
+  res.end(JSON.stringify(body));
 }
 
 function sendHtml(res, status, html) {
@@ -147,115 +208,131 @@ function sendHtml(res, status, html) {
   res.end(html);
 }
 
-function parseId(raw) {
-  const parts = String(raw || '').split(':');
-  return { base: parts[0], season: parts[1], episode: parts[2] };
+function parseCookies(req) {
+  const out = {};
+  const raw = req.headers.cookie || '';
+  raw.split(';').forEach(function (part) {
+    const idx = part.indexOf('=');
+    if (idx < 0) return;
+    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+  });
+  return out;
 }
 
-// Returns { cfg, rest } where rest is the path after the optional config segment.
-function splitConfig(pathname) {
-  const parts = pathname.split('/').filter(Boolean);
-  if (!parts.length) return { cfg: DEFAULT_CFG, rest: '/' };
-  const first = decodeCfg(parts[0]);
-  if (first) {
-    const rest = '/' + parts.slice(1).join('/');
-    return { cfg: Object.assign({}, DEFAULT_CFG, first), rest: rest === '/' ? '/' : rest };
+function signValue(value) {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('base64url');
+}
+
+function readSession(req) {
+  if (!LOGIN_ENABLED) return null;
+  const cookies = parseCookies(req);
+  const raw = cookies.indstream_sess;
+  if (!raw) return null;
+  const idx = raw.lastIndexOf('.');
+  if (idx < 0) return null;
+  const payload = raw.slice(0, idx);
+  const sig = raw.slice(idx + 1);
+  const expected = signValue(payload);
+  if (sig.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data || !data.exp || data.exp < Date.now()) return null;
+    return data;
+  } catch (e) {
+    return null;
   }
-  return { cfg: DEFAULT_CFG, rest: pathname };
 }
 
-const CONFIGURE_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IndStream - Configure</title>
-<style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #111; }
-  h1 { margin-bottom: .25rem; }
-  .sub { color: #555; margin-bottom: 1.5rem; }
-  label { display: block; margin: .75rem 0 .25rem; font-weight: 600; }
-  select, input[type=checkbox] { font-size: 1rem; }
-  .row { display: flex; align-items: center; gap: .5rem; }
-  button { margin-top: 1.25rem; padding: .6rem 1.2rem; font-size: 1rem; cursor: pointer; }
-  .out { margin-top: 1.5rem; padding: 1rem; background: #f4f4f4; border-radius: 8px; word-break: break-all; }
-  .out a { color: #0066cc; }
-  .note { color: #666; font-size: .85rem; margin-top: .5rem; }
-</style>
-</head>
-<body>
-<h1>IndStream</h1>
-<p class="sub">Configure your addon and copy the URL into Nuvio or Stremio.</p>
-
-<label for="minQuality">Minimum quality</label>
-<select id="minQuality">
-  <option value="0">Best available (no floor)</option>
-  <option value="720" selected>720p</option>
-  <option value="1080">1080p</option>
-</select>
-
-<label for="resultLimit">Maximum results</label>
-<select id="resultLimit">
-  <option value="20">20</option>
-  <option value="40" selected>40</option>
-  <option value="80">80</option>
-  <option value="0">No limit</option>
-</select>
-
-<label for="requestTimeout">Provider timeout</label>
-<select id="requestTimeout">
-  <option value="10">10 seconds</option>
-  <option value="15" selected>15 seconds</option>
-  <option value="25">25 seconds</option>
-</select>
-
-<div class="row">
-  <input type="checkbox" id="includeDash" checked>
-  <label for="includeDash" style="margin:0;font-weight:400">Include DASH streams</label>
-</div>
-<div class="row">
-  <input type="checkbox" id="probeQuality">
-  <label for="probeQuality" style="margin:0;font-weight:400">Probe unknown quality (slower)</label>
-</div>
-<div class="row">
-  <input type="checkbox" id="debug">
-  <label for="debug" style="margin:0;font-weight:400">Verbose logging</label>
-</div>
-
-<button id="gen">Generate URL</button>
-
-<div class="out" id="out" style="display:none">
-  <strong>Your addon URL:</strong><br>
-  <a id="url" href="#" target="_blank"></a>
-  <p class="note">Paste this into Nuvio (Settings &rarr; Plugins/Addons &rarr; Add by URL) or Stremio (Addons &rarr; search bar).</p>
-</div>
-
-<script>
-function b64url(obj){return btoa(JSON.stringify(obj)).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');}
-function gen(){
-  const cfg={
-    minQuality: document.getElementById('minQuality').value,
-    resultLimit: document.getElementById('resultLimit').value,
-    requestTimeout: document.getElementById('requestTimeout').value,
-    includeDash: document.getElementById('includeDash').checked,
-    probeQuality: document.getElementById('probeQuality').checked,
-    debug: document.getElementById('debug').checked,
-  };
-  const base = window.location.origin;
-  const u = base + '/' + b64url(cfg) + '/manifest.json';
-  const a = document.getElementById('url');
-  a.href = u; a.textContent = u;
-  document.getElementById('out').style.display = 'block';
+function sessionCookie(data) {
+  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
+  return 'indstream_sess=' + payload + '.' + signValue(payload) + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000';
 }
-document.getElementById('gen').addEventListener('click', gen);
-gen();
-</script>
-</body>
-</html>`;
+
+function clearCookie() {
+  return 'indstream_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+}
+
+function baseUrl(req) {
+  if (PUBLIC_URL) return PUBLIC_URL;
+  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  return proto + '://' + req.headers.host;
+}
+
+function redirect(res, location, extraCookie) {
+  const headers = { Location: location };
+  if (extraCookie) headers['Set-Cookie'] = extraCookie;
+  res.writeHead(302, headers);
+  res.end();
+}
+
+async function handleGoogleCallback(req, res, query) {
+  const cookies = parseCookies(req);
+  const stateCookie = cookies.indstream_oauth;
+  const state = query.state || '';
+  const code = query.code || '';
+
+  if (!code || !stateCookie || stateCookie !== state) {
+    redirect(res, '/?error=auth');
+    return;
+  }
+  try {
+    const redirectUri = baseUrl(req) + '/auth/google/callback';
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+    const tokenJson = await tokenRes.json();
+    if (!tokenJson || !tokenJson.access_token) {
+      redirect(res, '/?error=token');
+      return;
+    }
+    const infoRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: 'Bearer ' + tokenJson.access_token },
+    });
+    const info = await infoRes.json();
+    if (!info || !info.sub) {
+      redirect(res, '/?error=profile');
+      return;
+    }
+    const session = {
+      sub: info.sub,
+      name: info.name || info.email || 'User',
+      email: info.email || '',
+      picture: info.picture || '',
+      exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    };
+    redirect(res, '/', sessionCookie(session));
+  } catch (e) {
+    console.error('oauth error:', e && e.message ? e.message : e);
+    redirect(res, '/?error=oauth');
+  }
+}
+
+function serveStatic(res, filePath) {
+  fs.readFile(filePath, function (err, data) {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found');
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
 
 const server = http.createServer(async function (req, res) {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname || '/';
+  const query = parsed.query || {};
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -267,8 +344,61 @@ const server = http.createServer(async function (req, res) {
     return;
   }
 
-  if (pathname === '/') {
-    sendHtml(res, 200, CONFIGURE_HTML);
+  if (pathname === '/api/me') {
+    const session = readSession(req);
+    sendJson(res, 200, {
+      signedIn: !!session,
+      loginEnabled: LOGIN_ENABLED,
+      user: session ? { name: session.name, email: session.email, picture: session.picture } : null,
+    });
+    return;
+  }
+
+  if (pathname === '/auth/google') {
+    if (!LOGIN_ENABLED) {
+      redirect(res, '/?error=disabled');
+      return;
+    }
+    const state = crypto.randomBytes(16).toString('hex');
+    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: baseUrl(req) + '/auth/google/callback',
+      response_type: 'code',
+      scope: 'openid email profile',
+      state: state,
+      access_type: 'online',
+      prompt: 'select_account',
+    }).toString();
+    res.writeHead(302, {
+      Location: authUrl,
+      'Set-Cookie': 'indstream_oauth=' + state + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=600',
+    });
+    res.end();
+    return;
+  }
+
+  if (pathname === '/auth/google/callback') {
+    await handleGoogleCallback(req, res, query);
+    return;
+  }
+
+  if (pathname === '/auth/logout') {
+    redirect(res, '/', clearCookie());
+    return;
+  }
+
+  if (pathname === '/logo.png') {
+    serveStatic(res, path.join(ROOT, 'assets', 'indstream.png'));
+    return;
+  }
+
+  if (pathname === '/' || pathname === '/index.html') {
+    serveStatic(res, path.join(PUBLIC_DIR, 'index.html'));
+    return;
+  }
+
+  if (pathname === '/app.js' || pathname === '/style.css') {
+    serveStatic(res, path.join(PUBLIC_DIR, pathname.slice(1)));
     return;
   }
 
@@ -281,10 +411,9 @@ const server = http.createServer(async function (req, res) {
 
   const m = rest.match(/^\/stream\/(movie|series)\/(.+)\.json$/);
   if (m) {
-    const type = m[1];
-    const { base, season, episode } = parseId(decodeURIComponent(m[2]));
+    const parts = decodeURIComponent(m[2]).split(':');
     try {
-      const streams = await getStreams(base, type, season, episode, cfg);
+      const streams = await getStreams(parts[0], m[1], parts[1], parts[2], cfg);
       sendJson(res, 200, { streams: streams });
     } catch (err) {
       console.error('stream error:', err && err.message ? err.message : err);
@@ -297,6 +426,18 @@ const server = http.createServer(async function (req, res) {
   res.end('Not found');
 });
 
+function splitConfig(pathname) {
+  const parts = pathname.split('/').filter(Boolean);
+  if (!parts.length) return { cfg: DEFAULT_CFG, rest: '/' };
+  const first = decodeCfg(parts[0]);
+  if (first) {
+    const rest = '/' + parts.slice(1).join('/');
+    return { cfg: Object.assign({}, DEFAULT_CFG, first), rest: rest === '/' ? '/' : rest };
+  }
+  return { cfg: DEFAULT_CFG, rest: pathname };
+}
+
 server.listen(PORT, HOST, function () {
   console.log('IndStream addon listening on http://' + HOST + ':' + PORT);
+  console.log('Google login: ' + (LOGIN_ENABLED ? 'enabled' : 'disabled (guest only)'));
 });

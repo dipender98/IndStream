@@ -51,6 +51,7 @@ module.exports = {
         language: language,
         size: size,
         title: '',
+        releaseText: desc.slice(0, 300),
         headers: { 'User-Agent': http.DEFAULT_UA },
       };
       if (seen[entry.url]) return;
