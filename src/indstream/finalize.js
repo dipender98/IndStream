@@ -81,6 +81,8 @@ function finalizeStreams(streams, options) {
 
   const filtered = (streams || []).filter(function (stream) {
     if (!stream || !stream.url) return false;
+    if (!/^https?:\/\//i.test(stream.url)) return false;
+    if (util.isJunkStreamUrl(stream.url)) return false;
     if (!includeDash && stream.type === 'dash') return false;
     return !util.isKnownBelowFloor(streamHeight(stream), opts.minQuality);
   });

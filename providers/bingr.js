@@ -464,7 +464,7 @@ var require_tmdb = __commonJS({
       const scope = ctx || {};
       if (scope.meta) return Promise.resolve(applyMeta(scope, scope.meta));
       if (!scope.metaPromise) return Promise.resolve(null);
-      const cap = Number(capMs) > 0 ? Number(capMs) : 3e3;
+      const cap = Number(capMs) > 0 ? Number(capMs) : 2e3;
       let wait = cap;
       if (scope.deadline) {
         const remaining = scope.deadline - Date.now();
@@ -930,6 +930,13 @@ var require_util = __commonJS({
       const minimum = Number.isFinite(raw) ? raw : 720;
       return value > 0 && minimum > 0 && value < minimum;
     }
+    var JUNK_URL_RE = new RegExp(
+      "(commondatastorage\\.googleapis\\.com\\/gtv-videos-bucket|storage\\.googleapis\\.com\\/gtv-videos-bucket|test-videos\\.co\\.uk|sample\\.mp4($|[?#])|\\/(bigbuckbunny|elephantsdream|forbiggerblazes|forbiggermthan|sintel|subaruoutback|tears-of-steel)\\b)",
+      "i"
+    );
+    function isJunkStreamUrl(url) {
+      return JUNK_URL_RE.test(String(url == null ? "" : url));
+    }
     function languageNames(raw) {
       const text = String(raw == null ? "" : raw).trim();
       if (!text) return [];
@@ -1316,6 +1323,7 @@ var require_util = __commonJS({
       isKnownBelowFloor,
       languageNames,
       languageLabel,
+      isJunkStreamUrl,
       languagePriority,
       decodeEntities,
       stripTags,
@@ -1413,6 +1421,8 @@ var require_finalize = __commonJS({
       const includeDash = opts.includeDash !== false;
       const filtered = (streams || []).filter(function(stream) {
         if (!stream || !stream.url) return false;
+        if (!/^https?:\/\//i.test(stream.url)) return false;
+        if (util.isJunkStreamUrl(stream.url)) return false;
         if (!includeDash && stream.type === "dash") return false;
         return !util.isKnownBelowFloor(streamHeight(stream), opts.minQuality);
       });
@@ -1447,7 +1457,7 @@ var require_factory = __commonJS({
     var racer = require_racer();
     var finalize = require_finalize();
     var util = require_util();
-    var TMDB_META_CAP_MS = 3e3;
+    var TMDB_META_CAP_MS = 2e3;
     function safeInt(value) {
       const n = parseInt(value, 10);
       return Number.isFinite(n) ? n : 0;

@@ -105,6 +105,20 @@ function isKnownBelowFloor(height, floor) {
   return value > 0 && minimum > 0 && value < minimum;
 }
 
+// Known sample/test streams that should never reach the player.
+const JUNK_URL_RE = new RegExp(
+  '(commondatastorage\\.googleapis\\.com\\/gtv-videos-bucket|' +
+  'storage\\.googleapis\\.com\\/gtv-videos-bucket|' +
+  'test-videos\\.co\\.uk|' +
+  'sample\\.mp4($|[?#])|' +
+  '\\/(bigbuckbunny|elephantsdream|forbiggerblazes|forbiggermthan|sintel|subaruoutback|tears-of-steel)\\b)',
+  'i'
+);
+
+function isJunkStreamUrl(url) {
+  return JUNK_URL_RE.test(String(url == null ? '' : url));
+}
+
 function languageNames(raw) {
   const text = String(raw == null ? '' : raw).trim();
   if (!text) return [];
@@ -505,6 +519,7 @@ module.exports = {
   isKnownBelowFloor: isKnownBelowFloor,
   languageNames: languageNames,
   languageLabel: languageLabel,
+  isJunkStreamUrl: isJunkStreamUrl,
   languagePriority: languagePriority,
   decodeEntities: decodeEntities,
   stripTags: stripTags,

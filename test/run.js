@@ -74,6 +74,13 @@ test('isKnownBelowFloor', function () {
   assert.strictEqual(util.isKnownBelowFloor(0, 720), false);
   assert.strictEqual(util.isKnownBelowFloor(480, 0), false);
 });
+test('isJunkStreamUrl', function () {
+  assert.strictEqual(util.isJunkStreamUrl('https://a.com/inception_1080p.mp4'), false);
+  assert.strictEqual(util.isJunkStreamUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'), true);
+  assert.strictEqual(util.isJunkStreamUrl('https://test-videos.co.uk/vids/bigbuckbunny/mp4/hvc1/720/Big_Buck_Bunny_720_10s_1MB.mp4'), true);
+  assert.strictEqual(util.isJunkStreamUrl('https://a.com/sample.mp4'), true);
+  assert.strictEqual(util.isJunkStreamUrl(''), false);
+});
 test('languageNames/languageLabel - source-declared only', function () {
   assert.deepStrictEqual(util.languageNames('Hindi, English'), ['Hindi', 'English']);
   assert.deepStrictEqual(util.languageNames('Hindi DDP 5.1 + English DTS-HD MA 5.1'), ['Hindi', 'English']);
@@ -154,6 +161,15 @@ test('floor and dash filtering', function () {
     fakeStream({ url: 'https://x/dash.mpd', type: 'dash', quality: '1080p', height: 1080 }),
   ], { minQuality: 720, includeDash: false, providers: FAKE_PROVIDERS });
   assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720', 'https://x/unknown']);
+});
+test('junk samples and non-http urls are dropped', function () {
+  const out = finalize.finalizeStreams([
+    fakeStream({ url: 'https://x/720', height: 720 }),
+    fakeStream({ url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', height: 720 }),
+    fakeStream({ url: 'https://x/sample.mp4?a=1', height: 720 }),
+    fakeStream({ url: 'rtmp://x/live', height: 720 }),
+  ], { minQuality: 720, providers: FAKE_PROVIDERS });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720']);
 });
 test('dedupe keeps the best duplicate regardless of arrival order', function () {
   const low = fakeStream({ url: 'https://x/1?token=a', height: 720, provider: 'Beta', providerId: 'beta' });

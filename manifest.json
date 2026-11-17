@@ -1,6 +1,6 @@
 {
   "name": "IndStream",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "IndStream — independent Nuvio scrapers (one per server), each with its own settings.",
   "author": "dipender98",
   "scrapers": [
@@ -8,7 +8,7 @@
       "id": "hdhub",
       "name": "HdHub",
       "description": "Fast aggregator: instant HLS streams plus 4K file links.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -39,7 +39,7 @@
       "id": "vidrift",
       "name": "Vidrift",
       "description": "Embed player with direct HLS/MP4 links.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -70,7 +70,7 @@
       "id": "bingr",
       "name": "Bingr",
       "description": "Multi-server JSON API. Usually the fastest source.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -101,7 +101,7 @@
       "id": "moviebox",
       "name": "MovieBox",
       "description": "Title-keyed catalogue with download and playback renditions.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -132,7 +132,7 @@
       "id": "hub4k",
       "name": "4KHDHub",
       "description": "4K-first release pages resolved through file-host gateways.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": "dipender98",
       "supportedTypes": [
         "movie",
@@ -163,7 +163,7 @@
       "id": "fsl",
       "name": "FSL",
       "description": "Fast file links from release blogs. Heaviest source.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": "dipender98",
       "supportedTypes": [
         "movie",

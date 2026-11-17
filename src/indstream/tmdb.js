@@ -165,7 +165,7 @@ function awaitMeta(ctx, capMs) {
   const scope = ctx || {};
   if (scope.meta) return Promise.resolve(applyMeta(scope, scope.meta));
   if (!scope.metaPromise) return Promise.resolve(null);
-  const cap = Number(capMs) > 0 ? Number(capMs) : 3000;
+  const cap = Number(capMs) > 0 ? Number(capMs) : 2000;
   let wait = cap;
   if (scope.deadline) {
     const remaining = scope.deadline - Date.now();
