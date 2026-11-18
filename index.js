@@ -631,7 +631,7 @@ async function handleRequest(req, res) {
       user: session ? { name: session.name, email: session.email, picture: session.picture } : null,
       cfg: savedCfg,
       profiles: account ? account.profiles.map(function (profile) {
-        return { id: profile.id, name: profile.name, token: profile.token };
+        return { id: profile.id, name: profile.name, token: profile.token, cfg: sanitizeConfigFromApi(profile.cfg) };
       }) : [],
       activeId: account ? account.activeId : null,
     }, false);

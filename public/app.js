@@ -104,6 +104,7 @@ const DEFAULT_CFG = {
 var cfgSyncEnabled = false;
 var cfgPushTimer = 0;
 var profileTokens = {};
+var finishAsksRename = false;
 
 function addonUrlFromToken(token) {
   return window.location.origin + '/u/' + token + '/manifest.json';
@@ -155,6 +156,7 @@ const LS_KEY = 'indstream.cfg.v3';
 
 const LS_LANG_MIGRATE = 'indstream.langDefaults.v4';
 const LS_PROVIDER_MIGRATE = 'indstream.providerDefaults.v6';
+const LS_STYLE_MIGRATE = 'indstream.styleDefault.v1';
 const LEGACY_DEFAULT_PROVIDERS = ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'];
 const LS_WELCOME = 'indstream.welcome.dismissed';
 const LS_PROFILES = 'indstream.profiles.v1';
@@ -200,7 +202,11 @@ function sanitizeCfg(raw) {
     }
   }
   merged.langStrict = !!merged.langStrict;
-  merged.streamStyle = typeof merged.streamStyle === 'string' ? merged.streamStyle : DEFAULT_CFG.streamStyle;
+  merged.streamStyle = typeof merged.streamStyle === 'string' && merged.streamStyle ? merged.streamStyle : DEFAULT_CFG.streamStyle;
+  if (merged.streamStyle === 'lightgdrive' && safeGet(LS_STYLE_MIGRATE) !== '1') {
+    merged.streamStyle = DEFAULT_CFG.streamStyle;
+    safeSet(LS_STYLE_MIGRATE, '1');
+  }
   const quality = resolveQuality(merged);
   merged.qualityOrder = quality.qualityOrder;
   merged.qualityOff = quality.qualityOff;
@@ -341,7 +347,10 @@ function applyCfg(cfg) {
   document.getElementById('probeQuality').checked = !!cfg.probeQuality;
   document.getElementById('debug').checked = !!cfg.debug;
   const styleSel = document.getElementById('streamStyle');
-  if (styleSel && cfg.streamStyle) styleSel.value = cfg.streamStyle;
+  if (styleSel && cfg.streamStyle) {
+    const hasStyle = Array.prototype.some.call(styleSel.options, function (option) { return option.value === cfg.streamStyle; });
+    styleSel.value = hasStyle ? cfg.streamStyle : DEFAULT_STYLE;
+  }
   renderPreferenceLists(cfg);
   updateAll();
 }
@@ -432,6 +441,7 @@ function renderProfiles() {
       '<div class="profile-url">' + escapeHtml(url) + '</div>' +
       '<div class="profile-actions">' +
         '<button class="profile-btn primary" data-act="use">' + (isActive ? 'Using' : 'Use') + '</button>' +
+        '<button class="profile-btn" data-act="configure">Configure</button>' +
         '<button class="profile-btn" data-act="copy">Copy URL</button>' +
         '<button class="profile-btn" data-act="rename">Rename</button>' +
         (profiles.length > 1 ? '<button class="profile-btn danger" data-act="delete">Delete</button>' : '') +
@@ -443,19 +453,36 @@ function renderProfiles() {
           safeSet(LS_ACTIVE, p.id);
           applyCfg(loadCfg());
           toast('Switched to "' + p.name + '"');
+        } else if (act === 'configure') {
+          finishAsksRename = true;
+          safeSet(LS_ACTIVE, p.id);
+          applyCfg(loadCfg());
+          setSection('sources');
+          toast('Editing "' + p.name + '"');
         } else if (act === 'copy') {
           copyText(url);
         } else if (act === 'rename') {
-          const next = prompt('Profile name', p.name);
-          if (next && next.trim()) { p.name = next.trim().slice(0, 40); saveProfiles(profiles); renderProfiles(); }
-        } else if (act === 'delete') {
-          if (confirm('Delete profile "' + p.name + '"?')) {
-            const idx = profiles.findIndex(function (x) { return x.id === p.id; });
-            profiles.splice(idx, 1);
+          showInput({ title: 'Rename preset', text: 'A short name for this setup.', value: p.name, okLabel: 'Rename' }).then(function (next) {
+            if (!next) return;
+            p.name = next.slice(0, 40);
             saveProfiles(profiles);
-            applyCfg(loadCfg());
-            toast('Profile deleted');
-          }
+            renderProfiles();
+          });
+        } else if (act === 'delete') {
+          showConfirm({
+            title: 'Delete "' + p.name + '"?',
+            text: 'This removes the preset and its addon link from this browser and your account.',
+            okLabel: 'Delete',
+            danger: true,
+            onConfirm: function () {
+              const idx = profiles.findIndex(function (x) { return x.id === p.id; });
+              if (idx < 0) return;
+              profiles.splice(idx, 1);
+              saveProfiles(profiles);
+              applyCfg(loadCfg());
+              toast('Preset deleted');
+            },
+          });
         }
       });
     });
@@ -465,11 +492,14 @@ function renderProfiles() {
 
 function createProfile(seedCfg, suggestedName) {
   const profiles = loadProfiles();
-  const fallback = 'Profile ' + (profiles.length + 1);
-  let prompted = suggestedName;
-  if (!prompted) prompted = prompt('Name your profile', fallback);
-  if (prompted == null) return;
-  const name = String(prompted).trim().slice(0, 40);
+  const fallback = 'Preset ' + (profiles.length + 1);
+  if (!suggestedName) {
+    showInput({ title: 'Name your preset', text: 'A short name for this setup.', value: fallback, okLabel: 'Create' }).then(function (name) {
+      if (name) createProfile(seedCfg, name);
+    });
+    return;
+  }
+  const name = String(suggestedName).trim().slice(0, 40);
   if (!name) return;
   const cfg = sanitizeCfg(seedCfg || loadCfg());
   const id = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : 'p' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -597,7 +627,8 @@ function loadStyles() {
       sel.appendChild(o);
     });
     const cfg = loadCfg();
-    sel.value = cfg.streamStyle || data.default || DEFAULT_STYLE;
+    const styleIds = Array.prototype.map.call(sel.options, function (option) { return option.value; });
+    sel.value = styleIds.indexOf(cfg.streamStyle) >= 0 ? cfg.streamStyle : (data.default || DEFAULT_STYLE);
     updateAll();
   }).catch(function () {
     const sel = document.getElementById('streamStyle');
@@ -610,12 +641,46 @@ function loadStyles() {
       sel.appendChild(o);
     });
     const cfg = loadCfg();
-    sel.value = cfg.streamStyle || DEFAULT_STYLE;
+    const styleIds = Array.prototype.map.call(sel.options, function (option) { return option.value; });
+    sel.value = styleIds.indexOf(cfg.streamStyle) >= 0 ? cfg.streamStyle : DEFAULT_STYLE;
     updateAll();
   });
 }
 
+function renderHeaderAccount(signedIn, name, email, picture) {
+  const chip = document.getElementById('headerAccountBtn');
+  if (!chip) return;
+  const avatar = document.getElementById('headerAvatar');
+  const logo = document.getElementById('headerGoogleLogo');
+  const text = document.getElementById('headerAccountText');
+  const initial = (name && name[0] || 'A').toUpperCase();
+  chip.hidden = false;
+  chip.classList.toggle('google', !signedIn);
+  chip.setAttribute('aria-label', signedIn ? 'Account: ' + name : 'Sign in with Google');
+  chip.title = signedIn ? name + (email ? ' · ' + email : '') : 'Sign in with Google';
+  if (avatar) {
+    avatar.hidden = !signedIn;
+    avatar.textContent = initial;
+    if (signedIn && picture) {
+      const img = document.createElement('img');
+      img.src = picture;
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.onerror = function () { avatar.textContent = initial; };
+      avatar.textContent = '';
+      avatar.appendChild(img);
+    }
+  }
+  if (logo) {
+    if (signedIn) logo.setAttribute('hidden', '');
+    else logo.removeAttribute('hidden');
+  }
+  if (text) text.textContent = signedIn ? name : 'Sign in with Google';
+}
+
 var loginConfigured = false;
+var accountSignedIn = false;
+var accountUser = null;
 
 async function loadAccount() {
   const note = document.getElementById('installState');
@@ -628,7 +693,22 @@ async function loadAccount() {
     cfgSyncEnabled = signedIn;
     if (signedIn) {
       syncTokens(data);
-      if (data.cfg && typeof data.cfg === 'object') {
+      const serverProfiles = Array.isArray(data.profiles) ? data.profiles.filter(function (p) {
+        return p && p.id && p.cfg && typeof p.cfg === 'object';
+      }).map(function (p) {
+        return { id: String(p.id), name: String(p.name || 'Preset').slice(0, 40) || 'Preset', cfg: sanitizeCfg(p.cfg) };
+      }) : [];
+      if (serverProfiles.length) {
+        const ids = new Set(serverProfiles.map(function (p) { return p.id; }));
+        loadProfiles().forEach(function (p) {
+          if (ids.has(p.id)) return;
+          serverProfiles.push(p);
+          ids.add(p.id);
+        });
+        saveProfiles(serverProfiles);
+        safeSet(LS_ACTIVE, data.activeId && ids.has(data.activeId) ? data.activeId : serverProfiles[0].id);
+        applyCfg(loadCfg());
+      } else if (data.cfg && typeof data.cfg === 'object') {
         const merged = sanitizeCfg(data.cfg);
         saveCfg(merged);
         applyCfg(merged);
@@ -637,6 +717,9 @@ async function loadAccount() {
       }
     }
     const name = signedIn ? (data.user.name || 'Account') : 'Guest mode';
+    accountSignedIn = signedIn;
+    accountUser = signedIn ? (data.user || null) : null;
+    renderHeaderAccount(signedIn, name, data.user && data.user.email, data.user && data.user.picture);
     if (note) {
       note.textContent = signedIn
         ? 'Signed in as ' + name + '. The install links follow your saved setup — changes apply automatically.'
@@ -653,19 +736,10 @@ async function loadAccount() {
     if (accountBlock) accountBlock.title = signedIn
       ? name + (data.user.email ? ' · ' + data.user.email : '')
       : 'Guest mode · local preferences';
-    document.getElementById('bigName').textContent = name;
-    document.getElementById('bigSub').textContent = signedIn
-      ? (data.user.email || 'Connected on this browser')
-      : (loginConfigured
-        ? 'Sign in with Google — or stay local. Settings always save on this device.'
-        : 'Google sign-in is not configured on this instance — settings always save on this device.');
-    document.getElementById('googleBtn').hidden = signedIn || !loginConfigured;
-    document.getElementById('guestBtn').hidden = signedIn;
-    document.getElementById('logoutBtn').hidden = !signedIn;
-    document.getElementById('signOutBtn').hidden = !signedIn;
-    document.getElementById('accountDot').hidden = signedIn;
+    const signOutBtn = document.getElementById('signOutBtn');
+    if (signOutBtn) signOutBtn.hidden = !signedIn;
     const initial = (name[0] || 'G').toUpperCase();
-    ['accountAvatar', 'bigAvatar'].forEach(function (id) {
+    ['accountAvatar', 'accountModalAvatar'].forEach(function (id) {
       const el = document.getElementById(id);
       el.textContent = initial;
       if (!(signedIn && data.user.picture)) return;
@@ -680,14 +754,13 @@ async function loadAccount() {
   } catch (e) {
     if (note) note.textContent = 'Could not check sign-in. Settings stay on this device; copy the addon URL.';
     if (googleBtn) googleBtn.hidden = true;
-    ['accountName', 'bigName', 'accountSub', 'bigSub'].forEach(function (id) {
+    accountSignedIn = false;
+    accountUser = null;
+    renderHeaderAccount(false, 'Guest mode');
+    ['accountName', 'accountSub'].forEach(function (id) {
       const el = document.getElementById(id);
-      if (el) el.textContent = id === 'bigName' || id === 'accountName' ? 'Guest mode' : id === 'accountSub' ? 'Local preferences' : 'Local preferences — sign in to keep your account connected.';
+      if (el) el.textContent = id === 'accountName' ? 'Guest mode' : 'Local preferences';
     });
-    const googleBtn2 = document.getElementById('googleBtn');
-    if (googleBtn2) googleBtn2.hidden = true;
-    const guestBtn = document.getElementById('guestBtn');
-    if (guestBtn) guestBtn.hidden = false;
     const signOutBtn = document.getElementById('signOutBtn');
     if (signOutBtn) signOutBtn.hidden = true;
   }
@@ -713,7 +786,6 @@ const SECTION_TITLES = {
   sources: ['Sources', 'Pick your servers'],
   filters: ['Filters', 'Quality & languages'],
   output: ['Output', 'Results & style'],
-  account: ['Account', 'Sign in, or carry on as guest'],
   status: ['Status', 'Service health'],
 };
 
@@ -736,6 +808,7 @@ function updateWizard(name) {
   steps.innerHTML = '';
   WIZARD_STEPS.forEach(function (step, i) {
     const el = document.createElement('button');
+    el.type = 'button';
     el.className = 'tuner-step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
     el.innerHTML = '<span class="tick">' + (i + 1) + '</span><span class="step-name">' + step.label + '</span>';
     el.addEventListener('click', function () { setSection(step.id); });
@@ -760,8 +833,29 @@ function setupWizard() {
   document.getElementById('wizardNext').addEventListener('click', function () {
     const idx = currentWizardIndex();
     if (idx === -1) return;
-    if (idx === WIZARD_STEPS.length - 1) setSection('install');
-    else setSection(WIZARD_STEPS[idx + 1].id);
+    if (idx < WIZARD_STEPS.length - 1) { setSection(WIZARD_STEPS[idx + 1].id); return; }
+    if (!finishAsksRename) { setSection('install'); return; }
+    finishAsksRename = false;
+    const profiles = loadProfiles();
+    const current = profiles.find(function (p) { return p.id === activeProfileId(profiles); });
+    showInput({
+      title: 'Name this preset',
+      text: 'Give this setup a name you will recognize later.',
+      value: current ? current.name : 'Preset',
+      okLabel: 'Save preset',
+    }).then(function (name) {
+      if (name) {
+        const list = loadProfiles();
+        const entry = list.find(function (p) { return p.id === activeProfileId(list); });
+        if (entry) {
+          entry.name = name.slice(0, 40);
+          saveProfiles(list);
+          renderProfiles();
+          toast('Saved as "' + entry.name + '"');
+        }
+      }
+      setSection('install');
+    });
   });
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -834,14 +928,19 @@ function setupDrawer() {
 
 function setupNav() {
   document.querySelectorAll('#nav .nav-item').forEach(function (btn) {
-    btn.addEventListener('click', function () { setSection(btn.dataset.section); });
+    btn.addEventListener('click', function () { finishAsksRename = false; setSection(btn.dataset.section); });
   });
 }
 
 function setupWelcomeModal() {
   const modal = document.getElementById('welcomeModal');
   const dismissed = safeGet(LS_WELCOME) === '1';
+  let firstVisit = !dismissed;
   let returnFocus = null;
+  let interacted = false;
+  ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(function (type) {
+    window.addEventListener(type, function () { interacted = true; }, { once: true, passive: true });
+  });
   const open = function () {
     returnFocus = document.activeElement;
     modal.classList.remove('hidden');
@@ -853,6 +952,14 @@ function setupWelcomeModal() {
     modal.classList.add('hidden');
     safeSet(LS_WELCOME, '1');
     if (returnFocus && returnFocus.focus) returnFocus.focus();
+    if (firstVisit) {
+      firstVisit = false;
+      setTimeout(function () {
+        finishAsksRename = true;
+        setSection('sources');
+        toast('Start with sources — Install with defaults is always one click away');
+      }, 140);
+    }
   };
   fetch('/api/me').then(function (r) { return r.json(); }).then(function (data) {
     loginConfigured = !!data.loginEnabled;
@@ -862,7 +969,9 @@ function setupWelcomeModal() {
     if (intro && !loginConfigured) {
       intro.textContent = 'Settings save on this device. Google sign-in is not configured on this instance.';
     }
-    if (!dismissed && !data.signedIn) setTimeout(open, 800);
+    if (!dismissed && !data.signedIn) {
+      setTimeout(function () { if (!interacted) open(); }, 900);
+    }
   }).catch(function () {});
   document.getElementById('welcomeClose').addEventListener('click', close);
   document.getElementById('modalGuestBtn').addEventListener('click', close);
@@ -875,7 +984,190 @@ function setupWelcomeModal() {
   });
 }
 
+let showConfirm = null;
+let showInput = null;
+let openAccountDialog = null;
+
+function setupAccountDialog() {
+  const modal = document.getElementById('accountModal');
+  if (!modal) return;
+  const title = document.getElementById('accountModalTitle');
+  const sub = document.getElementById('accountModalSub');
+  const avatar = document.getElementById('accountModalAvatar');
+  const google = document.getElementById('accountModalGoogle');
+  const guest = document.getElementById('accountModalGuest');
+  const signOut = document.getElementById('accountModalSignOut');
+  const closeBtn = document.getElementById('accountModalClose');
+  let returnFocus = null;
+
+  const googleIcon = document.querySelector('#modalGoogleBtn svg');
+  if (googleIcon && google && !google.querySelector('svg')) google.insertBefore(googleIcon.cloneNode(true), google.firstChild);
+
+  const close = function () {
+    if (modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    if (returnFocus && returnFocus.focus) returnFocus.focus();
+  };
+  const open = function () {
+    returnFocus = document.activeElement;
+    const name = accountUser && accountUser.name ? accountUser.name : 'Account';
+    if (title) title.textContent = accountSignedIn ? name : 'Sign in';
+    if (sub) sub.textContent = accountSignedIn
+      ? (accountUser && accountUser.email ? accountUser.email : 'Settings sync with your account on this browser.')
+      : (loginConfigured
+        ? 'Sign in to keep your presets across devices. Guest mode stays on this device.'
+        : 'Sign-in is not configured here. Presets stay on this device.');
+    if (avatar) {
+      avatar.classList.toggle('guest-google', !accountSignedIn);
+      avatar.textContent = accountSignedIn ? name[0].toUpperCase() : '';
+      if (accountSignedIn && accountUser && accountUser.picture) {
+        const img = document.createElement('img');
+        img.src = accountUser.picture;
+        img.alt = '';
+        img.referrerPolicy = 'no-referrer';
+        img.onerror = function () { avatar.textContent = name[0].toUpperCase(); };
+        avatar.textContent = '';
+        avatar.appendChild(img);
+      } else if (!accountSignedIn) {
+        const logo = document.getElementById('headerGoogleLogo');
+        if (logo) {
+          const icon = logo.cloneNode(true);
+          icon.removeAttribute('id');
+          avatar.appendChild(icon);
+        }
+      }
+    }
+    google.hidden = accountSignedIn || !loginConfigured;
+    guest.hidden = accountSignedIn || !loginConfigured;
+    signOut.hidden = !accountSignedIn;
+    modal.classList.remove('hidden');
+    const target = accountSignedIn ? signOut : (loginConfigured ? google : closeBtn);
+    if (target) target.focus();
+  };
+
+  openAccountDialog = open;
+  closeBtn.addEventListener('click', close);
+  google.addEventListener('click', function () { close(); signInWithGoogle(); });
+  guest.addEventListener('click', function () { close(); toast('Continuing as guest — settings save on this device'); });
+  signOut.addEventListener('click', function () {
+    close();
+    showConfirm({
+      title: 'Sign out?',
+      text: 'Your presets stay on this device. You can sign back in anytime.',
+      okLabel: 'Sign out',
+      onConfirm: function () { window.location.href = '/auth/logout'; },
+    });
+  });
+  modal.addEventListener('click', function (event) { if (event.target === modal) close(); });
+  document.addEventListener('keydown', function (event) {
+    if (modal.classList.contains('hidden')) return;
+    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+    if (event.key === 'Tab') trapFocus(modal, event);
+  });
+}
+
+function setupConfirmDialog() {
+  const modal = document.getElementById('confirmModal');
+  const cancel = document.getElementById('confirmCancel');
+  const confirm = document.getElementById('confirmOk');
+  if (!modal || !cancel || !confirm) return;
+  let returnFocus = null;
+  let pending = null;
+
+  const close = function () {
+    if (modal.classList.contains('hidden')) return null;
+    modal.classList.add('hidden');
+    const action = pending;
+    pending = null;
+    if (returnFocus && returnFocus.focus) returnFocus.focus();
+    return action;
+  };
+  const open = function (opts) {
+    returnFocus = opts.returnFocus || document.activeElement;
+    pending = typeof opts.onConfirm === 'function' ? opts.onConfirm : null;
+    document.getElementById('confirmTitle').textContent = opts.title || 'Are you sure?';
+    document.getElementById('confirmText').textContent = opts.text || '';
+    confirm.textContent = opts.okLabel || 'Confirm';
+    confirm.classList.toggle('danger', !!opts.danger);
+    modal.classList.remove('hidden');
+    cancel.focus();
+  };
+
+  showConfirm = open;
+  cancel.addEventListener('click', close);
+  confirm.addEventListener('click', function () {
+    const action = close();
+    if (action) action();
+  });
+  modal.addEventListener('click', function (event) { if (event.target === modal) close(); });
+  document.addEventListener('keydown', function (event) {
+    if (modal.classList.contains('hidden')) return;
+    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+    if (event.key === 'Tab') trapFocus(modal, event);
+  });
+}
+
+function setupInputDialog() {
+  const modal = document.getElementById('inputModal');
+  const field = document.getElementById('inputField');
+  const cancel = document.getElementById('inputCancel');
+  const ok = document.getElementById('inputOk');
+  if (!modal || !field || !cancel || !ok) return;
+  let returnFocus = null;
+  let resolveInput = null;
+
+  const finish = function (value) {
+    if (modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    const done = resolveInput;
+    resolveInput = null;
+    if (returnFocus && returnFocus.focus) returnFocus.focus();
+    if (done) done(value);
+  };
+  const open = function (opts) {
+    return new Promise(function (resolve) {
+      resolveInput = resolve;
+      returnFocus = opts.returnFocus || document.activeElement;
+      document.getElementById('inputTitle').textContent = opts.title || 'Enter a value';
+      const text = document.getElementById('inputText');
+      text.textContent = opts.text || '';
+      text.hidden = !opts.text;
+      field.type = opts.type || 'text';
+      field.value = opts.value || '';
+      field.placeholder = opts.placeholder || '';
+      ok.textContent = opts.okLabel || 'Save';
+      modal.classList.remove('hidden');
+      field.focus();
+      field.select();
+    });
+  };
+
+  showInput = open;
+  cancel.addEventListener('click', function () { finish(null); });
+  ok.addEventListener('click', function () { finish(field.value.trim()); });
+  field.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') { event.preventDefault(); finish(field.value.trim()); }
+  });
+  modal.addEventListener('click', function (event) { if (event.target === modal) finish(null); });
+  document.addEventListener('keydown', function (event) {
+    if (modal.classList.contains('hidden')) return;
+    if (event.key === 'Escape') { event.preventDefault(); finish(null); return; }
+    if (event.key === 'Tab') trapFocus(modal, event);
+  });
+}
+
 function setupActions() {
+  setupConfirmDialog();
+  setupInputDialog();
+  setupAccountDialog();
+  const openAccount = function () {
+    closeDrawer();
+    if (openAccountDialog) openAccountDialog();
+  };
+  const headerAccountBtn = document.getElementById('headerAccountBtn');
+  if (headerAccountBtn) headerAccountBtn.addEventListener('click', openAccount);
+  const sidebarAccount = document.getElementById('sidebarAccount');
+  if (sidebarAccount) sidebarAccount.addEventListener('click', openAccount);
   const copy = function () {
     const cfg = currentCfg();
     if (!cfg.p.length) { toast('Select at least one source to copy the addon URL'); return; }
@@ -890,6 +1182,12 @@ function setupActions() {
   });
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   if (copyUrlBtn) copyUrlBtn.addEventListener('click', copy);
+  const configureBtn = document.getElementById('configureBtn');
+  if (configureBtn) configureBtn.addEventListener('click', function () {
+    finishAsksRename = true;
+    setSection('sources');
+    toast('Choose your sources, then continue to Filters and Output');
+  });
   document.getElementById('sourcesAll').addEventListener('click', function () {
     const cfg = loadCfg();
     cfg.p = cfg.sourceOrder.slice();
@@ -897,22 +1195,35 @@ function setupActions() {
     applyCfg(loadCfg());
     toast('All ' + PROVIDERS.length + ' sources selected');
   });
-  document.getElementById('sourcesNone').addEventListener('click', function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); });
+  document.getElementById('sourcesNone').addEventListener('click', function () {
+    const cfg = loadCfg();
+    cfg.p = DEFAULT_CFG.p.slice();
+    cfg.sourceOrder = DEFAULT_CFG.sourceOrder.slice();
+    saveCfg(cfg);
+    applyCfg(loadCfg());
+    toast('Source selection reset to recommended');
+  });
   document.getElementById('newProfileBtn').addEventListener('click', function () { createProfile(loadCfg()); });
   document.getElementById('importProfileBtn').addEventListener('click', function () {
-    const url = prompt('Paste the addon URL to import', '');
-    if (url) importFromUrl(url);
+    showInput({
+      title: 'Import addon URL',
+      text: 'Paste an IndStream addon link. Its setup is saved as a new preset.',
+      placeholder: 'https://indstream.fly.dev/…/manifest.json',
+      okLabel: 'Import',
+    }).then(function (url) { if (url) importFromUrl(url); });
   });
   const installGoogleBtn = document.getElementById('installGoogleBtn');
   if (installGoogleBtn) installGoogleBtn.addEventListener('click', signInWithGoogle);
-  const googleBtn = document.getElementById('googleBtn');
-  if (googleBtn) googleBtn.addEventListener('click', signInWithGoogle);
-  const guestBtn = document.getElementById('guestBtn');
-  if (guestBtn) guestBtn.addEventListener('click', function () { toast('Guest mode — preferences stay on this device'); });
-  const logoutBtn = document.getElementById('logoutBtn');
-  if (logoutBtn) logoutBtn.addEventListener('click', function () { window.location.href = '/auth/logout'; });
+  const askSignOut = function () {
+    showConfirm({
+      title: 'Sign out?',
+      text: 'Your presets stay on this device. You can sign back in anytime.',
+      okLabel: 'Sign out',
+      onConfirm: function () { window.location.href = '/auth/logout'; },
+    });
+  };
   const signOutBtn = document.getElementById('signOutBtn');
-  if (signOutBtn) signOutBtn.addEventListener('click', function () { window.location.href = '/auth/logout'; });
+  if (signOutBtn) signOutBtn.addEventListener('click', askSignOut);
 }
 
 function setupSegmented() {
@@ -1063,7 +1374,7 @@ function setupPalette() {
   var input = document.getElementById('paletteInput');
   var list = document.getElementById('paletteList');
   var backdrop = document.getElementById('paletteBackdrop');
-  var SECTIONS = ['profiles', 'sources', 'filters', 'output', 'install', 'account', 'status'];
+  var SECTIONS = ['profiles', 'sources', 'filters', 'output', 'install', 'status'];
   var actions = [
     { id: 'nav:profiles', label: 'Go to Presets', hint: '1' },
     { id: 'nav:sources', label: 'Go to Sources', hint: '2' },
@@ -1200,7 +1511,15 @@ function setupSpatialNav() {
     if (!candidates.length) return;
 
     var current = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
-    if (!current) { e.preventDefault(); candidates[0].focus(); return; }
+    if (!current) {
+      e.preventDefault();
+      var activePanel = document.querySelector('.panel:not(.hidden)');
+      var navTarget = window.innerWidth > 900 ? document.querySelector('#nav .nav-item.active') : null;
+      var panelTarget = activePanel && activePanel.querySelector(FOCUSABLE);
+      var target = navTarget || (panelTarget && visible(panelTarget) ? panelTarget : null) || candidates[0];
+      if (target) target.focus();
+      return;
+    }
 
     var c = center(current);
     var best = null;
@@ -1234,6 +1553,8 @@ function updateStats(cfg) {
   var styleSel = document.getElementById('streamStyle');
   var opt = styleSel && styleSel.selectedOptions && styleSel.selectedOptions[0];
   setText('statStyle', opt ? opt.textContent.trim() : (cfg.streamStyle || '—'));
+  var styleBadge = document.getElementById('streamStyleBadge');
+  if (styleBadge) styleBadge.hidden = !styleSel || styleSel.value !== DEFAULT_STYLE;
   setText('statTotal', '/ ' + total + ' active');
 }
 
@@ -1525,8 +1846,12 @@ setupPreferenceList('qualityRank', { toggle: toggleQualityItem, move: moveQualit
 var resetInstall = document.getElementById('resetInstall');
 if (resetInstall) {
   resetInstall.addEventListener('click', function () {
-    applyCfg(DEFAULT_CFG);
-    toast('Reset to the recommended setup');
+    showConfirm({
+      title: 'Reset this preset?',
+      text: 'Sources, filters and output settings return to the recommended defaults.',
+      okLabel: 'Reset',
+      onConfirm: function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); },
+    });
   });
 }
 
