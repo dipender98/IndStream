@@ -1287,9 +1287,10 @@ function renderStatus(data) {
         '<span class="provider-meta">' + meta + '</span></div>';
     }).join('');
   }
-  setText('statusLive', data.live == null ? '—' : data.live);
-  setText('statusTotal', data.total == null ? '—' : data.total);
-  setText('statusProbeLabel', '2 movies · 1 series · 2 anime movies · 1 anime series');
+  const live = Number(data.live) || 0;
+  const total = Number(data.total) || 0;
+  setText('statusLive', live);
+  setText('statusTotal', total);
   lastStatusAt = Number(data.checkedAt) || Date.now();
   updateStatusTime();
   scheduleStatus();

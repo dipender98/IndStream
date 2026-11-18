@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=28">
+<link rel="stylesheet" href="/style.css?v=32">
 </head>
 <body>
 <noscript><p style="max-width:46ch;margin:3rem auto;padding:0 1.25rem;color:#e8e8ea;font-family:system-ui,sans-serif">JavaScript is required to use the IndStream configurator.</p></noscript>
@@ -321,8 +321,8 @@
           <button class="text-btn" id="statusCheckBtn" type="button">Check now</button>
         </div>
       </div>
-      <div class="provider-head"><span>Provider</span><span id="statusProbeLabel">6-title live probe</span></div>
-      <div class="provider-list" id="providerList"></div>
+      <div class="provider-head"><span>Provider</span><span>Health</span></div>
+      <div class="provider-list" id="providerList" aria-live="polite"></div>
     </div>
     <label class="switch card"><input type="checkbox" id="debug"><span class="switch-track"></span><span class="switch-copy"><b>Verbose logging</b><small>Write provider timings to the host log.</small></span></label>
   </section>
@@ -417,6 +417,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=22"></script>
+<script src="/app.js?v=23"></script>
 </body>
 </html>
