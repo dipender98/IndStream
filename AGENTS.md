@@ -19,6 +19,7 @@ Use logic and judgment on every task. If two rules conflict, correctness wins.
 ## 3. Implementation
 
 - IMPORTANT: Understand the relevant code and execution flow before making changes.
+- IMPORTANT: Before researching, testing, adding or replacing any stream provider/server, read `REJECTED_SERVERS.md`. Do not re-add a rejected source without fresh live-probe evidence that the issue is fixed. Record every provider you reject in `REJECTED_SERVERS.md` with the reason and the evidence.
 - Take references from the internet.
 - Never emit a stream below 720p; filter out any stream whose height is known to be less than 720. Streams below 720p are not allowed in the server list.
 - Stream/link display names show at most 3 audio language names (title's original language first, then Hindi, then English, then any); when more than 3 audio languages are detected, render `Multi` instead of listing them. Keep this rule for all future providers and name-formatting changes.

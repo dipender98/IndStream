@@ -25,6 +25,9 @@ const vidbolt = require('./src/indstream/providers/vidbolt');
 const movy = require('./src/indstream/providers/movy');
 const vidy = require('./src/indstream/providers/vidy');
 const vidlink = require('./src/indstream/providers/vidlink');
+const allanime = require('./src/indstream/providers/allanime');
+const hianime = require('./src/indstream/providers/hianime');
+const animeworld = require('./src/indstream/providers/animeworld');
 const streamCacheModule = require('./src/indstream/cache');
 const userStoreModule = require('./src/indstream/userStore');
 
@@ -32,7 +35,7 @@ const userStoreModule = require('./src/indstream/userStore');
 // identical request, so keep only a short in-flight dedupe here rather than a long TTL.
 const streamCache = streamCacheModule.createTtlCache({ ttlMs: 2000, maxEntries: 400 });
 
-const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly, vidbolt, movy, vidy, vidlink];
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly, vidbolt, movy, vidy, vidlink, allanime, hianime, animeworld];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -193,7 +196,7 @@ async function getStreams(mediaId, mediaType, season, episode, cfg) {
   return entry.value;
 }
 
-async function resolveStreams(mediaId, mediaType, season, episode, cfg) {
+async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProviderResult) {
   const s = normalizeCfg(cfg);
   const type = mediaType === 'series' ? 'tv' : 'movie';
   const inputId = String(mediaId == null ? '' : mediaId).trim();
@@ -211,6 +214,7 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg) {
     settings: s,
     timeoutMs: s.requestTimeout * 1000,
     log: s.debug ? function (m) { console.log('[IndStream] ' + m); } : function () {},
+    onProviderResult: typeof onProviderResult === 'function' ? onProviderResult : null,
   };
 
   if (!context.tmdbId && !context.imdbId) return [];
@@ -601,6 +605,66 @@ async function handleRequest(req, res) {
       ok: true,
       profile: { id: hit.profile.id, name: hit.profile.name },
       cfg: sanitizeConfigFromApi(hit.profile.cfg),
+    }, false);
+    return;
+  }
+
+  if (pathname === '/api/status') {
+    const normalProbes = [
+      { label: 'Inception', type: 'movie', id: '27205', season: 0, episode: 0 },
+      { label: 'John Wick', type: 'movie', id: '245891', season: 0, episode: 0 },
+      { label: 'Stranger Things', type: 'series', id: '66732', season: 1, episode: 1 },
+    ];
+    const animeProbes = [
+      { label: 'Your Name', type: 'movie', id: '372058', season: 0, episode: 0 },
+      { label: 'Spirited Away', type: 'movie', id: '129', season: 0, episode: 0 },
+      { label: 'Attack on Titan', type: 'series', id: '1396', season: 1, episode: 1 },
+    ];
+    const isAnime = function (provider) {
+      return Array.isArray(provider.tags) && provider.tags.some(function (tag) { return /anime/i.test(String(tag)); });
+    };
+    const normal = ALL_PROVIDERS.filter(function (p) { return !isAnime(p); });
+    const anime = ALL_PROVIDERS.filter(isAnime);
+    const providers = ALL_PROVIDERS.map(function (p) {
+      return { id: p.id, name: p.name, state: 'testing', streams: 0, ms: 0 };
+    });
+    const byId = new Map(providers.map(function (p) { return [p.id, p]; }));
+    const seen = new Map();
+    const record = function (result) {
+      if (!byId.has(result.id)) return;
+      const s = seen.get(result.id) || { streams: 0, ms: 0, attempts: 0 };
+      s.streams += result.streams || 0;
+      s.ms += result.ms || 0;
+      s.attempts += 1;
+      seen.set(result.id, s);
+    };
+    const runGroup = function (probes, group) {
+      if (!group.length) return Promise.resolve();
+      const ids = group.map(function (p) { return p.id; });
+      const cfg = Object.assign({}, DEFAULT_CFG, { p: ids, sourceOrder: ids, requestTimeout: '5', debug: false, resultLimit: 0 });
+      return (async function () {
+        for (const probe of probes) {
+          try { await resolveStreams(probe.id, probe.type, probe.season, probe.episode, cfg, record); } catch (e) {}
+        }
+      })();
+    };
+    await Promise.all([runGroup(normalProbes, normal), runGroup(animeProbes, anime)]);
+    providers.forEach(function (p) {
+      const s = seen.get(p.id);
+      if (!s) { p.state = 'down'; return; }
+      p.streams = s.streams;
+      p.ms = s.attempts ? Math.round(s.ms / s.attempts) : 0;
+      p.state = s.streams > 0 ? 'live' : 'down';
+    });
+    sendJson(res, 200, {
+      checkedAt: Date.now(),
+      probes: {
+        normal: normalProbes.map(function (p) { return p.label; }),
+        anime: animeProbes.map(function (p) { return p.label; }),
+      },
+      providers: providers,
+      live: providers.filter(function (p) { return p.state === 'live'; }).length,
+      total: providers.length,
     }, false);
     return;
   }

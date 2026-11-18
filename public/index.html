@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=21">
+<link rel="stylesheet" href="/style.css?v=28">
 </head>
 <body>
 <noscript><p style="max-width:46ch;margin:3rem auto;padding:0 1.25rem;color:#e8e8ea;font-family:system-ui,sans-serif">JavaScript is required to use the IndStream configurator.</p></noscript>
@@ -303,21 +303,26 @@
   <!-- STATUS -->
   <section class="panel hidden" id="panel-status" aria-label="Status">
     <div class="panel-head">
-      <p class="panel-eyebrow">Live probes</p>
+      <p class="panel-eyebrow">Provider health</p>
       <h2>Status</h2>
-      <p class="panel-sub">Live checks against this instance, plus host logging for troubleshooting.</p>
+      <p class="panel-sub">Live provider checks run automatically when you open this page and twice a day. You can also check on demand.</p>
     </div>
-    <div class="card health-card">
-      <div class="health-grid">
-        <div class="health-item"><span class="health-name">Manifest</span><span class="health-val" id="healthManifest"><span class="shimmer-line"></span></span></div>
-        <div class="health-item"><span class="health-name">Streams (Inception)</span><span class="health-val" id="healthStreams"><span class="shimmer-line"></span></span></div>
-        <div class="health-item"><span class="health-name">Version</span><span class="health-val plain" id="healthVersion">…</span></div>
-        <div class="health-item"><span class="health-name">Runtime</span><span class="health-val plain" id="healthRuntime">…</span></div>
+    <div class="card status-card">
+      <div class="status-top">
+        <div class="status-score">
+          <span class="status-score-num" id="statusLive">…</span>
+          <span class="status-score-label">of <span id="statusTotal">…</span> providers live</span>
+        </div>
+        <div class="status-aside">
+          <div class="status-when">
+            <b id="statusChecked">Checking live…</b>
+            <small>Refreshes automatically twice a day</small>
+          </div>
+          <button class="text-btn" id="statusCheckBtn" type="button">Check now</button>
+        </div>
       </div>
-      <button class="btn-quiet" id="recheckBtn" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        Re-run checks
-      </button>
+      <div class="provider-head"><span>Provider</span><span id="statusProbeLabel">6-title live probe</span></div>
+      <div class="provider-list" id="providerList"></div>
     </div>
     <label class="switch card"><input type="checkbox" id="debug"><span class="switch-track"></span><span class="switch-copy"><b>Verbose logging</b><small>Write provider timings to the host log.</small></span></label>
   </section>
@@ -412,6 +417,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=17"></script>
+<script src="/app.js?v=22"></script>
 </body>
 </html>

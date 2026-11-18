@@ -11,6 +11,9 @@ const PROVIDERS = [
   { id: 'movy', name: 'Movy', mark: 'MV', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
   { id: 'vidy', name: 'Vidy', mark: 'VD', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
   { id: 'vidlink', name: 'VidLink', mark: 'VK', tags: ['1080p', 'Stream', 'Very Fast'] },
+  { id: 'allanime', name: 'AllAnime', mark: 'AA', tags: ['1080p', 'Anime', 'Stream', 'Fast'] },
+  { id: 'hianime', name: 'Hianime', mark: 'HI', tags: ['1080p', 'Anime', 'Stream', 'Fast'] },
+  { id: 'animeworld', name: 'AnimeWorld', mark: 'AW', tags: ['1080p', 'Anime', 'Multi-Audio', 'Stream'] },
 ];
 
 const QUALITY_TAGS = ['4K', '1080p', '720p'];
@@ -890,7 +893,7 @@ function setSection(name) {
     panel.setAttribute('tabindex', '-1');
     panel.focus({ preventScroll: true });
   }
-  if (name === 'status' && !healthChecked) checkHealth();
+  if (name === 'status') maybeAutoStatus();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
 }
@@ -1247,44 +1250,115 @@ function setupSegmented() {
   document.getElementById('streamStyle').addEventListener('change', function () { updateAll(); });
 }
 
-let healthChecked = false;
-async function checkHealth() {
-  healthChecked = true;
-  const man = document.getElementById('healthManifest');
-  const sub = document.getElementById('healthStreams');
-  const ver = document.getElementById('healthVersion');
-  const rt = document.getElementById('healthRuntime');
-  try {
-    const v = await fetch('/api/version');
-    const vd = await v.json();
-    if (ver) ver.textContent = (vd.version || '—');
-    if (rt) rt.textContent = (vd.runtime || '—');
-  } catch (e) {
-    if (ver) ver.textContent = 'unavailable';
-    if (rt) rt.textContent = 'unavailable';
+
+const LS_STATUS = 'indstream.status.v1';
+const STATUS_INTERVAL = 12 * 60 * 60 * 1000;
+let statusRunning = false;
+let statusTimer = 0;
+let lastStatusAt = 0;
+
+function statusAgo(ts) {
+  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes + ' minute' + (minutes === 1 ? '' : 's') + ' ago';
+  const hours = Math.round(minutes / 60);
+  return hours + ' hour' + (hours === 1 ? '' : 's') + ' ago';
+}
+
+function updateStatusTime() {
+  if (lastStatusAt) setText('statusChecked', 'Checked ' + statusAgo(lastStatusAt));
+}
+
+function scheduleStatus() {
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(checkProviderStatus, STATUS_INTERVAL);
+}
+
+function renderStatus(data) {
+  const list = document.getElementById('providerList');
+  if (list) {
+    list.innerHTML = (data.providers || []).map(function (p) {
+      const state = p.state === 'testing' ? 'testing' : (p.streams > 0 ? 'live' : 'down');
+      const meta = state === 'testing' ? 'Testing…' : (state === 'live' ? 'Up · ' + p.streams + ' streams' : 'Down · 0 streams');
+      return '<div class="provider-row" data-state="' + state + '">' +
+        '<span class="provider-dot" aria-hidden="true"></span>' +
+        '<span class="provider-name">' + escapeHtml(p.name) + '</span>' +
+        '<span class="provider-meta">' + meta + '</span></div>';
+    }).join('');
   }
-  try {
-    const mf = await fetch('/manifest.json');
-    man.textContent = mf.ok ? 'OK' : 'HTTP ' + mf.status;
-    man.className = 'health-val ' + (mf.ok ? 'ok' : 'bad');
-  } catch (e) {
-    man.textContent = 'unreachable';
-    man.className = 'health-val bad';
+  setText('statusLive', data.live == null ? '—' : data.live);
+  setText('statusTotal', data.total == null ? '—' : data.total);
+  setText('statusProbeLabel', '2 movies · 1 series · 2 anime movies · 1 anime series');
+  lastStatusAt = Number(data.checkedAt) || Date.now();
+  updateStatusTime();
+  scheduleStatus();
+}
+
+async function checkProviderStatus() {
+  if (statusRunning) return;
+  statusRunning = true;
+  const btn = document.getElementById('statusCheckBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  const list = document.getElementById('providerList');
+  if (list) {
+    list.querySelectorAll('.provider-row').forEach(function (row) {
+      row.dataset.state = 'testing';
+      const meta = row.querySelector('.provider-meta');
+      if (meta) meta.textContent = 'Testing…';
+    });
   }
+  setText('statusChecked', 'Checking live…');
   try {
-    const res = await fetch('/stream/movie/27205.json');
+    const res = await fetch('/api/status', { cache: 'no-store' });
     const data = await res.json();
-    const n = (data.streams || []).length;
-    sub.textContent = n > 0 ? n + ' streams live' : '0 streams right now';
-    sub.className = 'health-val ' + (n > 0 ? 'ok' : 'bad');
+    if (Array.isArray(data.providers)) {
+      renderStatus(data);
+      safeSet(LS_STATUS, JSON.stringify(data));
+    } else {
+      setText('statusChecked', 'Check failed');
+    }
   } catch (e) {
-    sub.textContent = 'unreachable';
-    sub.className = 'health-val bad';
+    setText('statusChecked', 'Check failed — retrying later');
+  } finally {
+    statusRunning = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Check now'; }
+    scheduleStatus();
   }
 }
 
-function setupHealth() {
-  document.getElementById('recheckBtn').addEventListener('click', checkHealth);
+function readStatusCache() {
+  try {
+    const cached = JSON.parse(safeGet(LS_STATUS) || 'null');
+    return cached && Array.isArray(cached.providers) ? cached : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function statusIsStale(data) {
+  return !data || Date.now() - (Number(data.checkedAt) || 0) > STATUS_INTERVAL;
+}
+
+function primeStatusFromCache() {
+  const cached = readStatusCache();
+  if (cached) {
+    renderStatus(cached);
+    return cached;
+  }
+  return null;
+}
+
+function maybeAutoStatus() {
+  const cached = primeStatusFromCache();
+  if (statusIsStale(cached)) checkProviderStatus();
+}
+
+function setupStatus() {
+  const btn = document.getElementById('statusCheckBtn');
+  if (btn) btn.addEventListener('click', checkProviderStatus);
+  maybeAutoStatus();
+  setInterval(updateStatusTime, 60000);
 }
 
 buildLangChips();
@@ -1345,7 +1419,7 @@ loadStyles();
 applyCfg(loadCfg());
 interactive = true;
 loadAccount();
-setupHealth();
+setupStatus();
 
 function setupLangFilters() {
   var search = document.getElementById('langSearch');
@@ -1586,10 +1660,6 @@ function rowToggle(key, name, off, showTick) {
   return '<button class="list-toggle" type="button" data-toggle="' + escapeHtml(key) + '" aria-pressed="' + (off ? 'false' : 'true') + '" aria-label="' + (off ? 'Allow ' : 'Hide ') + escapeHtml(name) + '">' + (showTick ? CHECK_GLYPH : '') + '</button>';
 }
 
-function rankTick() {
-  return '<span class="rank-tick" aria-hidden="true">' + CHECK_GLYPH + '</span>';
-}
-
 function syncEdgeButtons(list) {
   var rows = list.querySelectorAll('.rank-item');
   rows.forEach(function (row, i) {
@@ -1623,19 +1693,26 @@ function setupPreferenceList(listId, handlers) {
   var list = document.getElementById(listId);
   if (!list) return;
   var dragKey = null;
+  var dragged = false;
   list.addEventListener('click', function (e) {
-    var toggle = e.target.closest('[data-toggle]');
-    if (toggle && handlers.toggle) { handlers.toggle(toggle.dataset.toggle); return; }
     var btn = e.target.closest('.rank-btn');
-    if (!btn || btn.disabled || !handlers.move) return;
-    var row = btn.closest('.rank-item');
-    if (row) handlers.move(row.dataset.key, Number(btn.dataset.move));
+    if (btn) {
+      if (!btn.disabled && handlers.move) {
+        var actionRow = btn.closest('.rank-item');
+        if (actionRow) handlers.move(actionRow.dataset.key, Number(btn.dataset.move));
+      }
+      return;
+    }
+    if (dragged || !handlers.toggle) return;
+    var row = e.target.closest('.rank-item');
+    if (row) handlers.toggle(row.dataset.key);
   });
   list.addEventListener('dragstart', function (e) {
     if (e.target.closest && e.target.closest('button')) { e.preventDefault(); return; }
     var row = e.target.closest('.rank-item');
     if (!row) return;
     dragKey = row.dataset.key;
+    dragged = true;
     row.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     try { e.dataTransfer.setData('text/plain', dragKey); } catch (err) {}
@@ -1660,6 +1737,7 @@ function setupPreferenceList(listId, handlers) {
   list.addEventListener('dragend', function () {
     dragKey = null;
     list.querySelectorAll('.dragging, .drag-over').forEach(function (el) { el.classList.remove('dragging', 'drag-over'); });
+    setTimeout(function () { dragged = false; }, 0);
   });
 }
 
@@ -1676,7 +1754,6 @@ function renderLanguageList(cfgArg) {
     li.draggable = true;
     li.dataset.key = lang;
     li.innerHTML =
-      rankTick() +
       '<span class="rank-mark" aria-hidden="true">' + escapeHtml(lang.slice(0, 2).toUpperCase()) + '</span>' +
       '<span class="rank-copy"><b>' + escapeHtml(lang) + '</b><small>Language</small></span>' +
       rowActions(lang);
@@ -1714,7 +1791,7 @@ function renderSourceList(cfgArg) {
     if (!pr) return;
     var off = cfg.p.indexOf(key) < 0;
     var li = document.createElement('li');
-    li.className = 'rank-item source-item has-toggle' + (off ? ' off' : '');
+    li.className = 'rank-item source-item' + (off ? ' off' : '');
     li.setAttribute('role', 'listitem');
     li.draggable = true;
     li.dataset.key = key;
@@ -1781,10 +1858,9 @@ function renderQualityList(cfgArg) {
     if (!q) return;
     var off = cfg.qualityOff.indexOf(key) >= 0;
     var li = document.createElement('li');
-    li.className = 'rank-item quality-item' + (off ? ' off' : '');
     li.setAttribute('role', 'listitem');
     li.draggable = true;
-    li.className = 'rank-item quality-item has-toggle' + (off ? ' off' : '');
+    li.className = 'rank-item quality-item' + (off ? ' off' : '');
     li.dataset.key = key;
     li.innerHTML =
       rowToggle(key, q.name, off, true) +

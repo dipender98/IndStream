@@ -28,6 +28,9 @@ const wecollege = require('../src/indstream/providers/wecollege');
 const movy = require('../src/indstream/providers/movy');
 const vidy = require('../src/indstream/providers/vidy');
 const vidlink = require('../src/indstream/providers/vidlink');
+const allanime = require('../src/indstream/providers/allanime');
+const hianime = require('../src/indstream/providers/hianime');
+const animeworld = require('../src/indstream/providers/animeworld');
 const filehost = require('../src/indstream/filehost');
 const userStore = require('../src/indstream/userStore');
 
@@ -848,6 +851,198 @@ test('toStreams returns empty for missing stream data', function () {
   assert.deepStrictEqual(vidlink._test.toStreams({ stream: { qualities: {} } }), []);
 });
 
+section('allanime');
+test('pickShow matches titles and aliases only above threshold', function () {
+  const json = { data: { shows: { edges: [
+    { _id: 'show1', name: 'Sousou no Frieren', englishName: "Frieren: Beyond Journey's End" },
+    { _id: 'show2', name: 'Something Else' },
+  ] } } };
+  assert.strictEqual(allanime._test.pickShow(json, ["Frieren: Beyond Journey's End"], '2023'), 'show1');
+  assert.strictEqual(allanime._test.pickShow(json, ['Unrelated Title'], ''), '');
+});
+test('cdnStreams builds direct media and drops known sub-720 tracks', function () {
+  const info = { data: { episodeInfos: [{
+    vidInforssub: { vidPath: 'videos/sub/1.mp4', vidResolution: '1080', vidSize: 1073741824 },
+    vidInforsdub: { vidPath: 'https://cdn.example.com/dub.mp4', vidResolution: '480' },
+  }] } };
+  const out = allanime._test.cdnStreams(info);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].url, 'https://aln.youtube-anime.com/videos/sub/1.mp4');
+  assert.strictEqual(out[0].height, 1080);
+  assert.strictEqual(out[0].size, '1.00 GB');
+  assert.strictEqual(out[0].language, '');
+  assert.strictEqual(out[0].type, 'mp4');
+});
+test('parseSourceUrls accepts arrays and JSON strings', function () {
+  const raw = JSON.stringify([{ sourceUrl: 'abc', sourceName: 'Default', priority: 2 }]);
+  assert.deepStrictEqual(allanime._test.parseSourceUrls(raw), [
+    { sourceUrl: 'abc', sourceName: 'Default', priority: 2, type: '' },
+  ]);
+  assert.strictEqual(allanime._test.parseSourceUrls('not json').length, 0);
+  assert.strictEqual(allanime._test.parseSourceUrls(null).length, 0);
+});
+test('decodeSourceUrl reverses the XOR mask and keeps only media paths', function () {
+  const encode = function (text) {
+    let out = '';
+    for (let i = 0; i < text.length; i += 1) out += ('0' + (text.charCodeAt(i) ^ 56).toString(16)).slice(-2);
+    return out;
+  };
+  assert.strictEqual(allanime._test.decodeSourceUrl('--' + encode('/clock.json')), '/clock.json');
+  assert.strictEqual(allanime._test.decodeSourceUrl('ap/' + encode('/videos/a.m3u8')), '/videos/a.m3u8');
+  assert.strictEqual(allanime._test.decodeSourceUrl('https://cdn.example.com/a.mp4'), 'https://cdn.example.com/a.mp4');
+  assert.strictEqual(allanime._test.decodeSourceUrl('zzzz'), '');
+});
+test('providerStreams maps links and hls but drops known low quality', function () {
+  const json = { links: [
+    { link: 'https://cdn.example.com/a.m3u8', resolutionStr: '720' },
+    { link: 'https://cdn.example.com/b.mp4', resolutionStr: '480' },
+  ], hls: { url: 'https://cdn.example.com/master.m3u8' } };
+  const out = allanime._test.providerStreams(json, 'Default');
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].height, 720);
+  assert.strictEqual(out[0].type, 'hls');
+  assert.strictEqual(out[1].language, '');
+});
+
+section('hianime');
+test('parseSearch reads anime id from absolute hrefs and native titles', function () {
+  const html = '<div class="flw-item"><h3 class="film-name"><a href="https://hianime.fm/frieren-beyond-journeys-end-481" ' +
+    'title="Frieren: Beyond Journey&#039;s End" class="dynamic-name" data-jname="Sousou no Frieren">Frieren</a></h3></div>';
+  const out = hianime._test.parseSearch(html);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].id, 'frieren-beyond-journeys-end-481');
+  assert.strictEqual(out[0].name, 'Frieren');
+  assert.strictEqual(out[0].jname, 'Sousou no Frieren');
+});
+test('pickAnime matches native aliases', function () {
+  const items = [{ id: 'a', name: 'Something', jname: '葬送のフリーレン' }];
+  assert.strictEqual(hianime._test.pickAnime(items, ['Frieren']), null);
+  assert.strictEqual(hianime._test.pickAnime(items, ['Something']).id, 'a');
+});
+test('parseEpisodeList reads numbered episode ids', function () {
+  const html = '<a class="ssl-item ep-item" data-number="1" data-id="9227" href="https://hianime.fm/watch/show-481?ep=9227">1</a>' +
+    '<a class="ssl-item ep-item" data-number="2" data-id="9228" href="https://hianime.fm/watch/show-481?ep=9228">2</a>';
+  const out = hianime._test.parseEpisodeList(html);
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].number, 1);
+  assert.strictEqual(out[0].episodeId, '9227');
+});
+test('parseServerItems and pickServers prefer declared player lanes', function () {
+  const html = '<div class="server-item" data-type="sub" data-server-name="HD-1" data-hash="aGQx"></div>' +
+    '<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="em9rbw=="></div>' +
+    '<div class="server-item" data-type="dub" data-server-name="ZokoAnime" data-hash="ZHVi"></div>';
+  const parsed = hianime._test.parseServerItems(html);
+  assert.strictEqual(parsed.length, 3);
+  const picked = hianime._test.pickServers(parsed);
+  assert.strictEqual(picked.length, 3);
+  assert.strictEqual(picked[0].name, 'ZokoAnime');
+  assert.strictEqual(picked[0].type, 'sub');
+  assert.strictEqual(picked[2].name, 'HD-1');
+});
+test('embedInfo decodes the player config and keeps subtitles separate from audio', function () {
+  const key = 'otaku-embed-v1';
+  const json = JSON.stringify({
+    src: 'https://cdn.example.com/index.m3u8',
+    subtitles: [{ lang: 'en', label: 'English', src: 'https://cdn.example.com/en.vtt' }],
+  });
+  const bytes = Buffer.from(json, 'utf8').map(function (byte, index) {
+    return byte ^ key.charCodeAt(index % key.length);
+  });
+  const blob = bytes.toString('base64');
+  const page = '<script>window.__P="' + blob + '"</script>';
+  const info = hianime._test.embedInfo(page);
+  assert.strictEqual(info.src, 'https://cdn.example.com/index.m3u8');
+  assert.strictEqual(info.subtitles.length, 1);
+  assert.strictEqual(info.subtitles[0].label, 'English');
+  assert.strictEqual(hianime._test.embedInfo('<html>no config</html>'), null);
+});
+test('extractMediaUrls unescapes upstream encodings', function () {
+  const html = '{"file":"https:\\u002F\\u002Fcdn.example.com\\u002Fa.m3u8"} ' +
+    '<source src="https:\\/\\/cdn.example.com\\/b.mp4">';
+  const out = hianime._test.extractMediaUrls(html, 'https://hianime.at/');
+  assert.deepStrictEqual(out, ['https://cdn.example.com/a.m3u8', 'https://cdn.example.com/b.mp4']);
+});
+test('parseMaster resolves variants and filters below 720', function () {
+  const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=1280x720\n720.m3u8\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=500,RESOLUTION=854x480\n480.m3u8';
+  const out = hianime._test.parseMaster(master, 'https://cdn.example.com/hls/index.m3u8');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].url, 'https://cdn.example.com/hls/720.m3u8');
+  assert.strictEqual(out[0].height, 720);
+});
+
+section('animeworld');
+test('build urls carry encoded title, season and player id', function () {
+  assert.strictEqual(animeworld._test.searchUrl("Frieren: Beyond Journey's End"),
+    "https://watchanimeworld.one/?s=Frieren%3A%20Beyond%20Journey's%20End");
+  assert.ok(animeworld._test.seasonUrl(1258, 2).indexOf('season=2&post=1258') >= 0);
+  assert.ok(animeworld._test.playerUrl('abc123').indexOf('data=abc123&do=getVideo') >= 0);
+});
+test('parseAnimeCards keeps series and movie cards only', function () {
+  const html =
+    '<article class="post dfx fcl series">' +
+    '<h2 class="entry-title">Frieren: Beyond Journey&#039;s End</h2>' +
+    '<a href="https://watchanimeworld.one/series/frieren-beyond-journeys-end/" class="lnk-blk"></a></article>' +
+    '<article class="post dfx fcl movies"><h2 class="entry-title">Your Name</h2>' +
+    '<a href="https://watchanimeworld.one/movies/your-name/" class="lnk-blk"></a></article>' +
+    '<article class="post"><h2 class="entry-title">News</h2><a href="/news/" class="lnk-blk"></a></article>';
+  const out = animeworld._test.parseAnimeCards(html);
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].title, "Frieren: Beyond Journey's End");
+  assert.strictEqual(out[0].movie, false);
+  assert.strictEqual(out[1].movie, true);
+});
+test('pickAnimeCard matches the requested media type and rejects weak titles', function () {
+  const cards = [
+    { url: 'a', title: 'Frieren: Beyond Journey\'s End (2023)', movie: false },
+    { url: 'b', title: 'Your Name', movie: true },
+  ];
+  assert.strictEqual(animeworld._test.pickAnimeCard(cards, ['Frieren'], '2023', false).url, 'a');
+  assert.strictEqual(animeworld._test.pickAnimeCard(cards, ['Frieren'], '2023', true), null);
+  assert.strictEqual(animeworld._test.pickAnimeCard(cards, ['Something Else'], '', false), null);
+  assert.strictEqual(animeworld._test.pickAnimeCard(cards, ['Frieren'], '1999', false), null);
+});
+test('episode helpers read post, seasons and numbered links', function () {
+  const series = '<div data-post="1258"><span data-season="1"></span><span data-season="2"></span>' +
+    '<a href="https://watchanimeworld.one/episode/frieren-beyond-journeys-end-2x10/">10</a></div>';
+  assert.strictEqual(animeworld._test.animePostId(series), '1258');
+  assert.deepStrictEqual(animeworld._test.animeSeasonNumbers(series), [1, 2]);
+  const links = animeworld._test.animeEpisodeLinks(series);
+  assert.strictEqual(links.length, 1);
+  assert.strictEqual(animeworld._test.animeEpisodeSeason(links[0]), 2);
+  assert.strictEqual(animeworld._test.animeEpisodeNumber(links[0]), 10);
+  assert.strictEqual(animeworld._test.animeBucketGuess(1, 2, 28), 1);
+  const season1 = [
+    'https://watchanimeworld.one/episode/show-1x1/',
+    'https://watchanimeworld.one/episode/show-1x5/',
+  ];
+  assert.ok(animeworld._test.pickEpisodeOf(season1, 1, 5).indexOf('1x5') >= 0);
+  assert.strictEqual(animeworld._test.pickEpisodeOf(season1, 1, 9), '');
+});
+test('player helpers read the embed id and prefer secured links', function () {
+  const html = '<iframe src="https://play.zephyrix.org/video/ecb78e3b1dd950b9621f548bcc02dbe9"></iframe>';
+  assert.strictEqual(animeworld._test.animePlayerId(html), 'ecb78e3b1dd950b9621f548bcc02dbe9');
+  assert.strictEqual(animeworld._test.playerSource('{"securedLink":"https://cdn.example.com/a.m3u8"}'),
+    'https://cdn.example.com/a.m3u8');
+  assert.strictEqual(animeworld._test.playerSource('{"videoSource":"https://cdn.example.com/b.m3u8"}'),
+    'https://cdn.example.com/b.m3u8');
+  assert.strictEqual(animeworld._test.playerSource('not json'), '');
+});
+test('masterInfo declares audio only from renditions and resolves subtitle urls', function () {
+  const master = '#EXTM3U\n' +
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="jpn",NAME="Japanese",DEFAULT=NO\n' +
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="hin",NAME="Hindi",DEFAULT=NO\n' +
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",LANGUAGE="en",NAME="English",URI="sub/en.vtt"\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=1280x720,AUDIO="audio"\n720.m3u8\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=2000,RESOLUTION=1920x1080,AUDIO="audio"\n1080.m3u8';
+  const info = animeworld._test.masterInfo(master, 'https://play.example.com/hls/master.m3u8');
+  assert.strictEqual(info.height, 1080);
+  assert.deepStrictEqual(info.languages, ['Japanese', 'Hindi']);
+  assert.strictEqual(info.subtitles.length, 1);
+  assert.strictEqual(info.subtitles[0].url, 'https://play.example.com/hls/sub/en.vtt');
+  assert.strictEqual(animeworld._test.masterInfo('<html>no playlist</html>', 'https://x/').height, 0);
+});
+
 section('filehost');
 test('rotatorTarget decodes gateway blob', function () {
   const blob = 'Y214WE0xWjNZbXRhVUdwMmIxQldObFo2ZFRCeFZVOXRRbmxxYVV0UU9XRndla2w1YjNveGFYRlVPV3h3YkRWM1RERnFhVzVVT1dkTlNtdDFiM3BGZVhCNWFtbFdkbXAyYjJ4V05sWjZVMVpJZDA5M1JsSXdNa2RWZURWdk1rVkxSbnBuZDI5S2FteEtlVm94YmtsNVRFWkxUVzV2U210dFNubGFORnBTTlRaSlIwbENSVk5JYWtkaFkwMWFlRFV6UTBjd2RuTkVQVDA9';
@@ -931,7 +1126,7 @@ test('registry contract', function () {
   const ids = {};
   assert.deepStrictEqual(
     providers.PROVIDERS.map(function (provider) { return provider.id; }),
-    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink']
+    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'allanime', 'hianime', 'animeworld']
   );
   providers.PROVIDERS.forEach(function (provider) {
     assert.ok(provider.id, 'missing id');

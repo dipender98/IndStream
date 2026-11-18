@@ -72,8 +72,12 @@ function race(providers, context, normalize) {
       }
 
       const startedAt = Date.now();
+      let failed = false;
       const work = Promise.resolve().then(function () {
         return provider.resolve(scope);
+      }).catch(function () {
+        failed = true;
+        return [];
       });
 
       const guard = http.withTimeout(work, cap, [], function () {
@@ -93,7 +97,17 @@ function race(providers, context, normalize) {
           }
         });
 
-        context.log(provider.name + ': ' + normalized.length + ' streams in ' + (Date.now() - startedAt) + 'ms');
+        const ms = Date.now() - startedAt;
+        context.log(provider.name + ': ' + normalized.length + ' streams in ' + ms + 'ms');
+        if (typeof context.onProviderResult === 'function') {
+          context.onProviderResult({
+            id: provider.id,
+            name: provider.name,
+            state: normalized.length ? 'live' : (failed || ms >= cap - 50 ? 'error' : 'empty'),
+            streams: normalized.length,
+            ms: ms,
+          });
+        }
         if (normalized.length) {
           Array.prototype.push.apply(collected, normalized);
         }

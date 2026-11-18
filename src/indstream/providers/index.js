@@ -12,10 +12,13 @@ const vidbolt = require('./vidbolt');
 const movy = require('./movy');
 const vidy = require('./vidy');
 const vidlink = require('./vidlink');
+const allanime = require('./allanime');
+const hianime = require('./hianime');
+const animeworld = require('./animeworld');
 
 // Every entry is an independent provider. The racer runs them concurrently;
 // none of them knows about the others.
-const PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly, vidbolt, movy, vidy, vidlink];
+const PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly, vidbolt, movy, vidy, vidlink, allanime, hianime, animeworld];
 
 const BY_ID = {};
 PROVIDERS.forEach(function (provider) {
