@@ -689,12 +689,6 @@ img, svg, canvas { max-width: 100%; }
   background: #131316;
   cursor: grab; transition: border-color var(--t-fast), background var(--t-fast);
 }
-.rank-item::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1.2px;
-  background: rgba(233, 233, 230, .45);
-  opacity: 0; transition: opacity var(--t-fast); pointer-events: none;
-}
-.rank-item:not(.off)::before { opacity: 1; }
 .rank-item:active { cursor: grabbing; }
 .rank-item:hover { border-color: var(--accent-line); background: #171719; }
 .rank-item.drag-over { border-color: var(--ink); }
