@@ -21,12 +21,18 @@ const hub4k = require('./src/indstream/providers/hub4k');
 const netmirror = require('./src/indstream/providers/netmirror');
 const atlantic = require('./src/indstream/providers/atlantic');
 const vidly = require('./src/indstream/providers/vidly');
+const vidbolt = require('./src/indstream/providers/vidbolt');
+const movy = require('./src/indstream/providers/movy');
+const vidy = require('./src/indstream/providers/vidy');
+const vidlink = require('./src/indstream/providers/vidlink');
 const streamCacheModule = require('./src/indstream/cache');
 const userStoreModule = require('./src/indstream/userStore');
 
-const streamCache = streamCacheModule.createTtlCache({ ttlMs: 15 * 60 * 1000, maxEntries: 400 });
+// Nuvio caches stream results client-side across navigation; manual refresh sends an
+// identical request, so keep only a short in-flight dedupe here rather than a long TTL.
+const streamCache = streamCacheModule.createTtlCache({ ttlMs: 2000, maxEntries: 400 });
 
-const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly];
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly, vidbolt, movy, vidy, vidlink];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -49,7 +55,7 @@ const DEFAULT_CFG = {
   streamStyle: styles.DEFAULT_STYLE,
   minQuality: '720',
   resultLimit: '40',
-  requestTimeout: '15',
+  requestTimeout: '10',
   includeDash: true,
   probeQuality: false,
   debug: false,
@@ -154,15 +160,6 @@ function selectedProviders(cfg) {
   }).filter(Boolean);
 }
 
-function languageRank(label, langs) {
-  const text = String(label || '').toLowerCase();
-  if (!text) return -1;
-  for (let i = 0; i < langs.length; i++) {
-    if (text.indexOf(String(langs[i]).toLowerCase()) >= 0) return i;
-  }
-  return -1;
-}
-
 function toBool(value) {
   return value === true || value === 1 || value === '1' || value === 'true' || value === 'yes';
 }
@@ -172,27 +169,6 @@ function languagePrefs(raw) {
     ? raw.langs.filter(function (lang) { return typeof lang === 'string' && lang.trim(); }).map(function (lang) { return lang.trim(); })
     : [];
   return { langs: langs, langStrict: toBool(raw && raw.langStrict) };
-}
-
-function applyLanguagePreference(streams, prefs) {
-  const langs = Array.isArray(prefs.langs) ? prefs.langs.filter(Boolean) : [];
-  if (!langs.length) return streams;
-  let out = streams;
-  if (prefs.langStrict) {
-    out = out.filter(function (s) {
-      const label = String(s.language || '').trim();
-      if (!label) return true;
-      return languageRank(label, langs) >= 0;
-    });
-  }
-  return out.slice().sort(function (a, b) {
-    const ra = languageRank(a.language, langs);
-    const rb = languageRank(b.language, langs);
-    if (ra === rb) return 0;
-    if (ra < 0) return 1;
-    if (rb < 0) return -1;
-    return ra - rb;
-  });
 }
 
 function configKey(cfg) {
@@ -240,12 +216,13 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg) {
   if (!context.tmdbId && !context.imdbId) return [];
 
   const metaController = httpLib.createAbortController();
+  const metadataBudgetMs = 4000;
   const metaPromise = httpLib.withTimeout(
     tmdb.resolveMeta(inputId, type, {
-      deadline: Date.now() + 2000,
+      deadline: Date.now() + metadataBudgetMs,
       signal: metaController ? metaController.signal : undefined,
     }),
-    2000,
+    metadataBudgetMs,
     null,
     function () { httpLib.abort(metaController); }
   ).catch(function () { return null; }).then(function (meta) {
@@ -266,14 +243,16 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg) {
 
   const raw = await racer.race(wanted, context, finalize.normalizeStream);
   const resultLimit = Number(s.resultLimit) || 0;
+  const prefs = languagePrefs(cfg);
   const finalized = finalize.finalizeStreams(raw, {
     qualityOrder: s.qualityOrder,
+    languageOrder: prefs.langs,
+    langStrict: prefs.langStrict,
     includeDash: s.includeDash,
     resultLimit: 0,
     providers: wanted,
   });
-  const languageSorted = applyLanguagePreference(finalized, languagePrefs(cfg));
-  return resultLimit > 0 ? languageSorted.slice(0, resultLimit) : languageSorted;
+  return resultLimit > 0 ? finalized.slice(0, resultLimit) : finalized;
 }
 
 function sendJson(res, status, body, corsEnabled) {
@@ -350,6 +329,21 @@ function sanitizeConfigFromApi(raw) {
           picked.push(id);
         });
         out.p = picked.slice(0, 32);
+      }
+      return;
+    }
+    if (key === 'sourceOrder') {
+      if (Array.isArray(v)) {
+        const known = ALL_PROVIDERS.map(function (p) { return p.id; });
+        const seen = new Set();
+        const picked = [];
+        v.forEach(function (id) {
+          if (typeof id !== 'string' || !known.includes(id) || seen.has(id)) return;
+          seen.add(id);
+          picked.push(id);
+        });
+        known.forEach(function (id) { if (!seen.has(id)) picked.push(id); });
+        out.sourceOrder = picked;
       }
       return;
     }
@@ -819,7 +813,8 @@ const server = http.createServer(function (req, res) {
   });
 });
 server.headersTimeout = 30000;
-server.requestTimeout = 20000;
+// Must exceed the largest selectable provider budget (25s) plus the racer's hard-stop margin.
+server.requestTimeout = 40000;
 server.keepAliveTimeout = 5000;
 
 function splitConfig(pathname) {

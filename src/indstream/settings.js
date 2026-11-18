@@ -7,7 +7,7 @@ const DEFAULT_QUALITY_ORDER = QUALITY_KEYS.slice();
 
 const CORE_DEFAULTS = {
   resultLimit: '40',
-  requestTimeout: '5',
+  requestTimeout: '10',
   probeQuality: false,
   includeDash: true,
   debug: false,
@@ -47,7 +47,7 @@ const SETTINGS_LAYOUT = [
     key: 'requestTimeout',
     label: 'Provider timeout',
     description: 'Upper bound for a single provider. Providers that finish sooner still return first.',
-    defaultValue: '5',
+    defaultValue: '10',
     options: [
       { label: '5 seconds', value: '5' },
       { label: '10 seconds', value: '10' },

@@ -90,21 +90,36 @@ function qualityRankMap(order) {
   return ranks;
 }
 
-// Quality preference first, then the stable best-first tie-breakers.
-function compareStreams(a, b, ranks, qualityRanks) {
+function languageRankOf(stream, langs) {
+  const text = String((stream && stream.language) || '').trim().toLowerCase();
+  if (!text) return -1;
+  for (let i = 0; i < langs.length; i++) {
+    if (text.indexOf(String(langs[i]).toLowerCase()) >= 0) return i;
+  }
+  return -1;
+}
+
+// Quality preference first, then language preference, then stable tie-breakers.
+function compareStreams(a, b, ranks, qualityRanks, langs) {
   const qa = qualityRanks[qualityBucket(a)];
   const qb = qualityRanks[qualityBucket(b)];
-  const ra = qa == null ? 999 : qa;
-  const rb = qb == null ? 999 : qb;
-  if (ra !== rb) return ra - rb;
+  const qra = qa == null ? 999 : qa;
+  const qrb = qb == null ? 999 : qb;
+  if (qra !== qrb) return qra - qrb;
+
+  if (Array.isArray(langs) && langs.length) {
+    const la = languageRankOf(a, langs);
+    const lb = languageRankOf(b, langs);
+    if (la !== lb) return (la < 0 ? 999 : la) - (lb < 0 ? 999 : lb);
+  } else {
+    const la = util.languagePriority(a.language);
+    const lb = util.languagePriority(b.language);
+    if (lb !== la) return lb - la;
+  }
 
   const ha = streamHeight(a);
   const hb = streamHeight(b);
   if (hb !== ha) return hb - ha;
-
-  const la = util.languagePriority(a.language);
-  const lb = util.languagePriority(b.language);
-  if (lb !== la) return lb - la;
 
   const pa = rankOf(a, ranks);
   const pb = rankOf(b, ranks);
@@ -123,6 +138,10 @@ function finalizeStreams(streams, options) {
   const includeDash = opts.includeDash !== false;
   const qualityOrder = resolveQualityOrder(opts);
   const qualityRanks = qualityRankMap(qualityOrder);
+  const langs = Array.isArray(opts.languageOrder)
+    ? opts.languageOrder.filter(function (lang) { return typeof lang === 'string' && lang.trim(); })
+    : [];
+  const strictLanguages = opts.langStrict === true && langs.length > 0;
 
   const filtered = (streams || []).filter(function (stream) {
     if (!stream || !stream.url) return false;
@@ -130,11 +149,15 @@ function finalizeStreams(streams, options) {
     if (util.isJunkStreamUrl(stream.url)) return false;
     if (!includeDash && stream.type === 'dash') return false;
     if (util.isKnownBelowFloor(streamHeight(stream), FLOOR)) return false;
+    if (strictLanguages) {
+      const label = String(stream.language || '').trim();
+      if (label && languageRankOf(stream, langs) < 0) return false;
+    }
     return qualityRanks[qualityBucket(stream)] != null;
   });
 
   const compare = function (a, b) {
-    return compareStreams(a, b, ranks, qualityRanks);
+    return compareStreams(a, b, ranks, qualityRanks, langs);
   };
 
   const deduped = util.dedupeStreams(filtered, compare);

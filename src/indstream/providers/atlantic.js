@@ -89,7 +89,7 @@ module.exports = {
     if (mboxJson) {
       mboxTracks(mboxJson).forEach(function (track) {
         if (out.length >= 6) return;
-        const key = track.url;
+        const key = String(track.url).split('?')[0];
         if (seen[key]) return;
         seen[key] = track;
         out.push(track);

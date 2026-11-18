@@ -64,7 +64,10 @@ module.exports = {
         const subUrl = stream._subtitleListUrl;
         delete stream._subtitleListUrl;
         if (!subUrl) return Promise.resolve();
-        return net.getJson(BASE + subUrl, { timeoutMs: 3000 }).then(function (json) {
+        const subFull = subUrl.indexOf('http') === 0
+          ? subUrl
+          : BASE + (subUrl.charAt(0) === '/' ? subUrl : '/' + subUrl);
+        return net.getJson(subFull, { timeoutMs: 3000 }).then(function (json) {
           const tracks = json && Array.isArray(json.tracks) ? json.tracks : [];
           const subtitles = [];
           tracks.slice(0, 30).forEach(function (track) {

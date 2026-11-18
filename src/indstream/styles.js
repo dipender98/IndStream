@@ -3,7 +3,8 @@
 const util = require('./util');
 
 const STYLE_OPTIONS = [
-  { id: 'lightgdrive', label: 'LightGDrive (default)' },
+  { id: 'indstream', label: 'IndStream (default)' },
+  { id: 'lightgdrive', label: 'LightGDrive' },
   { id: 'gdrive', label: 'GDrive' },
   { id: 'minimalisticgdrive', label: 'MinimalisticGDrive' },
   { id: 'prism', label: 'Prism' },
@@ -13,7 +14,7 @@ const STYLE_OPTIONS = [
   { id: 'torbox', label: 'TorBox' },
 ];
 const STYLE_IDS = STYLE_OPTIONS.map(function (s) { return s.id; });
-const DEFAULT_STYLE = 'lightgdrive';
+const DEFAULT_STYLE = 'indstream';
 
 // Spec tokens are only read from source-declared text (release text the
 // provider forwarded). Anything not declared stays off the badge.
@@ -192,6 +193,107 @@ function audioFlagsLine(raw, originalLanguage) {
   return line;
 }
 
+// IndStream signature: a brand badge, then one icon per meaning.
+// Content type, media origin, dynamic range, codec, size, audio, channels,
+// languages and subtitles each get a single, fixed mark.
+const MEDIA_ORIGIN_ICONS = {
+  BluRay: '💿',
+  REMUX: '💿',
+  DVDRip: '📀',
+  'WEB-DL': '☁️',
+  WEBRip: '☁️',
+  HDTV: '📡',
+  CAM: '📹',
+  HDRip: '🎥',
+};
+
+function originGroup(bits, ep) {
+  const s = bits.specs;
+  const tag = s.tag && (!ep || s.tag.toLowerCase() !== ep.toLowerCase()) ? s.tag.toUpperCase() : '';
+  if (s.source) {
+    const extra = tag && tag !== s.source.toUpperCase() ? tag : '';
+    return (MEDIA_ORIGIN_ICONS[s.source] || '🎥') + ' ' + joinPresent([s.source, extra], ' ');
+  }
+  return tag ? '🏷️ ' + tag : '';
+}
+
+function hdrGroup(bits) {
+  const parts = ['DV', 'HDR'].filter(function (name) {
+    return bits.specs.hdr.indexOf(name) >= 0;
+  });
+  return parts.length ? '🔆 ' + parts.join(' ') : '';
+}
+
+function codecGroup(bits) {
+  const parts = [];
+  if (bits.specs.codec) parts.push(bits.specs.codec);
+  if (bits.specs.hdr.indexOf('10bit') >= 0) parts.push('10bit');
+  return parts.length ? '🎞️ ' + parts.join(' ') : '';
+}
+
+function sizeGroup(bits) {
+  return bits.size ? '📦 ' + bits.size : '';
+}
+
+function audioGroup(bits) {
+  const parts = [];
+  if (bits.specs.audio.length) parts.push('🎧 ' + bits.specs.audio.join(' · '));
+  if (bits.specs.channels) parts.push('🔊 ' + bits.specs.channels);
+  return parts.join(' · ');
+}
+
+function flaggedName(name) {
+  const flag = util.flagOf(name);
+  return flag ? name + ' ' + flag : name;
+}
+
+function audioLanguageLine(raw, bits) {
+  const names = displayAudioNames(raw, bits);
+  if (names.length === 1 && names[0] === 'Multi') return 'Lang: Multi 🌐';
+  if (names.length > 1) {
+    return 'Lang: Multi 🌐 ' + names.map(flaggedName).join(' ');
+  }
+  if (names.length === 1) return 'Lang: ' + flaggedName(names[0]);
+  const rawLabel = String((raw && raw.language) || '').trim();
+  if (!rawLabel) return '';
+  if (/^multi$/i.test(rawLabel)) return 'Lang: Multi 🌐';
+  return 'Lang: ' + rawLabel;
+}
+
+function subtitleLine(raw) {
+  const names = subNamesOf(raw);
+  if (!names.length) return '';
+  return 'Subtitle: ' + names.map(function (name) {
+    return '💬 ' + name;
+  }).join(' ');
+}
+
+function renderIndstream(bits, raw, ctx) {
+  const ep = episodeTag(ctx);
+  const isSeries = !!(ctx && (ctx.type === 'tv' || Number(ctx.season) > 0));
+  const quality = bits.res === '2160p' ? '4K' : bits.res;
+  const lines = [];
+  lines.push(
+    (isSeries ? '📺' : '🎬') + ' ' + bits.title +
+    (bits.year ? ' (' + bits.year + ')' : '') +
+    (ep ? ' · ' + ep : '')
+  );
+  const media = joinPresent([
+    originGroup(bits, ep),
+    hdrGroup(bits),
+    codecGroup(bits),
+    sizeGroup(bits),
+  ], ' · ');
+  if (media) lines.push(media);
+  const audio = audioGroup(bits);
+  if (audio) lines.push(audio);
+  const language = audioLanguageLine(raw, bits);
+  if (language) lines.push(language);
+  const subtitles = subtitleLine(raw);
+  if (subtitles) lines.push(subtitles);
+  return { name: 'IND ' + quality + ' · ' + bits.providerName, title: lines.join('\n') };
+}
+
 // --- preset renderers ---
 // Each returns { name, title }. Unknown pieces are omitted, never invented.
 
@@ -346,6 +448,7 @@ function renderTorbox(bits, raw, ctx) {
 }
 
 const RENDERERS = {
+  indstream: renderIndstream,
   lightgdrive: renderLightgdrive,
   gdrive: renderGdrive,
   minimalisticgdrive: renderMinimalistic,
@@ -368,17 +471,17 @@ const SAMPLES = [
   {
     label: 'Full details · 2160p movie',
     raw: { url: 'https://example.com/inception.2160p.mkv', type: 'mp4', quality: '2160p', height: 2160, size: '65.95 GB', language: 'English, Hindi', releaseText: 'Inception.2010.2160p.BluRay.REMUX.DV.HDR.10bit.HEVC.Hindi.DDP.English.Atmos.5.1.mkv' },
-    ctx: { season: 0, episode: 0, meta: { title: 'Inception', year: '2010' } },
+    ctx: { type: 'movie', season: 0, episode: 0, meta: { title: 'Inception', year: '2010', originalLanguage: 'English' } },
   },
   {
     label: 'Episode · 1080p series',
-    raw: { url: 'https://example.com/stranger.things.s01e01.1080p.mkv', type: 'mp4', quality: '1080p', height: 1080, size: '2.1 GB', language: 'English', subtitles: [{ label: 'English' }], releaseText: 'Stranger.Things.S01E01.1080p.WEB-DL.DDP5.1.H.264.mkv' },
-    ctx: { season: 1, episode: 1, meta: { title: 'Stranger Things', year: '2016' } },
+    raw: { url: 'https://example.com/stranger.things.s01e01.1080p.mkv', type: 'mp4', quality: '1080p', height: 1080, size: '2.1 GB', language: 'English', subtitles: [{ label: 'English' }, { label: 'Hindi' }], releaseText: 'Stranger.Things.S01E01.1080p.WEB-DL.DDP5.1.H.264.mkv' },
+    ctx: { type: 'tv', season: 1, episode: 1, meta: { title: 'Stranger Things', year: '2016', originalLanguage: 'English' } },
   },
   {
     label: 'Basic · 1080p movie',
     raw: { url: 'https://example.com/hocus.pocus.1080p.mkv', type: 'mp4', quality: '1080p', height: 1080, size: '1.6 GB', language: 'English', releaseText: 'Hocus.Pocus.1993.1080p.WEB-DL.x264.mkv' },
-    ctx: { season: 0, episode: 0, meta: { title: 'Hocus Pocus', year: '1993' } },
+    ctx: { type: 'movie', season: 0, episode: 0, meta: { title: 'Hocus Pocus', year: '1993', originalLanguage: 'English' } },
   },
 ];
 

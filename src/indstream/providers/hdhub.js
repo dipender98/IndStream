@@ -6,6 +6,9 @@ const tmdb = require('../tmdb');
 
 const BASE = 'https://hdhub.thevolecitor.qzz.io';
 
+// These hosts serve HTML file pages, not media; the player cannot use them.
+const FILE_PAGE_RE = /(?:^|\/\/)(?:[^/]+\.)?(?:hubdrive|hubcloud|hubcdn|gdrive)[^/]*\.[a-z]{2,}(?:\/|\?|$)/i;
+
 module.exports = {
   id: 'hdhub',
   name: 'HdHub',
@@ -35,13 +38,13 @@ module.exports = {
       if (!s || !s.url) return;
       const name = String(s.name || '');
       if (/donation|discord/i.test(name)) return;
-      if (/hubdrive\.bar/i.test(s.url)) return;
+      if (FILE_PAGE_RE.test(s.url)) return;
 
       const desc = String(s.description || s.title || '');
       const height = util.parseHeight(name + ' ' + desc);
       const language = util.languageLabel(desc) || util.languageLabel(name) || '';
       const size = util.normalizeSizeToken(desc);
-      const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url) || /googleusercontent/i.test(s.url);
+      const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url);
       const entry = {
         provider: module.exports.name,
         url: s.url,
@@ -85,4 +88,5 @@ async function streamPath(ctx) {
 
 module.exports._test = {
   streamPath: streamPath,
+  isFilePage: function (url) { return FILE_PAGE_RE.test(String(url || '')); },
 };

@@ -168,12 +168,11 @@ function awaitMeta(ctx, capMs) {
   const scope = ctx || {};
   if (scope.meta) return Promise.resolve(applyMeta(scope, scope.meta));
   if (!scope.metaPromise) return Promise.resolve(null);
-  const cap = Number(capMs) > 0 ? Number(capMs) : 2000;
-  let wait = cap;
+  let wait = Number(capMs) > 0 ? Number(capMs) : 4000;
   if (scope.deadline) {
     const remaining = scope.deadline - Date.now();
     if (remaining <= 0) return Promise.resolve(null);
-    wait = Math.min(wait, remaining);
+    wait = Math.min(wait, Math.max(500, Math.floor(remaining * 0.5)));
   }
   return http.withTimeout(scope.metaPromise, wait, null).then(function (meta) {
     return applyMeta(scope, meta);

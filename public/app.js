@@ -7,12 +7,41 @@ const PROVIDERS = [
   { id: 'netmirror', name: 'NetMirror', mark: 'NM', tags: ['Multi-Audio', 'Stream', 'Download', 'Fast'] },
   { id: 'atlantic', name: 'Atlantic', mark: 'AT', tags: ['1080p', 'Multi-Audio', 'Stream', 'Very Fast'] },
   { id: 'vidly', name: 'Vidly', mark: 'VL', tags: ['1080p', 'Stream', 'Fast'] },
+  { id: 'vidbolt', name: 'VidBolt', mark: 'VB', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
+  { id: 'movy', name: 'Movy', mark: 'MV', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
+  { id: 'vidy', name: 'Vidy', mark: 'VD', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
+  { id: 'vidlink', name: 'VidLink', mark: 'VK', tags: ['1080p', 'Stream', 'Very Fast'] },
 ];
 
-const LANGS = ['Original', 'Hindi', 'English', 'Multi', 'Tamil', 'Telugu', 'Malayalam', 'Kannada',
-  'Bengali', 'Urdu', 'Marathi', 'Punjabi', 'Arabic', 'Russian', 'Chinese',
-  'Japanese', 'Korean', 'French', 'Spanish', 'Portuguese', 'Indonesian',
-  'Vietnamese', 'Thai', 'Turkish', 'German', 'Italian', 'Dutch', 'Polish', 'Nepali'];
+const QUALITY_TAGS = ['4K', '1080p', '720p'];
+function displayTags(tags) {
+  const list = Array.isArray(tags) ? tags : [];
+  const highest = QUALITY_TAGS.find(function (tag) { return list.indexOf(tag) >= 0; });
+  const canStream = list.indexOf('Stream') >= 0;
+  const canDownload = list.indexOf('Download') >= 0;
+  const out = [];
+  let addedMode = false;
+  list.forEach(function (tag) {
+    if (tag === 'Stream' || tag === 'Download') {
+      if (!addedMode && canStream) {
+        out.push(canDownload ? 'Stream and Download' : 'Stream only');
+        addedMode = true;
+      }
+      return;
+    }
+    if (QUALITY_TAGS.indexOf(tag) >= 0 && tag !== highest) return;
+    out.push(tag);
+  });
+  return out;
+}
+
+const LANGS = ['Multi', 'Original'].concat(
+  ['Hindi', 'English', 'Tamil', 'Telugu', 'Malayalam', 'Kannada',
+    'Bengali', 'Urdu', 'Marathi', 'Punjabi', 'Arabic', 'Russian', 'Chinese',
+    'Japanese', 'Korean', 'French', 'Spanish', 'Portuguese', 'Indonesian',
+    'Vietnamese', 'Thai', 'Turkish', 'German', 'Italian', 'Dutch', 'Polish', 'Nepali']
+    .sort(function (a, b) { return a.localeCompare(b); })
+);
 
 const QUALITY_KEYS = ['2160', '1440', '1080', '720', 'auto', 'unknown'];
 const QUALITIES = [
@@ -59,13 +88,14 @@ function resolveQuality(raw) {
 
 const DEFAULT_CFG = {
   p: PROVIDERS.map(function (p) { return p.id; }),
+  sourceOrder: PROVIDERS.map(function (p) { return p.id; }),
   langs: ['Original', 'Hindi', 'English', 'Multi'],
   langStrict: false,
-  streamStyle: 'lightgdrive',
+  streamStyle: 'indstream',
   qualityOrder: QUALITY_KEYS.slice(),
   qualityOff: [],
   resultLimit: '40',
-  requestTimeout: '5',
+  requestTimeout: '10',
   includeDash: true,
   probeQuality: false,
   debug: false,
@@ -151,6 +181,14 @@ function sanitizeCfg(raw) {
     if (oldDefault) merged.p = providerIds.slice();
     safeSet(LS_PROVIDER_MIGRATE, '1');
   }
+  const sourceOrder = [];
+  if (Array.isArray(merged.sourceOrder)) {
+    merged.sourceOrder.forEach(function (id) {
+      if (providerIds.indexOf(id) >= 0 && sourceOrder.indexOf(id) < 0) sourceOrder.push(id);
+    });
+  }
+  providerIds.forEach(function (id) { if (sourceOrder.indexOf(id) < 0) sourceOrder.push(id); });
+  merged.sourceOrder = sourceOrder;
   const storedLangs = merged.langs;
   if (!Array.isArray(storedLangs)) {
     merged.langs = DEFAULT_CFG.langs.slice();
@@ -252,11 +290,13 @@ function b64url(obj) {
 
 function currentCfg() {
   const prev = loadCfg();
-  const prevP = prev.p, prevL = prev.langs;
+  const prevL = prev.langs;
   const langs = Array.from(document.querySelectorAll('#langs .chip-btn.active')).map(function (el) { return el.dataset.lang; });
-  const selectedP = PROVIDERS.filter(function (pr) { return document.querySelector('[data-provider="' + pr.id + '"]').classList.contains('active'); }).map(function (pr) { return pr.id; });
-  const p = prevP.filter(function (id) { return selectedP.indexOf(id) >= 0; })
-    .concat(selectedP.filter(function (id) { return prevP.indexOf(id) < 0; }));
+  const sourceRows = Array.from(document.querySelectorAll('#sourceList .source-item'));
+  const sourceOrder = sourceRows.length ? sourceRows.map(function (el) { return el.dataset.key; }) : prev.sourceOrder.slice();
+  const p = sourceRows.length
+    ? sourceRows.filter(function (el) { return !el.classList.contains('off'); }).map(function (el) { return el.dataset.key; })
+    : prev.p.slice();
   const langsOrdered = prevL.filter(function (l) { return langs.indexOf(l) >= 0; })
     .concat(langs.filter(function (l) { return prevL.indexOf(l) < 0; }));
   const qualityRows = Array.from(document.querySelectorAll('#qualityRank .quality-item'));
@@ -265,6 +305,7 @@ function currentCfg() {
     .map(function (el) { return el.dataset.key; });
   return {
     p: p,
+    sourceOrder: sourceOrder,
     langs: langsOrdered,
     langStrict: document.getElementById('langStrict').checked,
     streamStyle: document.getElementById('streamStyle').value,
@@ -288,11 +329,6 @@ function setSeg(sel, value) {
 
 function applyCfg(cfg) {
   cfg = sanitizeCfg(cfg);
-  document.querySelectorAll('#providers .provider-card').forEach(function (el) {
-    const active = cfg.p.indexOf(el.dataset.provider) >= 0;
-    el.classList.toggle('active', active);
-    el.setAttribute('aria-pressed', String(active));
-  });
   document.querySelectorAll('#langs .chip-btn').forEach(function (el) {
     const active = cfg.langs.indexOf(el.dataset.lang) >= 0;
     el.classList.toggle('active', active);
@@ -306,7 +342,7 @@ function applyCfg(cfg) {
   document.getElementById('debug').checked = !!cfg.debug;
   const styleSel = document.getElementById('streamStyle');
   if (styleSel && cfg.streamStyle) styleSel.value = cfg.streamStyle;
-  renderQualityList(cfg);
+  renderPreferenceLists(cfg);
   updateAll();
 }
 
@@ -516,31 +552,6 @@ function copyText(text) {
   return Promise.resolve(copied);
 }
 
-function buildProviderCards() {
-  const wrap = document.getElementById('providers');
-  wrap.innerHTML = '';
-  PROVIDERS.forEach(function (pr) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'provider-card';
-    btn.dataset.provider = pr.id;
-    btn.setAttribute('aria-pressed', 'false');
-    btn.innerHTML =
-      '<span class="provider-mark" aria-hidden="true">' + pr.mark + '</span>' +
-      '<span class="provider-copy"><span class="provider-name">' + pr.name + '</span>' +
-      '<span class="chip-tags">' + pr.tags.map(function (t) { return '<span class="tag">' + t + '</span>'; }).join('') + '</span>' +
-      '</span>' +
-      '<span class="check-circle" aria-hidden="true"></span>';
-    btn.addEventListener('click', function () {
-      const active = !btn.classList.contains('active');
-      btn.classList.toggle('active', active);
-      btn.setAttribute('aria-pressed', String(active));
-      updateAll();
-    });
-    wrap.appendChild(btn);
-  });
-}
-
 function buildLangChips() {
   const wrap = document.getElementById('langs');
   wrap.innerHTML = '';
@@ -562,7 +573,8 @@ function buildLangChips() {
 }
 
 const FALLBACK_STYLES = [
-  { id: 'lightgdrive', label: 'LightGDrive (default)' },
+  { id: 'indstream', label: 'IndStream (default)' },
+  { id: 'lightgdrive', label: 'LightGDrive' },
   { id: 'gdrive', label: 'GDrive' },
   { id: 'minimalisticgdrive', label: 'MinimalisticGDrive' },
   { id: 'prism', label: 'Prism' },
@@ -571,7 +583,7 @@ const FALLBACK_STYLES = [
   { id: 'torrentio', label: 'Torrentio' },
   { id: 'torbox', label: 'TorBox' },
 ];
-const DEFAULT_STYLE = 'lightgdrive';
+const DEFAULT_STYLE = 'indstream';
 
 function loadStyles() {
   fetch('/api/styles').then(function (r) { return r.json(); }).then(function (data) {
@@ -624,7 +636,7 @@ async function loadAccount() {
         pushCfg();
       }
     }
-    const name = signedIn ? (data.user.name || 'Account') : 'Guest';
+    const name = signedIn ? (data.user.name || 'Account') : 'Guest mode';
     if (note) {
       note.textContent = signedIn
         ? 'Signed in as ' + name + '. The install links follow your saved setup — changes apply automatically.'
@@ -635,8 +647,12 @@ async function loadAccount() {
     if (modalGoogleBtn) modalGoogleBtn.hidden = signedIn || !loginConfigured;
     document.getElementById('accountName').textContent = name;
     document.getElementById('accountSub').textContent = signedIn
-      ? 'Connected on this browser'
+      ? (data.user.email || 'Connected on this browser')
       : (loginConfigured ? 'Local preferences' : 'Local preferences — sign-in disabled');
+    const accountBlock = document.querySelector('.account-block');
+    if (accountBlock) accountBlock.title = signedIn
+      ? name + (data.user.email ? ' · ' + data.user.email : '')
+      : 'Guest mode · local preferences';
     document.getElementById('bigName').textContent = name;
     document.getElementById('bigSub').textContent = signedIn
       ? (data.user.email || 'Connected on this browser')
@@ -666,7 +682,7 @@ async function loadAccount() {
     if (googleBtn) googleBtn.hidden = true;
     ['accountName', 'bigName', 'accountSub', 'bigSub'].forEach(function (id) {
       const el = document.getElementById(id);
-      if (el) el.textContent = id === 'bigName' ? 'Guest' : id === 'accountName' ? 'Guest' : id === 'accountSub' ? 'Local preferences' : 'Local preferences — sign in to keep your account connected.';
+      if (el) el.textContent = id === 'bigName' || id === 'accountName' ? 'Guest mode' : id === 'accountSub' ? 'Local preferences' : 'Local preferences — sign in to keep your account connected.';
     });
     const googleBtn2 = document.getElementById('googleBtn');
     if (googleBtn2) googleBtn2.hidden = true;
@@ -688,15 +704,15 @@ function signInWithGoogle() {
 const WIZARD_STEPS = [
   { id: 'sources', label: 'Sources' },
   { id: 'filters', label: 'Filters' },
-  { id: 'playback', label: 'Playback' },
+  { id: 'output', label: 'Output' },
 ];
 
 const SECTION_TITLES = {
   install: ['Install', 'Copy into Nuvio or Stremio'],
   profiles: ['Presets', 'One addon URL per setup'],
   sources: ['Sources', 'Pick your servers'],
-  filters: ['Filters', 'Languages & quality'],
-  playback: ['Playback', 'Results & style'],
+  filters: ['Filters', 'Quality & languages'],
+  output: ['Output', 'Results & style'],
   account: ['Account', 'Sign in, or carry on as guest'],
   status: ['Status', 'Service health'],
 };
@@ -721,7 +737,7 @@ function updateWizard(name) {
   WIZARD_STEPS.forEach(function (step, i) {
     const el = document.createElement('button');
     el.className = 'tuner-step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
-    el.innerHTML = '<span class="tick">' + (i < idx ? '✓' : (i + 1)) + '</span><span class="step-name">' + step.label + '</span>';
+    el.innerHTML = '<span class="tick">' + (i + 1) + '</span><span class="step-name">' + step.label + '</span>';
     el.addEventListener('click', function () { setSection(step.id); });
     steps.appendChild(el);
     if (i < WIZARD_STEPS.length - 1) {
@@ -875,11 +891,10 @@ function setupActions() {
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   if (copyUrlBtn) copyUrlBtn.addEventListener('click', copy);
   document.getElementById('sourcesAll').addEventListener('click', function () {
-    document.querySelectorAll('#providers .provider-card').forEach(function (el) {
-      el.classList.add('active');
-      el.setAttribute('aria-pressed', 'true');
-    });
-    updateAll();
+    const cfg = loadCfg();
+    cfg.p = cfg.sourceOrder.slice();
+    saveCfg(cfg);
+    applyCfg(loadCfg());
     toast('All ' + PROVIDERS.length + ' sources selected');
   });
   document.getElementById('sourcesNone').addEventListener('click', function () { applyCfg(DEFAULT_CFG); toast('Reset to the recommended setup'); });
@@ -961,7 +976,6 @@ function setupHealth() {
   document.getElementById('recheckBtn').addEventListener('click', checkHealth);
 }
 
-buildProviderCards();
 buildLangChips();
 setupLangFilters();
 setupPalette();
@@ -1049,12 +1063,12 @@ function setupPalette() {
   var input = document.getElementById('paletteInput');
   var list = document.getElementById('paletteList');
   var backdrop = document.getElementById('paletteBackdrop');
-  var SECTIONS = ['profiles', 'sources', 'filters', 'playback', 'install', 'account', 'status'];
+  var SECTIONS = ['profiles', 'sources', 'filters', 'output', 'install', 'account', 'status'];
   var actions = [
     { id: 'nav:profiles', label: 'Go to Presets', hint: '1' },
     { id: 'nav:sources', label: 'Go to Sources', hint: '2' },
     { id: 'nav:filters', label: 'Go to Filters', hint: '3' },
-    { id: 'nav:playback', label: 'Go to Playback', hint: '4' },
+    { id: 'nav:output', label: 'Go to Output', hint: '4' },
     { id: 'nav:install', label: 'Go to Install', hint: '5' },
     { id: 'nav:account', label: 'Go to Account', hint: '6' },
     { id: 'nav:status', label: 'Go to Status', hint: '7' },
@@ -1226,8 +1240,7 @@ function updateStats(cfg) {
 /* Derived UI (stats, ranking) refreshes whenever the state changes. */
 function refreshDerived() {
   try { updateStats(currentCfg()); } catch (e) { /* stats are decorative */ }
-  try { renderRankLists(); } catch (e) { /* ranking is decorative */ }
-  try { renderQualityList(); } catch (e) { /* quality list is decorative */ }
+  try { renderPreferenceLists(); } catch (e) { /* preference lists are decorative */ }
 }
 var originalUpdateAll = updateAll;
 updateAll = function () {
@@ -1235,113 +1248,80 @@ updateAll = function () {
   refreshDerived();
 };
 
-/* ---------- Source & language ranking ---------- */
-var RANK_KIND = { provider: 'provider', language: 'language' };
+/* ---------- Preference lists: one primitive, three uses ---------- */
+var UP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>';
+var DOWN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
 
-function rankListItems(kind) {
-  var cfg = loadCfg();
-  if (kind === RANK_KIND.provider) {
-    return cfg.p.map(function (id) {
-      var pr = PROVIDERS.find(function (x) { return x.id === id; });
-      return pr ? { key: pr.id, name: pr.name, mark: pr.mark, meta: pr.tags.join(' · ') } : null;
-    }).filter(Boolean);
-  }
-  return cfg.langs.map(function (lang) {
-    return { key: lang, name: lang, mark: lang.slice(0, 2).toUpperCase(), meta: 'Language' };
+function rowActions(name) {
+  return '<span class="rank-actions">' +
+    '<button class="rank-btn" type="button" data-move="-1" aria-label="Move ' + escapeHtml(name) + ' up">' + UP_ICON + '</button>' +
+    '<button class="rank-btn" type="button" data-move="1" aria-label="Move ' + escapeHtml(name) + ' down">' + DOWN_ICON + '</button>' +
+  '</span>';
+}
+
+var CHECK_GLYPH = '<span class="check-glyph" aria-hidden="true">✓</span>';
+
+function rowToggle(key, name, off, showTick) {
+  return '<button class="list-toggle" type="button" data-toggle="' + escapeHtml(key) + '" aria-pressed="' + (off ? 'false' : 'true') + '" aria-label="' + (off ? 'Allow ' : 'Hide ') + escapeHtml(name) + '">' + (showTick ? CHECK_GLYPH : '') + '</button>';
+}
+
+function rankTick() {
+  return '<span class="rank-tick" aria-hidden="true">' + CHECK_GLYPH + '</span>';
+}
+
+function syncEdgeButtons(list) {
+  var rows = list.querySelectorAll('.rank-item');
+  rows.forEach(function (row, i) {
+    var up = row.querySelector('[data-move="-1"]');
+    var down = row.querySelector('[data-move="1"]');
+    if (up) up.disabled = i === 0;
+    if (down) down.disabled = i === rows.length - 1;
   });
 }
 
-function renderRankList(kind, listId, emptyId) {
-  var list = document.getElementById(listId);
-  var empty = document.getElementById(emptyId);
-  if (!list || !empty) return;
-  var items = rankListItems(kind);
-  list.innerHTML = '';
-  empty.hidden = items.length > 0;
-  items.forEach(function (item, i) {
-    var li = document.createElement('li');
-    li.className = 'rank-item';
-    li.setAttribute('role', 'listitem');
-    li.draggable = true;
-    li.dataset.kind = kind;
-    li.dataset.key = item.key;
-    li.innerHTML =
-      '<span class="rank-num" aria-hidden="true">' + (i + 1) + '</span>' +
-      '<span class="rank-mark" aria-hidden="true">' + escapeHtml(item.mark) + '</span>' +
-      '<span class="rank-copy"><b>' + escapeHtml(item.name) + '</b>' +
-        (item.meta ? '<small>' + escapeHtml(item.meta) + '</small>' : '') + '</span>' +
-      '<span class="rank-actions">' +
-        '<button class="rank-btn" type="button" data-move="-1" aria-label="Move ' + escapeHtml(item.name) + ' up"' + (i === 0 ? ' disabled' : '') + '><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg></button>' +
-        '<button class="rank-btn" type="button" data-move="1" aria-label="Move ' + escapeHtml(item.name) + ' down"' + (i === items.length - 1 ? ' disabled' : '') + '><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>' +
-      '</span>';
-    list.appendChild(li);
-  });
+function moveInArray(arr, key, delta) {
+  var next = arr.slice();
+  var i = next.indexOf(key);
+  var j = i + delta;
+  if (i < 0 || j < 0 || j >= next.length) return null;
+  var tmp = next[i]; next[i] = next[j]; next[j] = tmp;
+  return next;
 }
 
-function renderRankLists() {
-  renderRankList(RANK_KIND.provider, 'providerRank', 'providerRankEmpty');
-  renderRankList(RANK_KIND.language, 'langRank', 'langRankEmpty');
+function dropInArray(arr, draggedKey, targetKey) {
+  var next = arr.slice();
+  var from = next.indexOf(draggedKey);
+  var to = next.indexOf(targetKey);
+  if (from < 0 || to < 0 || from === to) return null;
+  next.splice(from, 1);
+  next.splice(to, 0, draggedKey);
+  return next;
 }
 
-function moveRankItem(kind, key, delta) {
-  var cfg = loadCfg();
-  if (kind === RANK_KIND.provider) {
-    var i = cfg.p.indexOf(key);
-    var j = i + delta;
-    if (i < 0 || j < 0 || j >= cfg.p.length) return;
-    var next = cfg.p.slice();
-    var tmp = next[i]; next[i] = next[j]; next[j] = tmp;
-    cfg.p = next;
-  } else {
-    var i2 = cfg.langs.indexOf(key);
-    var j2 = i2 + delta;
-    if (i2 < 0 || j2 < 0 || j2 >= cfg.langs.length) return;
-    var next2 = cfg.langs.slice();
-    var tmp2 = next2[i2]; next2[i2] = next2[j2]; next2[j2] = tmp2;
-    cfg.langs = next2;
-  }
-  saveCfg(cfg);
-  applyCfg(loadCfg());
-}
-
-function dropRankItem(kind, draggedKey, targetKey) {
-  var cfg = loadCfg();
-  var arr = (kind === RANK_KIND.provider ? cfg.p : cfg.langs).slice();
-  var from = arr.indexOf(draggedKey);
-  var to = arr.indexOf(targetKey);
-  if (from < 0 || to < 0 || from === to) return;
-  arr.splice(from, 1);
-  arr.splice(to, 0, draggedKey);
-  if (kind === RANK_KIND.provider) cfg.p = arr; else cfg.langs = arr;
-  saveCfg(cfg);
-  applyCfg(loadCfg());
-}
-
-var rankDragKey = null;
-var rankDragKind = null;
-function setupRankList(listId) {
+function setupPreferenceList(listId, handlers) {
   var list = document.getElementById(listId);
   if (!list) return;
+  var dragKey = null;
   list.addEventListener('click', function (e) {
+    var toggle = e.target.closest('[data-toggle]');
+    if (toggle && handlers.toggle) { handlers.toggle(toggle.dataset.toggle); return; }
     var btn = e.target.closest('.rank-btn');
-    if (!btn || btn.disabled) return;
+    if (!btn || btn.disabled || !handlers.move) return;
     var row = btn.closest('.rank-item');
-    if (!row) return;
-    moveRankItem(row.dataset.kind, row.dataset.key, Number(btn.dataset.move));
+    if (row) handlers.move(row.dataset.key, Number(btn.dataset.move));
   });
   list.addEventListener('dragstart', function (e) {
-    if (e.target.closest && e.target.closest('.rank-btn')) { e.preventDefault(); return; }
+    if (e.target.closest && e.target.closest('button')) { e.preventDefault(); return; }
     var row = e.target.closest('.rank-item');
     if (!row) return;
-    rankDragKey = row.dataset.key;
-    rankDragKind = row.dataset.kind;
+    dragKey = row.dataset.key;
     row.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', row.dataset.key); } catch (err) {}
+    try { e.dataTransfer.setData('text/plain', dragKey); } catch (err) {}
   });
   list.addEventListener('dragover', function (e) {
     var row = e.target.closest('.rank-item');
-    if (!row || !rankDragKey || row.dataset.kind !== rankDragKind || row.dataset.key === rankDragKey) return;
+    if (!row || !dragKey || row.dataset.key === dragKey) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     row.classList.add('drag-over');
@@ -1354,21 +1334,122 @@ function setupRankList(listId) {
     e.preventDefault();
     var row = e.target.closest('.rank-item');
     list.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
-    if (!row || !rankDragKey) return;
-    dropRankItem(row.dataset.kind, rankDragKey, row.dataset.key);
+    if (row && dragKey && handlers.drop) handlers.drop(dragKey, row.dataset.key);
   });
   list.addEventListener('dragend', function () {
-    rankDragKey = null;
-    rankDragKind = null;
+    dragKey = null;
     list.querySelectorAll('.dragging, .drag-over').forEach(function (el) { el.classList.remove('dragging', 'drag-over'); });
   });
 }
-setupRankList('providerRank');
-setupRankList('langRank');
+
+function renderLanguageList(cfgArg) {
+  var list = document.getElementById('langRank');
+  var empty = document.getElementById('langRankEmpty');
+  if (!list) return;
+  var cfg = cfgArg || loadCfg();
+  list.innerHTML = '';
+  cfg.langs.forEach(function (lang, i) {
+    var li = document.createElement('li');
+    li.className = 'rank-item';
+    li.setAttribute('role', 'listitem');
+    li.draggable = true;
+    li.dataset.key = lang;
+    li.innerHTML =
+      rankTick() +
+      '<span class="rank-mark" aria-hidden="true">' + escapeHtml(lang.slice(0, 2).toUpperCase()) + '</span>' +
+      '<span class="rank-copy"><b>' + escapeHtml(lang) + '</b><small>Language</small></span>' +
+      rowActions(lang);
+    list.appendChild(li);
+  });
+  syncEdgeButtons(list);
+  if (empty) empty.hidden = cfg.langs.length > 0;
+}
+
+function moveLanguageItem(key, delta) {
+  var cfg = loadCfg();
+  var next = moveInArray(cfg.langs, key, delta);
+  if (!next) return;
+  cfg.langs = next;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function dropLanguageItem(draggedKey, targetKey) {
+  var cfg = loadCfg();
+  var next = dropInArray(cfg.langs, draggedKey, targetKey);
+  if (!next) return;
+  cfg.langs = next;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function renderSourceList(cfgArg) {
+  var list = document.getElementById('sourceList');
+  if (!list) return;
+  var cfg = cfgArg || loadCfg();
+  list.innerHTML = '';
+  cfg.sourceOrder.forEach(function (key) {
+    var pr = PROVIDERS.find(function (item) { return item.id === key; });
+    if (!pr) return;
+    var off = cfg.p.indexOf(key) < 0;
+    var li = document.createElement('li');
+    li.className = 'rank-item source-item has-toggle' + (off ? ' off' : '');
+    li.setAttribute('role', 'listitem');
+    li.draggable = true;
+    li.dataset.key = key;
+    li.innerHTML =
+      rowToggle(key, pr.name, off, true) +
+      '<span class="rank-mark" aria-hidden="true">' + escapeHtml(pr.mark) + '</span>' +
+      '<span class="rank-copy"><b>' + escapeHtml(pr.name) + '</b><small>' + escapeHtml(displayTags(pr.tags).join(' · ')) + '</small></span>' +
+      rowActions(pr.name);
+    list.appendChild(li);
+  });
+  syncEdgeButtons(list);
+}
+
+function moveSourceItem(key, delta) {
+  var cfg = loadCfg();
+  var next = moveInArray(cfg.sourceOrder, key, delta);
+  if (!next) return;
+  cfg.sourceOrder = next;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function dropSourceItem(draggedKey, targetKey) {
+  var cfg = loadCfg();
+  var next = dropInArray(cfg.sourceOrder, draggedKey, targetKey);
+  if (!next) return;
+  cfg.sourceOrder = next;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function toggleSourceItem(key) {
+  var cfg = loadCfg();
+  var p = cfg.p.slice();
+  var idx = p.indexOf(key);
+  if (idx >= 0) {
+    if (p.length <= 1) { toast('Keep at least one source enabled'); return; }
+    p.splice(idx, 1);
+  } else {
+    p = cfg.sourceOrder.filter(function (id) { return id === key || p.indexOf(id) >= 0; });
+  }
+  cfg.p = p;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function renderPreferenceLists(cfg) {
+  renderLanguageList(cfg);
+  renderSourceList(cfg);
+  renderQualityList(cfg);
+}
+
+setupPreferenceList('langRank', { move: moveLanguageItem, drop: dropLanguageItem });
+setupPreferenceList('sourceList', { toggle: toggleSourceItem, move: moveSourceItem, drop: dropSourceItem });
 
 /* ---------- Quality preference list ---------- */
-var QUALITY_KIND = 'quality';
-
 function renderQualityList(cfgArg) {
   var list = document.getElementById('qualityRank');
   if (!list) return;
@@ -1382,27 +1463,16 @@ function renderQualityList(cfgArg) {
     li.className = 'rank-item quality-item' + (off ? ' off' : '');
     li.setAttribute('role', 'listitem');
     li.draggable = true;
-    li.dataset.kind = QUALITY_KIND;
+    li.className = 'rank-item quality-item has-toggle' + (off ? ' off' : '');
     li.dataset.key = key;
     li.innerHTML =
-      '<button class="quality-toggle" type="button" data-toggle="' + key + '" aria-pressed="' + (off ? 'false' : 'true') + '" aria-label="' + (off ? 'Allow ' : 'Hide ') + escapeHtml(q.name) + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 10"/></svg>' +
-      '</button>' +
+      rowToggle(key, q.name, off, true) +
       '<span class="rank-mark" aria-hidden="true">' + escapeHtml(q.mark) + '</span>' +
       '<span class="rank-copy"><b>' + escapeHtml(q.name) + '</b><small>' + escapeHtml(q.meta) + '</small></span>' +
-      '<span class="rank-actions">' +
-        '<button class="rank-btn" type="button" data-move="-1" aria-label="Move ' + escapeHtml(q.name) + ' up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg></button>' +
-        '<button class="rank-btn" type="button" data-move="1" aria-label="Move ' + escapeHtml(q.name) + ' down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>' +
-      '</span>';
+      rowActions(q.name);
     list.appendChild(li);
   });
-  var items = list.querySelectorAll('.quality-item');
-  items.forEach(function (li, i) {
-    var up = li.querySelector('[data-move="-1"]');
-    var down = li.querySelector('[data-move="1"]');
-    if (up) up.disabled = i === 0;
-    if (down) down.disabled = i === items.length - 1;
-  });
+  syncEdgeButtons(list);
 }
 
 function moveQualityItem(key, delta) {
@@ -1449,55 +1519,7 @@ function toggleQualityItem(key) {
   applyCfg(loadCfg());
 }
 
-var qualityDragKey = null;
-function setupQualityList(listId) {
-  var list = document.getElementById(listId);
-  if (!list) return;
-  list.addEventListener('click', function (e) {
-    var toggle = e.target.closest('.quality-toggle');
-    if (toggle) {
-      toggleQualityItem(toggle.dataset.toggle);
-      return;
-    }
-    var btn = e.target.closest('.rank-btn');
-    if (!btn || btn.disabled) return;
-    var row = btn.closest('.quality-item');
-    if (!row) return;
-    moveQualityItem(row.dataset.key, Number(btn.dataset.move));
-  });
-  list.addEventListener('dragstart', function (e) {
-    if (e.target.closest && e.target.closest('.rank-btn, .quality-toggle')) { e.preventDefault(); return; }
-    var row = e.target.closest('.quality-item');
-    if (!row) return;
-    qualityDragKey = row.dataset.key;
-    row.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', row.dataset.key); } catch (err) {}
-  });
-  list.addEventListener('dragover', function (e) {
-    var row = e.target.closest('.quality-item');
-    if (!row || !qualityDragKey || row.dataset.key === qualityDragKey) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    row.classList.add('drag-over');
-  });
-  list.addEventListener('dragleave', function (e) {
-    var row = e.target.closest('.quality-item');
-    if (row && (!e.relatedTarget || !row.contains(e.relatedTarget))) row.classList.remove('drag-over');
-  });
-  list.addEventListener('drop', function (e) {
-    e.preventDefault();
-    var row = e.target.closest('.quality-item');
-    list.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
-    if (!row || !qualityDragKey) return;
-    dropQualityItem(qualityDragKey, row.dataset.key);
-  });
-  list.addEventListener('dragend', function () {
-    qualityDragKey = null;
-    list.querySelectorAll('.dragging, .drag-over').forEach(function (el) { el.classList.remove('dragging', 'drag-over'); });
-  });
-}
-setupQualityList('qualityRank');
+setupPreferenceList('qualityRank', { toggle: toggleQualityItem, move: moveQualityItem, drop: dropQualityItem });
 
 /* Reset action on the install panel. */
 var resetInstall = document.getElementById('resetInstall');
@@ -1509,7 +1531,7 @@ if (resetInstall) {
 }
 
 /* First paint of the stats (before the first updateAll cycle settles). */
-try { updateStats(loadCfg()); renderRankLists(); renderQualityList(); } catch (e) {}
+try { updateStats(loadCfg()); renderPreferenceLists(); } catch (e) {}
 
 /* Surface a failed sign-in that landed back on / with ?error=... */
 try {

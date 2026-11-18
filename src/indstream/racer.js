@@ -2,8 +2,7 @@
 
 const http = require('./http');
 
-// After the first stream, keep waiting briefly for laggards; hard stop bounds the wait.
-const GRACE_MS = 5000;
+// Providers run until they settle or reach their own per-provider upper bound.
 const OVERALL_MAX_MS = 90000;
 
 // The UI timeout is the per-provider budget; providers fall back to their own cap.
@@ -22,7 +21,6 @@ function race(providers, context, normalize) {
     const controllers = [];
     let settled = 0;
     let finished = false;
-    let graceTimer = null;
 
     if (!total) {
       resolve(collected);
@@ -39,7 +37,6 @@ function race(providers, context, normalize) {
       if (finished) return;
       finished = true;
       clearTimeout(overallTimer);
-      if (graceTimer) clearTimeout(graceTimer);
       guards.forEach(function (guard) {
         if (guard && typeof guard.cancel === 'function') guard.cancel();
       });
@@ -48,11 +45,6 @@ function race(providers, context, normalize) {
       });
       context.log('done: ' + collected.length + ' streams from ' + settled + '/' + total + ' providers');
       resolve(collected.slice());
-    }
-
-    function onFirstStream() {
-      if (graceTimer) return;
-      graceTimer = setTimeout(finish, GRACE_MS);
     }
 
     function settle() {
@@ -104,7 +96,6 @@ function race(providers, context, normalize) {
         context.log(provider.name + ': ' + normalized.length + ' streams in ' + (Date.now() - startedAt) + 'ms');
         if (normalized.length) {
           Array.prototype.push.apply(collected, normalized);
-          onFirstStream();
         }
         settle();
       });
@@ -113,7 +104,6 @@ function race(providers, context, normalize) {
 }
 
 module.exports = {
-  GRACE_MS: GRACE_MS,
   OVERALL_MAX_MS: OVERALL_MAX_MS,
   capOf: capOf,
   race: race,

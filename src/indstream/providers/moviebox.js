@@ -185,7 +185,7 @@ async function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx
   const net = ctx.http || http;
   let detailPath = ref.detailPath;
   if (!detailPath) {
-    const json = await net.getJson(BASE + '/wefeed-h5-bff/web/post/list/subject?id=' + ref.id, {
+    const json = await net.getJson(BASE + '/wefeed-h5-bff/web/post/list/subject?id=' + encodeURIComponent(ref.id), {
       timeoutMs: 8000,
       headers: baseHeaders,
     });
@@ -199,7 +199,9 @@ async function subjectStreams(ref, baseHeaders, type, seasonKey, episodeKey, ctx
     Referer: 'https://fmoviesunblocked.net/spa/videoPlayPage/movies/' + detailPath + '?id=' + ref.id + '&type=/movie/detail',
     Origin: 'https://fmoviesunblocked.net',
   });
-  const params = 'subjectId=' + ref.id + (type === 'tv' ? '&se=' + seasonKey + '&ep=' + episodeKey : '') + '&detailPath=' + detailPath;
+  const params = 'subjectId=' + encodeURIComponent(ref.id) +
+    (type === 'tv' ? '&se=' + seasonKey + '&ep=' + episodeKey : '') +
+    '&detailPath=' + encodeURIComponent(detailPath);
 
   const out = [];
   const seen = {};

@@ -21,7 +21,6 @@
 <noscript><p style="max-width:46ch;margin:3rem auto;padding:0 1.25rem;color:#e8e8ea;font-family:system-ui,sans-serif">JavaScript is required to use the IndStream configurator.</p></noscript>
 
 <a class="skip-link" href="#main">Skip to content</a>
-<div class="grain" aria-hidden="true"></div>
 <div class="aurora" aria-hidden="true"><span class="aurora-a"></span><span class="aurora-b"></span><span class="aurora-c"></span></div>
 <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
 
@@ -55,9 +54,9 @@
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6.5 8.5V19l-3 2v-7.5L4 5Z"/></svg>
       <span class="nav-text">Filters</span>
     </button>
-    <button class="nav-item" data-section="playback">
+    <button class="nav-item" data-section="output">
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none"/></svg>
-      <span class="nav-text">Playback</span>
+      <span class="nav-text">Output</span>
     </button>
     <div class="nav-label">Finish</div>
     <button class="nav-item active" data-section="install">
@@ -75,10 +74,10 @@
     </button>
   </nav>
 
-  <div class="account-block">
+  <div class="account-block" title="Guest mode · local preferences">
     <div class="avatar" id="accountAvatar">G</div>
     <div class="account-meta">
-      <div class="account-name" id="accountName">Guest</div>
+      <div class="account-name" id="accountName">Guest mode</div>
       <div class="account-sub" id="accountSub">Local preferences</div>
     </div>
   </div>
@@ -107,7 +106,7 @@
   </header>
 
   <div class="tuner-bar" id="wizardBar">
-    <button class="tuner-btn back" id="wizardBack" type="button">&#9664;&nbsp; Back</button>
+    <button class="tuner-btn back" id="wizardBack" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg> Back</button>
     <div class="tuner-steps" id="wizardSteps"></div>
     <button class="tuner-btn next" id="wizardNext" type="button">Next &nbsp;&#9654;</button>
   </div>
@@ -185,31 +184,10 @@
     </div>
 
     <div class="stat-row" aria-label="Current setup at a glance">
-      <div class="stat-card"><span class="stat-label">Sources</span><span class="stat-value"><b id="statSources">5</b><small id="statTotal">/ 8 active</small></span><span class="stat-foot">race independently</span></div>
+      <div class="stat-card"><span class="stat-label">Sources</span><span class="stat-value"><b id="statSources">12</b><small id="statTotal">/ 12 active</small></span><span class="stat-foot">race independently</span></div>
       <div class="stat-card"><span class="stat-label">Quality order</span><span class="stat-value"><b id="statFloor">4K → 2K</b></span><span class="stat-foot">best first · below 720p hidden</span></div>
       <div class="stat-card"><span class="stat-label">Results</span><span class="stat-value"><b id="statResults">40</b><small>per request</small></span><span class="stat-foot">after dedupe &amp; filters</span></div>
-      <div class="stat-card"><span class="stat-label">Stream style</span><span class="stat-value small"><b id="statStyle">LightGDrive</b></span><span class="stat-foot">how each stream is labelled</span></div>
-    </div>
-
-    <div class="quick-links" aria-label="Quick actions">
-      <a class="quick-link" href="/stream/movie/27205.json" target="_blank" rel="noopener">
-        <span class="ql-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="10 8.5 16 12 10 15.5 10 8.5"/><rect x="3" y="5" width="18" height="14" rx="3"/></svg></span>
-        <span class="ql-copy"><b>Preview a real response</b><small>The exact JSON Nuvio receives for Inception — filters and all.</small></span>
-        <span class="ql-go">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </a>
-      <a class="quick-link" href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener">
-        <span class="ql-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
-        <span class="ql-copy"><b>Read the source</b><small>GPL-3.0 — providers, the concurrent racer and the polish loop.</small></span>
-        <span class="ql-go">GitHub<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </a>
-    </div>
-
-    <div class="steps-strip" aria-label="How to install">
-      <div class="step"><span class="step-num">1</span><div><strong>Copy the URL</strong><small>Carries your setup — signed in, it stays in sync.</small></div></div>
-      <div class="step-connector" aria-hidden="true"></div>
-      <div class="step"><span class="step-num">2</span><div><strong>Add it to your app</strong><small>Nuvio: Settings → Plugins/Addons → Add by URL → paste. In Stremio clients that accept addon URLs, use this link there.</small></div></div>
-      <div class="step-connector" aria-hidden="true"></div>
-      <div class="step"><span class="step-num">3</span><div><strong>Press play</strong><small>Pick any movie and streams from every source appear.</small></div></div>
+      <div class="stat-card"><span class="stat-label">Stream style</span><span class="stat-value small"><b id="statStyle">IndStream</b></span><span class="stat-foot">how each stream is labelled</span></div>
     </div>
 
     <button class="btn-quiet wide" id="installGoogleBtn" type="button" hidden>Connect Google account</button>
@@ -236,18 +214,16 @@
     <div class="panel-head row">
       <div>
         <p class="panel-eyebrow">Where it comes from</p>
-        <h2>Sources <span class="count-pill" id="sourcesCount">5 selected</span></h2>
-        <p class="panel-sub">Which servers answer — and in what order. Ties and duplicate winners go to the higher-ranked source.</p>
+        <h2 id="sourcesHeading">Sources <span class="count-pill" id="sourcesCount">12 selected</span></h2>
+        <p class="panel-sub">Select 5–6 sources for a good balance of coverage and speed.</p>
       </div>
       <div class="panel-actions">
         <button class="text-btn" id="sourcesAll" type="button">Select all</button>
         <button class="text-btn" id="sourcesNone" type="button">Reset</button>
       </div>
     </div>
-    <div class="provider-grid" id="providers"></div>
-    <div class="rank-head"><span>Source ranking</span><small>Ties and duplicate winners go to the higher-ranked source — tap arrows or drag to reorder</small></div>
-    <ol class="rank-list" id="providerRank" role="list"></ol>
-    <p class="rank-empty" id="providerRankEmpty" hidden>No sources selected — enable at least one above.</p>
+    <div class="rank-head"><span>Source order</span><small>Toggle to allow or hide a source · drag or use the arrows to set priority</small></div>
+    <ol class="rank-list" id="sourceList" role="list" aria-labelledby="sourcesHeading"></ol>
   </section>
 
   <!-- FILTERING -->
@@ -255,7 +231,7 @@
     <div class="panel-head">
       <p class="panel-eyebrow">What gets through</p>
       <h2>Filters</h2>
-      <p class="panel-sub">Languages first, then your quality order. Everything below 720p never reaches your remote.</p>
+      <p class="panel-sub">Quality first, then your language order. Everything below 720p never reaches your remote.</p>
     </div>
 
     <div class="card">
@@ -275,15 +251,16 @@
       <p class="card-hint">Known below 720p is always hidden. Auto covers other detected heights; Unknown means no height detected. At least one quality stays on.</p>
     </div>
 
-    <label class="switch card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span class="switch-copy"><b>Include DASH (.mpd) streams</b><small>Some players handle DASH poorly — turn off if playback stutters</small></span></label>
+    <label class="switch card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span class="switch-copy"><b>Probe unknown quality</b><small>Read stream manifests to detect missing quality. Slower, but labels more streams.</small></span></label>
+    <label class="switch card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span class="switch-copy"><b>Include DASH streams</b><small>Drop .mpd streams if your player stutters on them.</small></span></label>
   </section>
 
-  <!-- PLAYBACK -->
-  <section class="panel hidden" id="panel-playback" aria-label="Playback">
+  <!-- OUTPUT -->
+  <section class="panel hidden" id="panel-output" aria-label="Output">
     <div class="panel-head">
-      <p class="panel-eyebrow">Output, tuned</p>
-      <h2>Playback</h2>
-      <p class="panel-sub">Result caps, timeouts and the badge style Nuvio shows for each stream.</p>
+      <p class="panel-eyebrow">How results are delivered</p>
+      <h2>Output</h2>
+      <p class="panel-sub">Set the result cap, how long sources get, and how each stream is labelled.</p>
     </div>
 
     <div class="card">
@@ -311,13 +288,11 @@
     <div class="card">
       <div class="card-head" id="streamStyleLabel">Stream style</div>
       <select class="select" id="streamStyle" aria-labelledby="streamStyleLabel" aria-label="Stream style">
-        <option value="lightgdrive">LightGDrive (default)</option>
+        <option value="indstream">IndStream (default)</option>
       </select>
       <div class="style-preview" id="stylePreview" aria-live="polite"></div>
     </div>
 
-    <label class="switch card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span class="switch-copy"><b>Probe unknown quality</b><small>Slower — verifies streams whose quality can’t be detected</small></span></label>
-    <label class="switch card"><input type="checkbox" id="debug"><span class="switch-track"></span><span class="switch-copy"><b>Verbose logging</b><small>Write provider timings to the host log — for troubleshooting</small></span></label>
   </section>
 
   <!-- ACCOUNT -->
@@ -331,7 +306,7 @@
       <div class="account-big">
         <div class="avatar big" id="bigAvatar">G</div>
         <div>
-          <div class="account-big-name" id="bigName">Guest</div>
+          <div class="account-big-name" id="bigName">Guest mode</div>
           <div class="account-big-sub" id="bigSub">Local preferences — sign in to keep your account connected.</div>
         </div>
       </div>
@@ -351,7 +326,7 @@
     <div class="panel-head">
       <p class="panel-eyebrow">Live probes</p>
       <h2>Status</h2>
-      <p class="panel-sub">Real checks against this instance — nothing mocked.</p>
+      <p class="panel-sub">Live checks against this instance, plus host logging for troubleshooting.</p>
     </div>
     <div class="card health-card">
       <div class="health-grid">
@@ -365,6 +340,7 @@
         Re-run checks
       </button>
     </div>
+    <label class="switch card"><input type="checkbox" id="debug"><span class="switch-track"></span><span class="switch-copy"><b>Verbose logging</b><small>Write provider timings to the host log.</small></span></label>
   </section>
 
   <footer class="foot-hint">

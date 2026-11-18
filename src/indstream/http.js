@@ -97,6 +97,15 @@ function timed(promise, ms) {
 function isPrivateHost(host) {
   const h = String(host || '').toLowerCase();
   if (!h) return true;
+  const bare = h.replace(/^\[/, '').replace(/\]$/, '');
+  let mapped = bare.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return isPrivateHost(mapped[1]);
+  mapped = bare.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mapped) {
+    const hi = parseInt(mapped[1], 16);
+    const lo = parseInt(mapped[2], 16);
+    return isPrivateHost(((hi >> 8) & 255) + '.' + (hi & 255) + '.' + ((lo >> 8) & 255) + '.' + (lo & 255));
+  }
   if (h === 'localhost' || h === '0.0.0.0' || h === '[::1]' || h.endsWith('.localhost') || h.endsWith('.local')) return true;
   if (/^(10|127|169\.254|192\.168)\./.test(h)) return true;
   const m = h.match(/^172\.(\d{1,3})\./);
@@ -159,7 +168,7 @@ async function request(url, options) {
   const guard = timeoutSignal(timeoutMs, opts.signal);
   const headers = baseHeaders(opts.headers);
   const init = {
-    method: opts.method || 'GET',
+    method: opts.body != null && !opts.method ? 'POST' : (opts.method || 'GET'),
     headers: headers,
     redirect: 'follow',
   };
@@ -168,8 +177,7 @@ async function request(url, options) {
   if (opts.credentials) init.credentials = opts.credentials;
 
   try {
-    const pending = guard.controlled ? fetch(url, init) : timed(fetch(url, init), timeoutMs);
-    const response = await pending;
+    const response = await timed(fetch(url, init), timeoutMs);
     if (!response) return failure(url, 'timeout');
     const maxBytes = Number(opts.maxBytes) || 10 * 1024 * 1024;
     const length = Number(response.headers.get('content-length') || 0);

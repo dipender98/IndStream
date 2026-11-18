@@ -30,8 +30,6 @@ const LANGUAGE_ALIASES = {
   'simplified chinese': 'Chinese', 'cantonese chinese': 'Chinese',
 };
 
-const HEIGHT_SET = [240, 360, 480, 540, 576, 720, 1080, 1440, 2160];
-
 const APOSTROPHES = /[\u2018\u2019\u02bc`]/g;
 
 function normalizeTitle(value) {
@@ -89,7 +87,6 @@ function parseHeight(text) {
   const bySetNum = bySet ? Number(bySet[1]) : 0;
   let height = Math.max(byP, bySetNum, fourK ? 2160 : 0);
   if (height > 4320) height = 0;
-  if (HEIGHT_SET.indexOf(height) < 0 && height < 720) return 0;
   return height;
 }
 
@@ -325,10 +322,11 @@ function parseStreamId(raw) {
   } catch (error) {
     return null;
   }
-  const match = decoded.match(/^(tt\d{7,10}|tmdb:\d+)(?::(\d+):(\d+))?$/i);
+  const match = decoded.match(/^(tt\d{7,10}|tmdb:\d+|\d{1,10})(?::(\d+):(\d+))?$/i);
   if (!match) return null;
+  const id = match[1].toLowerCase();
   return {
-    id: match[1].toLowerCase(),
+    id: /^\d+$/.test(id) ? 'tmdb:' + id : id,
     season: match[2] ? Number(match[2]) : 0,
     episode: match[3] ? Number(match[3]) : 0,
   };

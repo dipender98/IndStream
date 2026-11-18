@@ -23,6 +23,11 @@ const hub4k = require('../src/indstream/providers/hub4k');
 const netmirror = require('../src/indstream/providers/netmirror');
 const atlantic = require('../src/indstream/providers/atlantic');
 const vidly = require('../src/indstream/providers/vidly');
+const vidbolt = require('../src/indstream/providers/vidbolt');
+const wecollege = require('../src/indstream/providers/wecollege');
+const movy = require('../src/indstream/providers/movy');
+const vidy = require('../src/indstream/providers/vidy');
+const vidlink = require('../src/indstream/providers/vidlink');
 const filehost = require('../src/indstream/filehost');
 const userStore = require('../src/indstream/userStore');
 
@@ -67,6 +72,7 @@ test('parseHeight basics', function () {
   assert.strictEqual(util.parseHeight('2160p UHD BluRay'), 2160);
   assert.strictEqual(util.parseHeight('720p HEVC'), 720);
   assert.strictEqual(util.parseHeight('480p'), 480);
+  assert.strictEqual(util.parseHeight('600p'), 600);
 });
 test('qualityLabel', function () {
   assert.strictEqual(util.qualityLabel(2160), '4K');
@@ -120,6 +126,8 @@ test('parseStreamId accepts raw, encoded and tmdb ids', function () {
   assert.deepStrictEqual(util.parseStreamId('tmdb:937020'), { id: 'tmdb:937020', season: 0, episode: 0 });
   assert.deepStrictEqual(util.parseStreamId('tmdb%3A66732%3A2%3A5'), { id: 'tmdb:66732', season: 2, episode: 5 });
   assert.deepStrictEqual(util.parseStreamId('TT0944947'), { id: 'tt0944947', season: 0, episode: 0 });
+  assert.deepStrictEqual(util.parseStreamId('27205'), { id: 'tmdb:27205', season: 0, episode: 0 });
+  assert.deepStrictEqual(util.parseStreamId('1399%3A2%3A5'), { id: 'tmdb:1399', season: 2, episode: 5 });
 });
 test('parseStreamId rejects unknown or malformed ids', function () {
   assert.strictEqual(util.parseStreamId(''), null);
@@ -193,6 +201,15 @@ test('junk samples and non-http urls are dropped', function () {
     fakeStream({ url: 'rtmp://x/live', height: 720 }),
   ], { minQuality: 720, providers: FAKE_PROVIDERS });
   assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720']);
+});
+test('non-standard sub-720 labels are filtered even when height is unknown', function () {
+  const stream = finalize.normalizeStream(
+    { url: 'https://x/600.m3u8', quality: '600p', height: 0 },
+    { id: 'fake', name: 'Fake' },
+    { settings: {} }
+  );
+  assert.strictEqual(stream.height, 600);
+  assert.strictEqual(finalize.finalizeStreams([stream], { providers: FAKE_PROVIDERS }).length, 0);
 });
 test('dedupe keeps the best duplicate regardless of arrival order', function () {
   const low = fakeStream({ url: 'https://x/1?token=a', height: 720, provider: 'Beta', providerId: 'beta' });
@@ -288,6 +305,69 @@ test('auto catches other heights and can be disabled', function () {
   });
   assert.deepStrictEqual(hidden.map(function (s) { return s.url; }), ['https://x/1080']);
 });
+test('quality preference outranks language preference', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/4k-english', height: 2160, language: 'English' }),
+    fakeStream({ url: 'https://x/1080-hindi', height: 1080, language: 'Hindi' }),
+    fakeStream({ url: 'https://x/720-hindi', height: 720, language: 'Hindi' }),
+  ];
+  const out = finalize.finalizeStreams(streams, {
+    languageOrder: ['Hindi', 'English'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), [
+    'https://x/4k-english',
+    'https://x/1080-hindi',
+    'https://x/720-hindi',
+  ]);
+});
+test('quality order still outranks language when reordered', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/4k-english', height: 2160, language: 'English' }),
+    fakeStream({ url: 'https://x/720-hindi', height: 720, language: 'Hindi' }),
+  ];
+  const out = finalize.finalizeStreams(streams, {
+    qualityOrder: ['720', '1080', '1440', '2160', 'auto', 'unknown'],
+    languageOrder: ['Hindi', 'English'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), [
+    'https://x/720-hindi',
+    'https://x/4k-english',
+  ]);
+});
+test('language preference decides ties inside a quality bucket', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/english', height: 1080, language: 'English' }),
+    fakeStream({ url: 'https://x/tamil', height: 1080, language: 'Tamil' }),
+    fakeStream({ url: 'https://x/hindi', height: 1080, language: 'Hindi' }),
+  ];
+  const out = finalize.finalizeStreams(streams, {
+    languageOrder: ['Tamil', 'Hindi', 'English'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), [
+    'https://x/tamil',
+    'https://x/hindi',
+    'https://x/english',
+  ]);
+});
+test('strict language filter keeps unlabelled streams', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/hindi', height: 1080, language: 'Hindi' }),
+    fakeStream({ url: 'https://x/tamil', height: 1080, language: 'Tamil' }),
+    fakeStream({ url: 'https://x/unlabelled', height: 1080, language: '' }),
+  ];
+  const out = finalize.finalizeStreams(streams, {
+    languageOrder: ['Hindi'],
+    langStrict: true,
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), [
+    'https://x/hindi',
+    'https://x/unlabelled',
+  ]);
+});
 
 
 section('html');
@@ -326,7 +406,7 @@ test('defaults', function () {
   assert.deepStrictEqual(s.qualityOff, []);
   assert.strictEqual(s.resultLimit, 40);
   assert.strictEqual(s.includeDash, true);
-  assert.strictEqual(s.requestTimeout, 5);
+  assert.strictEqual(s.requestTimeout, 10);
 });
 test('legacy minQuality migrate', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({ minQuality: '1080' });
@@ -435,6 +515,11 @@ test('streamPath falls back to metadata only when no id exists', async function 
     'tt1375666'
   );
 });
+test('isFilePage rejects dead file-host links but keeps direct media', function () {
+  assert.strictEqual(hdhub._test.isFilePage('https://hubdrive.blog/file/47594547667'), true);
+  assert.strictEqual(hdhub._test.isFilePage('https://pixel.hubcloud.mov/?id=abc'), true);
+  assert.strictEqual(hdhub._test.isFilePage('https://cdn.example.com/video.m3u8'), false);
+});
 
 section('vidrift');
 test('vidriftStreams builds stream objects from orionStreams', function () {
@@ -492,6 +577,11 @@ test('isChallengeHtml rejects cloudflare pages', function () {
   assert.strictEqual(bingr._test.isChallengeHtml('{"sources":[]}'), false);
   assert.strictEqual(bingr._test.isChallengeHtml(''), false);
   assert.strictEqual(bingr._test.bingrSources(cf).length, 0);
+});
+test('isBlockedResponse detects upstream challenge/throttle statuses', function () {
+  assert.strictEqual(bingr._test.isBlockedResponse({ status: 403, text: '' }), true);
+  assert.strictEqual(bingr._test.isBlockedResponse({ status: 429, text: '' }), true);
+  assert.strictEqual(bingr._test.isBlockedResponse({ status: 200, text: '{}' }), false);
 });
 
 section('moviebox');
@@ -670,6 +760,94 @@ test('vidlyStreamUrls returns empty for pages without streams', function () {
   assert.strictEqual(vidly._test.vidlyStreamUrls('<html>no streams</html>').length, 0);
 });
 
+section('vidbolt');
+test('buildUrl uses tmdb ids and optional server lane', function () {
+  const movie = vidbolt._test.buildUrl('movie', '27205', 0, 0, '');
+  assert.ok(movie.indexOf('type=movie') >= 0 && movie.indexOf('id=27205') >= 0);
+  const tv = vidbolt._test.buildUrl('tv', '1399', 3, 7, 'orion');
+  assert.ok(tv.indexOf('type=tv') >= 0 && tv.indexOf('season=3') >= 0);
+  assert.ok(tv.indexOf('episode=7') >= 0 && tv.indexOf('only=orion') >= 0);
+});
+test('vidboltSources parses streams and ignores junk', function () {
+  const json = JSON.stringify({ stream: { sources: [
+    { url: 'https://cdn.example.com/index.m3u8', kind: 'hls', quality: '1080p', language: 'Hindi' },
+    { url: 'ftp://bad', kind: 'hls', quality: '720p' },
+  ] } });
+  const out = vidbolt._test.vidboltSources(json);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].language, 'Hindi');
+  assert.strictEqual(vidbolt._test.vidboltSources('not json').length, 0);
+});
+test('toStream keeps declared audio names and reads manifest height', function () {
+  const master = '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Hindi"\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1280x720,AUDIO="a"\n720.m3u8';
+  const stream = vidbolt._test.toStream({
+    url: 'https://cdn.example.com/master.m3u8', kind: 'hls', quality: '', language: '', master: master,
+  });
+  assert.strictEqual(stream.type, 'hls');
+  assert.strictEqual(stream.height, 720);
+  assert.strictEqual(stream.language, 'Hindi');
+});
+
+section('wecollege');
+test('doubleEncode encodes title twice', function () {
+  assert.strictEqual(wecollege.doubleEncode('A B'), 'A%2520B');
+});
+test('sources parses decrypted payload', function () {
+  const json = JSON.stringify({ sources: [
+    { url: 'https://cdn.example.com/v.m3u8', quality: '1080p' },
+    { url: 'oops', quality: '720p' },
+  ] });
+  assert.strictEqual(wecollege.sources(json).length, 1);
+});
+test('decrypt rejects payloads without the expected marker', function () {
+  assert.strictEqual(wecollege.decrypt('bm90LWVub3VnaA', 'seed', 27205), '');
+  assert.strictEqual(wecollege.decrypt('', 'seed', 27205), '');
+});
+test('buildQuery carries seed and encoding marker', function () {
+  const query = wecollege.buildQuery([['title', 'A%2520B'], ['mediaType', 'movie']], 'abc');
+  assert.ok(query.indexOf('enc=2') >= 0);
+  assert.ok(query.indexOf('seed=abc') >= 0);
+});
+test('movy and vidy use distinct upstream lanes', function () {
+  assert.notStrictEqual(movy.id, vidy.id);
+  assert.ok(movy._test.lanes.indexOf('denver') >= 0);
+  assert.ok(vidy._test.lanes.indexOf('vegas') >= 0);
+  assert.ok(vidy._test.referer.indexOf('vidy') >= 0);
+});
+
+section('vidlink');
+test('parseEncodedId rejects junk and accepts upstream ids', function () {
+  assert.strictEqual(vidlink._test.parseEncodedId('{"result":"abcdefghijklmnop"}'), 'abcdefghijklmnop');
+  assert.strictEqual(vidlink._test.parseEncodedId('not json'), '');
+  assert.strictEqual(vidlink._test.parseEncodedId('null'), '');
+});
+test('toStreams maps qualities and captions without faking audio', function () {
+  const json = {
+    stream: {
+      qualities: {
+        '1080': { type: 'mp4', url: 'https://cdn.example.com/v.mp4', headers: { referer: 'https://filmboom.top/' } },
+        '720': { type: 'm3u8', url: 'https://cdn.example.com/v.m3u8' },
+      },
+      captions: [
+        { url: 'https://cdn.example.com/hi.srt', language: 'हिन्दी' },
+        { url: 'https://cdn.example.com/en.srt', language: 'English' },
+      ],
+    },
+  };
+  const out = vidlink._test.toStreams(json);
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].height, 1080);
+  assert.strictEqual(out[1].type, 'hls');
+  assert.strictEqual(out[0].language, '');
+  assert.ok(out[0].subtitles.length >= 1);
+  assert.strictEqual(out[0].headers.referer, 'https://filmboom.top/');
+});
+test('toStreams returns empty for missing stream data', function () {
+  assert.deepStrictEqual(vidlink._test.toStreams(null), []);
+  assert.deepStrictEqual(vidlink._test.toStreams({ stream: { qualities: {} } }), []);
+});
+
 section('filehost');
 test('rotatorTarget decodes gateway blob', function () {
   const blob = 'Y214WE0xWjNZbXRhVUdwMmIxQldObFo2ZFRCeFZVOXRRbmxxYVV0UU9XRndla2w1YjNveGFYRlVPV3h3YkRWM1RERnFhVzVVT1dkTlNtdDFiM3BGZVhCNWFtbFdkbXAyYjJ4V05sWjZVMVpJZDA5M1JsSXdNa2RWZURWdk1rVkxSbnBuZDI5S2FteEtlVm94YmtsNVRFWkxUVzV2U210dFNubGFORnBTTlRaSlIwbENSVk5JYWtkaFkwMWFlRFV6UTBjd2RuTkVQVDA9';
@@ -751,6 +929,10 @@ test('awaitMeta fills ids on the provider scope', async function () {
 section('providers');
 test('registry contract', function () {
   const ids = {};
+  assert.deepStrictEqual(
+    providers.PROVIDERS.map(function (provider) { return provider.id; }),
+    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink']
+  );
   providers.PROVIDERS.forEach(function (provider) {
     assert.ok(provider.id, 'missing id');
     assert.ok(!ids[provider.id], 'duplicate id ' + provider.id);
@@ -809,7 +991,7 @@ test('racer returns fast results and isolates failures', async function () {
       },
     ],
     {
-      settings: { requestTimeout: 10 },
+      settings: { requestTimeout: 1 },
       log: function (message) { logs.push(message); },
     },
     function (raw, provider) {
@@ -819,6 +1001,38 @@ test('racer returns fast results and isolates failures', async function () {
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].provider, 'Fast');
   assert.ok(logs.some(function (message) { return message.indexOf('done:') >= 0; }));
+});
+test('racer lets slow providers use their full budget', async function () {
+  const out = await racer.race(
+    [
+      {
+        id: 'fast',
+        name: 'Fast',
+        raceTimeoutMs: 1000,
+        resolve: async function () { return [{ url: 'https://example.com/fast.m3u8' }]; },
+      },
+      {
+        id: 'slow',
+        name: 'Slow',
+        raceTimeoutMs: 6000,
+        resolve: function () {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve([{ url: 'https://example.com/slow.m3u8' }]);
+            }, 5200);
+          });
+        },
+      },
+    ],
+    {
+      settings: {},
+      log: function () {},
+    },
+    function (raw, provider) {
+      return { url: raw.url, provider: provider.name };
+    }
+  );
+  assert.deepStrictEqual(out.map(function (s) { return s.provider; }).sort(), ['Fast', 'Slow']);
 });
 test('racer normalizes with metadata resolved during provider work', async function () {
   let releaseMeta = null;
@@ -877,7 +1091,7 @@ test('racer aborts unfinished providers when it finishes', async function () {
       },
     ],
     {
-      settings: { requestTimeout: 10 },
+      settings: { requestTimeout: 1 },
       log: function () {},
     },
     function (raw, provider) {
@@ -930,7 +1144,7 @@ const HDR_RAW = {
   language: 'English, Hindi',
   releaseText: 'Inception.2010.2160p.BluRay.REMUX.DV.HDR.10bit.HEVC.Hindi.DDP.English.Atmos.5.1.mkv',
 };
-const HDR_CTX = { season: 0, episode: 0, meta: { title: 'Inception', year: '2010' } };
+const HDR_CTX = { season: 0, episode: 0, meta: { title: 'Inception', year: '2010', originalLanguage: 'English' } };
 test('lightgdrive renders declared specs only', function () {
   const out = styles.renderNameTitle({ id: 'hdhub', name: 'HdHub' }, HDR_RAW, HDR_CTX, 'lightgdrive');
   assert.strictEqual(out.name, 'HdHub 2160p');
@@ -955,9 +1169,72 @@ test('unknown release text omits spec lines instead of guessing', function () {
   assert.ok(out.title.indexOf('📺') < 0);
   assert.ok(out.title.indexOf('🔍 Bingr') >= 0);
 });
-test('invalid style falls back to lightgdrive', function () {
+test('indstream is the default signature style', function () {
+  assert.strictEqual(styles.DEFAULT_STYLE, 'indstream');
+  assert.strictEqual(styles.STYLE_OPTIONS[0].id, 'indstream');
+});
+test('indstream renders one icon per meaning', function () {
+  const ctx = Object.assign({ type: 'movie' }, HDR_CTX);
+  const out = styles.renderNameTitle({ id: 'hdhub', name: 'HdHub' }, HDR_RAW, ctx, 'indstream');
+  assert.strictEqual(out.name, 'IND 4K · HdHub');
+  assert.strictEqual(out.title, [
+    '🎬 Inception (2010)',
+    '💿 BluRay REMUX · 🔆 DV HDR · 🎞️ HEVC 10bit · 📦 65.95 GB',
+    '🎧 Atmos · DD+ · 🔊 5.1',
+    'Lang: Multi 🌐 English 🇬🇧 Hindi 🇮🇳',
+  ].join('\n'));
+});
+test('indstream marks a series and shows the episode once', function () {
+  const raw = Object.assign({}, HDR_RAW, { quality: '1080p', height: 1080, language: 'English', subtitles: [{ label: 'English' }, { label: 'Hindi' }], releaseText: 'Stranger.Things.S01E01.1080p.WEB-DL.DDP5.1.H.264.mkv' });
+  const ctx = { type: 'tv', season: 1, episode: 1, meta: { title: 'Stranger Things', year: '2016' } };
+  const out = styles.renderNameTitle({ id: 'netmirror', name: 'NetMirror' }, raw, ctx, 'indstream');
+  assert.strictEqual(out.name, 'IND 1080p · NetMirror');
+  assert.ok(out.title.indexOf('📺 Stranger Things (2016) · S01E01') === 0);
+  assert.strictEqual(out.title.split('S01E01').length - 1, 1);
+  assert.ok(out.title.indexOf('☁️ WEB-DL') >= 0);
+  assert.ok(out.title.indexOf('Lang: English 🇬🇧') >= 0);
+  assert.ok(out.title.indexOf('Subtitle: 💬 English 💬 Hindi') >= 0);
+});
+test('indstream maps each declared source to its own mark', function () {
+  const cases = [
+    ['BluRay', '💿'],
+    ['WEB-DL', '☁️'],
+    ['HDTV', '📡'],
+    ['DVDRip', '📀'],
+    ['CAM', '📹'],
+    ['HDRip', '🎥'],
+  ];
+  cases.forEach(function (item) {
+    const raw = { url: 'https://example.com/a.mkv', quality: '1080p', height: 1080, size: '1 GB', releaseText: item[0] + ' HEVC' };
+    const out = styles.renderNameTitle({ id: 'src', name: 'Src' }, raw, { type: 'movie', season: 0, episode: 0 }, 'indstream');
+    assert.ok(out.title.indexOf(item[1] + ' ' + item[0]) >= 0, item[0] + ' icon missing');
+  });
+});
+test('indstream renders Multi beyond three audio languages and invents nothing', function () {
+  const raw = { url: 'https://example.com/v.mp4', type: 'mp4', quality: '1080p', height: 1080, language: 'German, English, Spanish, French, Hindi' };
+  const out = styles.renderNameTitle({ id: 'bingr', name: 'Bingr' }, raw, { type: 'movie', season: 0, episode: 0, meta: { title: 'Inception', year: '2010' } }, 'indstream');
+  assert.ok(out.title.indexOf('Lang: Multi 🌐') >= 0);
+  assert.ok(out.title.indexOf('German') < 0);
+  assert.ok(out.title.indexOf('💿') < 0);
+  assert.ok(out.title.indexOf('📦') < 0);
+});
+test('indstream puts the original audio language first', function () {
+  const raw = { url: 'https://example.com/v.mp4', type: 'mp4', quality: '1080p', height: 1080, language: 'English, Hindi, Korean' };
+  const ctx = { type: 'movie', season: 0, episode: 0, meta: { title: 'Parasite', year: '2019', originalLanguage: 'Korean' } };
+  const out = styles.renderNameTitle({ id: 'bingr', name: 'Bingr' }, raw, ctx, 'indstream');
+  assert.ok(out.title.indexOf('Lang: Multi 🌐 Korean 🇰🇷 Hindi 🇮🇳 English 🇬🇧') >= 0);
+});
+test('invalid style falls back to the default signature', function () {
   const out = styles.renderNameTitle({ id: 'hdhub', name: 'HdHub' }, HDR_RAW, HDR_CTX, 'nope');
-  assert.strictEqual(out.name, 'HdHub 2160p');
+  assert.strictEqual(out.name, 'IND 4K · HdHub');
+});
+test('style default stays in sync across server and UI', function () {
+  const root = path.join(__dirname, '..');
+  const ui = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const page = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  assert.ok(ui.indexOf("streamStyle: '" + styles.DEFAULT_STYLE + "'") >= 0, 'UI config default');
+  assert.ok(ui.indexOf("const DEFAULT_STYLE = '" + styles.DEFAULT_STYLE + "'") >= 0, 'UI fallback default');
+  assert.ok(page.indexOf('value="' + styles.DEFAULT_STYLE + '"') >= 0, 'page initial option');
 });
 test('every preset renders without throwing', function () {
   styles.STYLE_IDS.forEach(function (id) {
@@ -1005,6 +1282,21 @@ test('capOf honors the ui timeout per provider', function () {
   assert.strictEqual(racer.capOf({ raceTimeoutMs: 3000 }, { requestTimeout: 10 }), 10000);
   assert.strictEqual(racer.capOf({ raceTimeoutMs: 4321 }, {}), 4321);
   assert.strictEqual(racer.capOf({ raceTimeoutMs: 0 }, { requestTimeout: 0 }), 12000);
+  assert.strictEqual(racer.capOf({ raceTimeoutMs: 9000 }, { requestTimeout: 25 }), 25000);
+});
+test('default provider timeout is 10s in every layer', function () {
+  assert.strictEqual(settings.getSettings().requestTimeout, 10);
+  const root = path.join(__dirname, '..');
+  const server = fs.readFileSync(path.join(root, 'index.js'), 'utf8');
+  const ui = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.ok(/requestTimeout:\s*'10'/.test(server));
+  assert.ok(/requestTimeout:\s*'10'/.test(ui));
+});
+test('http server timeout exceeds the largest selectable provider budget', function () {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+  const match = src.match(/server\.requestTimeout\s*=\s*(\d+)/);
+  assert.ok(match, 'server.requestTimeout must be set explicitly');
+  assert.ok(Number(match[1]) > 25000 + 9000, 'server timeout must outlast the 25s budget plus racer hard-stop margin');
 });
 
 section('cache');
