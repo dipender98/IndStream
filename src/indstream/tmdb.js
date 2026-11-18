@@ -145,11 +145,14 @@ async function findMetaByImdb(imdbId, type, opts) {
   return meta;
 }
 
-// Resolves either a numeric TMDB id or an IMDb id (including IMDb URLs).
+// Resolves either a numeric TMDB id, a "tmdb:" id, or an IMDb id (including IMDb URLs).
 async function resolveMeta(value, type, opts) {
-  const imdbId = normalizeImdbId(value);
+  const raw = String(value == null ? '' : value).trim();
+  const imdbId = normalizeImdbId(raw);
   if (imdbId) return findMetaByImdb(imdbId, type, opts);
-  return fetchMeta(String(value == null ? '' : value).trim(), type, opts);
+  const match = raw.match(/^(?:tmdb:)?(\d+)$/i);
+  if (!match) return null;
+  return fetchMeta(match[1], type, opts);
 }
 
 function applyMeta(scope, meta) {

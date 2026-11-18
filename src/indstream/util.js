@@ -314,6 +314,26 @@ function dedupeStreams(streams, compare) {
   return out;
 }
 
+// Stream ids arrive as "tt1234567", "tmdb:123", optionally with ":season:episode".
+// Some clients percent-encode the separators inside the path segment.
+function parseStreamId(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text || text.length > 256) return null;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(text);
+  } catch (error) {
+    return null;
+  }
+  const match = decoded.match(/^(tt\d{7,10}|tmdb:\d+)(?::(\d+):(\d+))?$/i);
+  if (!match) return null;
+  return {
+    id: match[1].toLowerCase(),
+    season: match[2] ? Number(match[2]) : 0,
+    episode: match[3] ? Number(match[3]) : 0,
+  };
+}
+
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function b64decode(input) {
@@ -516,6 +536,7 @@ module.exports = {
   parseHlsMaster: parseHlsMaster,
   parseDashHeights: parseDashHeights,
   dedupeStreams: dedupeStreams,
+  parseStreamId: parseStreamId,
   b64decode: b64decode,
   rot13: rot13,
   qualityText: qualityText,

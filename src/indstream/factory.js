@@ -44,7 +44,8 @@ function createPlugin(provider) {
 
     const inputId = String(mediaId == null ? '' : mediaId).trim();
     const inputImdbId = tmdb.normalizeImdbId(inputId);
-    const inputTmdbId = inputImdbId ? 0 : safeInt(inputId);
+    const tmdbMatch = inputId.match(/^(?:tmdb:)?(\d+)$/i);
+    const inputTmdbId = inputImdbId ? 0 : (tmdbMatch ? Number(tmdbMatch[1]) : 0);
 
     const context = {
       inputId: inputId,

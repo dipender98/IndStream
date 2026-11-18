@@ -7,6 +7,7 @@ const crypto = require('crypto');
 
 const settings = require('./src/indstream/settings');
 const tmdb = require('./src/indstream/tmdb');
+const util = require('./src/indstream/util');
 const racer = require('./src/indstream/racer');
 const finalize = require('./src/indstream/finalize');
 const httpLib = require('./src/indstream/http');
@@ -693,16 +694,13 @@ async function handleRequest(req, res) {
 
   const m = rest.match(/^\/stream\/(movie|series)\/(.+)\.json$/);
   if (m) {
-    const parts = m[2].split(':');
+    const parsed = util.parseStreamId(m[2]);
+    if (!parsed) {
+      sendJson(res, 200, { streams: [] });
+      return;
+    }
     try {
-      const decoded = parts.map(function (p) {
-        try { return decodeURIComponent(p); } catch (e) { return p; }
-      });
-      if (!decoded.every(function (p) { return /^(?:[A-Za-z0-9_-]+)$/.test(p); })) {
-        sendJson(res, 200, { streams: [] });
-        return;
-      }
-      const streams = await getStreams(decoded[0], m[1], decoded[1], decoded[2], cfg);
+      const streams = await getStreams(parsed.id, m[1], parsed.season, parsed.episode, cfg);
       sendJson(res, 200, { streams: streams });
     } catch (err) {
       console.error('stream error:', err && err.message ? err.message : err);

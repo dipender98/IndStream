@@ -513,16 +513,20 @@ async function loadAccount() {
         ? 'Signed in as ' + name + '. Your settings stay on this device; copy the addon URL to use it in Nuvio/Stremio.'
         : 'Guest — copy this URL and paste it into Nuvio/Stremio. Settings stay on this device.';
     }
-    if (googleBtn) googleBtn.hidden = signedIn;
+    if (googleBtn) googleBtn.hidden = signedIn || !loginConfigured;
     const modalGoogleBtn = document.getElementById('modalGoogleBtn');
-    if (modalGoogleBtn) modalGoogleBtn.hidden = false;
+    if (modalGoogleBtn) modalGoogleBtn.hidden = signedIn || !loginConfigured;
     document.getElementById('accountName').textContent = name;
-    document.getElementById('accountSub').textContent = signedIn ? 'Connected on this browser' : 'Local preferences';
+    document.getElementById('accountSub').textContent = signedIn
+      ? 'Connected on this browser'
+      : (loginConfigured ? 'Local preferences' : 'Local preferences — sign-in disabled');
     document.getElementById('bigName').textContent = name;
     document.getElementById('bigSub').textContent = signedIn
       ? (data.user.email || 'Connected on this browser')
-      : 'Sign in with Google — or stay local. Settings always save on this device.';
-    document.getElementById('googleBtn').hidden = signedIn;
+      : (loginConfigured
+        ? 'Sign in with Google — or stay local. Settings always save on this device.'
+        : 'Google sign-in is not configured on this instance — settings always save on this device.');
+    document.getElementById('googleBtn').hidden = signedIn || !loginConfigured;
     document.getElementById('guestBtn').hidden = signedIn;
     document.getElementById('logoutBtn').hidden = !signedIn;
     document.getElementById('signOutBtn').hidden = !signedIn;
@@ -542,13 +546,13 @@ async function loadAccount() {
     });
   } catch (e) {
     if (note) note.textContent = 'Could not check sign-in. Settings stay on this device; copy the addon URL.';
-    if (googleBtn) googleBtn.hidden = false;
+    if (googleBtn) googleBtn.hidden = true;
     ['accountName', 'bigName', 'accountSub', 'bigSub'].forEach(function (id) {
       const el = document.getElementById(id);
       if (el) el.textContent = id === 'bigName' ? 'Guest' : id === 'accountName' ? 'Guest' : id === 'accountSub' ? 'Local preferences' : 'Local preferences — sign in to keep your account connected.';
     });
     const googleBtn2 = document.getElementById('googleBtn');
-    if (googleBtn2) googleBtn2.hidden = false;
+    if (googleBtn2) googleBtn2.hidden = true;
     const guestBtn = document.getElementById('guestBtn');
     if (guestBtn) guestBtn.hidden = false;
     const signOutBtn = document.getElementById('signOutBtn');
@@ -718,6 +722,13 @@ function setupWelcomeModal() {
     if (returnFocus && returnFocus.focus) returnFocus.focus();
   };
   fetch('/api/me').then(function (r) { return r.json(); }).then(function (data) {
+    loginConfigured = !!data.loginEnabled;
+    const google = document.getElementById('modalGoogleBtn');
+    if (google) google.hidden = !loginConfigured;
+    const intro = document.getElementById('modalIntro');
+    if (intro && !loginConfigured) {
+      intro.textContent = 'Settings save on this device. Google sign-in is not configured on this instance.';
+    }
     if (!dismissed && !data.signedIn) setTimeout(open, 800);
   }).catch(function () {});
   document.getElementById('welcomeClose').addEventListener('click', close);

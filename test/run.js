@@ -110,6 +110,22 @@ test('dedupeStreams strips query and keeps the best duplicate', function () {
   assert.strictEqual(best.length, 2);
   assert.strictEqual(best[0].height, 1080);
 });
+test('parseStreamId accepts raw, encoded and tmdb ids', function () {
+  assert.deepStrictEqual(util.parseStreamId('tt0944947:1:1'), { id: 'tt0944947', season: 1, episode: 1 });
+  assert.deepStrictEqual(util.parseStreamId('tt4574334%3A1%3A1'), { id: 'tt4574334', season: 1, episode: 1 });
+  assert.deepStrictEqual(util.parseStreamId('tmdb:937020'), { id: 'tmdb:937020', season: 0, episode: 0 });
+  assert.deepStrictEqual(util.parseStreamId('tmdb%3A66732%3A2%3A5'), { id: 'tmdb:66732', season: 2, episode: 5 });
+  assert.deepStrictEqual(util.parseStreamId('TT0944947'), { id: 'tt0944947', season: 0, episode: 0 });
+});
+test('parseStreamId rejects unknown or malformed ids', function () {
+  assert.strictEqual(util.parseStreamId(''), null);
+  assert.strictEqual(util.parseStreamId('nonsense'), null);
+  assert.strictEqual(util.parseStreamId('tt123'), null);
+  assert.strictEqual(util.parseStreamId('tmdb:abc'), null);
+  assert.strictEqual(util.parseStreamId('tt0944947:1'), null);
+  assert.strictEqual(util.parseStreamId('tt0944947:1:1:2'), null);
+  assert.strictEqual(util.parseStreamId('%E0%A4%A'), null);
+});
 test('b64decode + rot13', function () {
   assert.strictEqual(util.b64decode('aGVsbG8='), 'hello');
   assert.strictEqual(util.rot13('nop'), 'abc');
@@ -602,6 +618,26 @@ test('firstFindResult picks the requested media type', function () {
   assert.strictEqual(tmdb._test.firstFindResult(raw, 'movie').id, 27205);
   assert.strictEqual(tmdb._test.firstFindResult(raw, 'tv').id, 1399);
   assert.strictEqual(tmdb._test.firstFindResult(null, 'movie'), null);
+});
+test('resolveMeta accepts numeric and tmdb-prefixed ids', async function () {
+  const original = http.getJson;
+  const urls = [];
+  http.getJson = async function (url) {
+    urls.push(url);
+    const id = Number((url.match(/\/(?:movie|tv)\/(\d+)/) || [])[1] || 0);
+    return id ? { id: id, title: 'Mock ' + id, release_date: '2020-01-01' } : null;
+  };
+  try {
+    const movie = await tmdb.resolveMeta('tmdb:27205', 'movie');
+    assert.strictEqual(movie.id, 27205);
+    assert.ok(urls[0].indexOf('/movie/27205') >= 0);
+    const show = await tmdb.resolveMeta('tmdb:66732', 'series');
+    assert.strictEqual(show.id, 66732);
+    assert.ok(urls[1].indexOf('/tv/66732') >= 0);
+    assert.strictEqual(await tmdb.resolveMeta('not-an-id', 'movie'), null);
+  } finally {
+    http.getJson = original;
+  }
 });
 test('awaitMeta reuses resolved metadata and respects expired budgets', async function () {
   const meta = { id: 27205, title: 'Inception', imdbId: 'tt1375666' };
