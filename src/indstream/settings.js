@@ -2,8 +2,10 @@
 
 const styles = require('./styles');
 
+const QUALITY_KEYS = ['2160', '1440', '1080', '720', 'auto', 'unknown'];
+const DEFAULT_QUALITY_ORDER = QUALITY_KEYS.slice();
+
 const CORE_DEFAULTS = {
-  minQuality: '720',
   resultLimit: '40',
   requestTimeout: '5',
   probeQuality: false,
@@ -24,16 +26,8 @@ const SETTINGS_LAYOUT = [
     label: 'Playback',
   },
   {
-    type: 'select',
-    key: 'minQuality',
-    label: 'Minimum quality',
-    description: 'Streams whose height is known and below this are dropped. Unknown heights are kept.',
-    defaultValue: '720',
-    options: [
-      { label: '720p', value: '720' },
-      { label: '1080p', value: '1080' },
-      { label: 'Best available', value: '0' },
-    ],
+    type: 'info',
+    label: 'Quality order and language ranking are configured on the IndStream web page. Known streams below 720p are always hidden.',
   },
   {
     type: 'select',
@@ -126,6 +120,46 @@ function pick(value, allowed, fallback) {
   return allowed.indexOf(text) >= 0 ? text : fallback;
 }
 
+function normalizeQualityOrder(value) {
+  const order = [];
+  if (Array.isArray(value)) {
+    value.forEach(function (key) {
+      const text = String(key == null ? '' : key);
+      if (QUALITY_KEYS.indexOf(text) >= 0 && order.indexOf(text) < 0) order.push(text);
+    });
+  }
+  QUALITY_KEYS.forEach(function (key) {
+    if (order.indexOf(key) < 0) order.push(key);
+  });
+  return order;
+}
+
+function normalizeQualityOff(value) {
+  const off = [];
+  if (!Array.isArray(value)) return off;
+  value.forEach(function (key) {
+    const text = String(key == null ? '' : key);
+    if (QUALITY_KEYS.indexOf(text) >= 0 && off.indexOf(text) < 0) off.push(text);
+  });
+  return off;
+}
+
+function legacyQualityOff(minQuality) {
+  return String(minQuality) === '1080' ? ['720', 'auto'] : [];
+}
+
+function qualityPreferences(merged) {
+  const order = normalizeQualityOrder(merged.qualityOrder);
+  const off = Array.isArray(merged.qualityOrder)
+    ? normalizeQualityOff(merged.qualityOff)
+    : legacyQualityOff(merged.minQuality);
+  const enabled = order.filter(function (key) { return off.indexOf(key) < 0; });
+  return {
+    qualityOrder: enabled.length ? enabled : [order[0]],
+    qualityOff: off,
+  };
+}
+
 function getSettings() {
   const raw = readGlobalSettings();
   const merged = Object.assign({}, DEFAULTS);
@@ -133,8 +167,10 @@ function getSettings() {
     if (raw[key] != null) merged[key] = raw[key];
   });
 
+  const quality = qualityPreferences(merged);
   const settings = {
-    minQuality: Number(pick(merged.minQuality, ['0', '720', '1080'], DEFAULTS.minQuality)),
+    qualityOrder: quality.qualityOrder,
+    qualityOff: quality.qualityOff,
     resultLimit: Number(pick(merged.resultLimit, ['0', '20', '40', '80'], DEFAULTS.resultLimit)),
     requestTimeout: Number(pick(merged.requestTimeout, ['5', '10', '15', '25'], DEFAULTS.requestTimeout)),
     probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
@@ -152,7 +188,11 @@ function onSettings() {
 
 module.exports = {
   DEFAULTS: DEFAULTS,
+  QUALITY_KEYS: QUALITY_KEYS,
+  DEFAULT_QUALITY_ORDER: DEFAULT_QUALITY_ORDER,
   SETTINGS_LAYOUT: SETTINGS_LAYOUT,
   getSettings: getSettings,
+  normalizeQualityOrder: normalizeQualityOrder,
+  normalizeQualityOff: normalizeQualityOff,
   onSettings: onSettings,
 };

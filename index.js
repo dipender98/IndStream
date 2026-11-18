@@ -114,11 +114,29 @@ function shortHash(str) {
   return (h >>> 0).toString(16);
 }
 
-function makeManifest(cfg, base) {
+const QUALITY_LABELS = {
+  '2160': '4K',
+  '1440': '2K',
+  '1080': '1080p',
+  '720': '720p',
+  auto: 'Auto',
+  unknown: 'Unknown',
+};
+
+function manifestName(cfg) {
+  const name = typeof cfg.profileName === 'string' ? cfg.profileName.trim().slice(0, 40) : '';
+  if (name) return 'IndStream · ' + name;
+  const count = selectedProviders(cfg).length;
+  const top = QUALITY_LABELS[normalizeCfg(cfg).qualityOrder[0]] || 'Auto';
+  return 'IndStream · ' + count + ' src · ' + top;
+}
+
+function makeManifest(cfg, base, options) {
+  const seed = options && options.idSeed ? options.idSeed : encodeCfg(cfg);
   return {
-    id: 'com.indstream.addon.' + shortHash(encodeCfg(cfg)),
+    id: 'com.indstream.addon.' + shortHash(seed),
     version: (function () { try { return require('./package.json').version; } catch (e) { return '0.0.0'; } })(),
-    name: 'IndStream',
+    name: manifestName(cfg),
     description: 'IndStream streams for movies and series.',
     resources: ['stream'],
     types: ['movie', 'series'],
@@ -249,7 +267,7 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg) {
   const raw = await racer.race(wanted, context, finalize.normalizeStream);
   const resultLimit = Number(s.resultLimit) || 0;
   const finalized = finalize.finalizeStreams(raw, {
-    minQuality: s.minQuality,
+    qualityOrder: s.qualityOrder,
     includeDash: s.includeDash,
     resultLimit: 0,
     providers: wanted,
@@ -356,6 +374,18 @@ function sanitizeConfigFromApi(raw) {
     }
     if (key === 'streamStyle') {
       if (typeof v === 'string' && styles.STYLE_IDS.indexOf(v) >= 0) out.streamStyle = v;
+      return;
+    }
+    if (key === 'qualityOrder' || key === 'qualityOff') {
+      if (!Array.isArray(v)) return;
+      const seen = new Set();
+      const picked = [];
+      v.forEach(function (item) {
+        if (typeof item !== 'string' || settings.QUALITY_KEYS.indexOf(item) < 0 || seen.has(item)) return;
+        seen.add(item);
+        picked.push(item);
+      });
+      out[key] = picked;
       return;
     }
     if (key === 'minQuality') {
@@ -566,6 +596,21 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (typeof pathname === 'string' && pathname.indexOf('/api/addon/') === 0) {
+    const token = pathname.slice('/api/addon/'.length);
+    const hit = token ? userStore.findByToken(token) : null;
+    if (!hit) {
+      sendJson(res, 404, { ok: false, error: 'not found' }, false);
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      profile: { id: hit.profile.id, name: hit.profile.name },
+      cfg: sanitizeConfigFromApi(hit.profile.cfg),
+    }, false);
+    return;
+  }
+
   if (pathname === '/api/version') {
     let pkgVersion = '1.0.0';
     try { pkgVersion = require('./package.json').version || pkgVersion; } catch (e) {}
@@ -581,13 +626,20 @@ async function handleRequest(req, res) {
 
   if (pathname === '/api/me') {
     const session = readSession(req);
-    const saved = session ? userStore.get(session.sub) : null;
-    const savedCfg = saved ? sanitizeConfigFromApi(saved) : null;
+    const account = session ? userStore.getAccount(session.sub) : null;
+    const active = account
+      ? account.profiles.find(function (profile) { return profile.id === account.activeId; }) || account.profiles[0]
+      : null;
+    const savedCfg = active ? sanitizeConfigFromApi(active.cfg) : (session ? readCfgCookie(req) : null);
     sendJson(res, 200, {
       signedIn: !!session,
       loginEnabled: LOGIN_ENABLED,
       user: session ? { name: session.name, email: session.email, picture: session.picture } : null,
-      cfg: savedCfg || (session ? readCfgCookie(req) : null),
+      cfg: savedCfg,
+      profiles: account ? account.profiles.map(function (profile) {
+        return { id: profile.id, name: profile.name, token: profile.token };
+      }) : [],
+      activeId: account ? account.activeId : null,
     }, false);
     return;
   }
@@ -615,7 +667,7 @@ async function handleRequest(req, res) {
     }
     let body;
     try {
-      body = await readBody(req, 8192);
+      body = await readBody(req, 65536);
     } catch (e) {
       sendJson(res, 413, { ok: false, error: 'payload too large' }, false);
       return;
@@ -628,14 +680,45 @@ async function handleRequest(req, res) {
       return;
     }
     const cfg = sanitizeConfigFromApi(posted && posted.cfg ? posted.cfg : posted);
-    userStore.set(session.sub, cfg);
+    let account = null;
+    const postedProfiles = Array.isArray(posted && posted.profiles) ? posted.profiles.slice(0, 20) : null;
+    if (postedProfiles) {
+      const profiles = postedProfiles.map(function (item) {
+        if (!item || typeof item !== 'object') return null;
+        if (!item.cfg || typeof item.cfg !== 'object' || Array.isArray(item.cfg)) return null;
+        return {
+          id: typeof item.id === 'string' ? item.id.slice(0, 64) : '',
+          name: typeof item.name === 'string' ? item.name.slice(0, 40) : '',
+          cfg: sanitizeConfigFromApi(item.cfg),
+        };
+      });
+      account = userStore.setAccount(session.sub, {
+        profiles: profiles.filter(Boolean),
+        activeId: typeof posted.activeId === 'string' ? posted.activeId : '',
+      });
+    }
+    if (!account) {
+      await userStore.set(session.sub, cfg);
+      account = userStore.getAccount(session.sub);
+    }
+    const activeProfile = account
+      ? account.profiles.find(function (profile) { return profile.id === account.activeId; }) || account.profiles[0]
+      : null;
+    const activeCfg = activeProfile ? sanitizeConfigFromApi(activeProfile.cfg) : cfg;
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
-      'Set-Cookie': cfgCookie(cfg, isHttpsRequest(req)),
+      'Set-Cookie': cfgCookie(activeCfg, isHttpsRequest(req)),
     });
-    res.end(JSON.stringify({ ok: true, cfg: cfg }));
+    res.end(JSON.stringify({
+      ok: true,
+      cfg: activeCfg,
+      profiles: account ? account.profiles.map(function (profile) {
+        return { id: profile.id, name: profile.name, token: profile.token };
+      }) : [],
+      activeId: account ? account.activeId : null,
+    }));
     return;
   }
 
@@ -687,10 +770,15 @@ async function handleRequest(req, res) {
     return;
   }
 
-  const { cfg, rest } = splitConfig(pathname);
+  const { cfg, rest, token } = splitConfig(pathname);
+
+  if (!cfg) {
+    sendJson(res, 404, { error: 'not found' }, false);
+    return;
+  }
 
   if (rest === '/manifest.json' || rest === '/') {
-    sendJson(res, 200, makeManifest(cfg, baseUrl(req)));
+    sendJson(res, 200, makeManifest(cfg, baseUrl(req), token ? { idSeed: 'u:' + token } : undefined));
     return;
   }
 
@@ -738,6 +826,14 @@ function splitConfig(pathname) {
   if (typeof pathname !== 'string' || pathname.length > 8192) return { cfg: DEFAULT_CFG, rest: '/' };
   const parts = pathname.split('/').filter(Boolean);
   if (!parts.length) return { cfg: DEFAULT_CFG, rest: '/' };
+  if (parts[0] === 'u') {
+    const token = parts[1] || '';
+    const hit = token ? userStore.findByToken(token) : null;
+    if (!hit) return { cfg: null, rest: '/', token: token };
+    const rest = '/' + parts.slice(2).join('/');
+    const cfg = Object.assign({}, DEFAULT_CFG, hit.profile.cfg, { profileName: hit.profile.name });
+    return { cfg: cfg, rest: rest === '/' ? '/' : rest, token: token };
+  }
   const first = decodeCfg(parts[0]);
   if (first) {
     const rest = '/' + parts.slice(1).join('/');

@@ -122,7 +122,7 @@
             <span class="ready-pill">Ready to install</span>
           </div>
           <h1 class="install-title">Every source.<br>One manifest.</h1>
-          <p class="install-lede">Configure once. Copy a single URL that carries your sources, languages, quality floor and stream style straight into Nuvio or Stremio.</p>
+          <p class="install-lede">Configure once. Copy a single URL that carries your sources, languages, quality order and stream style straight into Nuvio or Stremio.</p>
 
           <div class="field-label" id="manifestUrlLabel">Your addon URL</div>
           <div class="url-row">
@@ -142,7 +142,7 @@
 
           <ul class="trust-row" aria-label="Why IndStream" role="list">
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 10"/></svg>No account needed</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 10"/></svg>Stays on this device</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 10"/></svg>Syncs with your account</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 10"/></svg>Paste once, watch anywhere</li>
           </ul>
           <p class="install-note" id="installState">Guest — copy this URL and paste it into Nuvio or Stremio.</p>
@@ -178,7 +178,7 @@
                 <span class="mock-play"><svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><polygon points="7 4 20 12 7 20 7 4"/></svg>Playing</span>
               </li>
             </ul>
-            <div class="mock-foot"><span>8 sources</span><i></i><span>720p floor</span><i></i><span>Auto-sorted</span></div>
+            <div class="mock-foot"><span>8 sources</span><i></i><span>720p minimum</span><i></i><span>Auto-sorted</span></div>
           </div>
         </aside>
       </div>
@@ -186,15 +186,15 @@
 
     <div class="stat-row" aria-label="Current setup at a glance">
       <div class="stat-card"><span class="stat-label">Sources</span><span class="stat-value"><b id="statSources">5</b><small id="statTotal">/ 8 active</small></span><span class="stat-foot">race independently</span></div>
-      <div class="stat-card"><span class="stat-label">Quality floor</span><span class="stat-value"><b id="statFloor">720p</b></span><span class="stat-foot">known below, hidden</span></div>
-      <div class="stat-card"><span class="stat-label">Results</span><span class="stat-value"><b id="statResults">40</b><small>per request</small></span><span class="stat-foot">after dedupe &amp; floor</span></div>
+      <div class="stat-card"><span class="stat-label">Quality order</span><span class="stat-value"><b id="statFloor">4K → 2K</b></span><span class="stat-foot">best first · below 720p hidden</span></div>
+      <div class="stat-card"><span class="stat-label">Results</span><span class="stat-value"><b id="statResults">40</b><small>per request</small></span><span class="stat-foot">after dedupe &amp; filters</span></div>
       <div class="stat-card"><span class="stat-label">Stream style</span><span class="stat-value small"><b id="statStyle">LightGDrive</b></span><span class="stat-foot">how each stream is labelled</span></div>
     </div>
 
     <div class="quick-links" aria-label="Quick actions">
       <a class="quick-link" href="/stream/movie/27205.json" target="_blank" rel="noopener">
         <span class="ql-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="10 8.5 16 12 10 15.5 10 8.5"/><rect x="3" y="5" width="18" height="14" rx="3"/></svg></span>
-        <span class="ql-copy"><b>Preview a real response</b><small>The exact JSON Nuvio receives for Inception — floor and all.</small></span>
+        <span class="ql-copy"><b>Preview a real response</b><small>The exact JSON Nuvio receives for Inception — filters and all.</small></span>
         <span class="ql-go">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></span>
       </a>
       <a class="quick-link" href="https://github.com/dipender98/IndStream" target="_blank" rel="noopener">
@@ -205,7 +205,7 @@
     </div>
 
     <div class="steps-strip" aria-label="How to install">
-      <div class="step"><span class="step-num">1</span><div><strong>Copy the URL</strong><small>Every setting is encoded inside it.</small></div></div>
+      <div class="step"><span class="step-num">1</span><div><strong>Copy the URL</strong><small>Carries your setup — signed in, it stays in sync.</small></div></div>
       <div class="step-connector" aria-hidden="true"></div>
       <div class="step"><span class="step-num">2</span><div><strong>Add it to your app</strong><small>Nuvio: Settings → Plugins/Addons → Add by URL → paste. In Stremio clients that accept addon URLs, use this link there.</small></div></div>
       <div class="step-connector" aria-hidden="true"></div>
@@ -221,7 +221,7 @@
       <div>
         <p class="panel-eyebrow">Personal setups</p>
         <h2>Presets</h2>
-        <p class="panel-sub">Saved setups — each with its own addon URL. Switching presets changes the URL on the Install screen.</p>
+        <p class="panel-sub">Saved setups — each with its own addon URL. Signed in, every preset stays in sync with your account.</p>
       </div>
       <div class="panel-actions">
         <button class="btn-quiet small" id="importProfileBtn" type="button">Import URL</button>
@@ -255,7 +255,7 @@
     <div class="panel-head">
       <p class="panel-eyebrow">What gets through</p>
       <h2>Filters</h2>
-      <p class="panel-sub">Languages first, then a quality floor. Everything else gets dropped before it reaches your remote.</p>
+      <p class="panel-sub">Languages first, then your quality order. Everything below 720p never reaches your remote.</p>
     </div>
 
     <div class="card">
@@ -269,13 +269,10 @@
     </div>
 
     <div class="card">
-      <div class="card-head" id="minQualityLabel">Minimum quality</div>
-      <div class="segmented" id="minQualitySeg" role="group" aria-labelledby="minQualityLabel">
-        <button data-value="0" type="button">Any</button>
-        <button data-value="720" type="button" class="active">720p</button>
-        <button data-value="1080" type="button">1080p</button>
-      </div>
-      <p class="card-hint">Known below-floor streams never reach you. “Any” disables the floor.</p>
+      <div class="card-head" id="qualityLabel">Quality order</div>
+      <div class="rank-head"><span>Quality preference</span><small>Tap the toggle to allow or hide a quality — drag or use the arrows to reorder what wins</small></div>
+      <ol class="rank-list" id="qualityRank" role="list" aria-labelledby="qualityLabel"></ol>
+      <p class="card-hint">Known below 720p is always hidden. Auto covers other detected heights; Unknown means no height detected. At least one quality stays on.</p>
     </div>
 
     <label class="switch card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span class="switch-copy"><b>Include DASH (.mpd) streams</b><small>Some players handle DASH poorly — turn off if playback stutters</small></span></label>
@@ -328,7 +325,7 @@
     <div class="panel-head">
       <p class="panel-eyebrow">Your identity</p>
       <h2>Account</h2>
-      <p class="panel-sub">Settings always save on this device. Signing in only adds your Google identity here.</p>
+      <p class="panel-sub">Settings always save on this device. Signing in links your install URLs to your saved presets, so they stay in sync across devices.</p>
     </div>
     <div class="account-card card">
       <div class="account-big">

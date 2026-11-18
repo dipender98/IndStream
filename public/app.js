@@ -14,12 +14,56 @@ const LANGS = ['Original', 'Hindi', 'English', 'Multi', 'Tamil', 'Telugu', 'Mala
   'Japanese', 'Korean', 'French', 'Spanish', 'Portuguese', 'Indonesian',
   'Vietnamese', 'Thai', 'Turkish', 'German', 'Italian', 'Dutch', 'Polish', 'Nepali'];
 
+const QUALITY_KEYS = ['2160', '1440', '1080', '720', 'auto', 'unknown'];
+const QUALITIES = [
+  { id: '2160', name: '4K/2160p', mark: '4K', meta: '2160p and above' },
+  { id: '1440', name: '2K/1440p', mark: '2K', meta: '1440p' },
+  { id: '1080', name: '1080p', mark: '1080p', meta: '1080p' },
+  { id: '720', name: '720p', mark: '720p', meta: '720p' },
+  { id: 'auto', name: 'Auto', mark: 'Auto', meta: 'Other detected heights' },
+  { id: 'unknown', name: 'Unknown', mark: '?', meta: 'No height detected' },
+];
+const QUALITY_MAP = {};
+QUALITIES.forEach(function (q) { QUALITY_MAP[q.id] = q; });
+
+function normalizeQualityOrder(value) {
+  const order = [];
+  if (Array.isArray(value)) {
+    value.forEach(function (key) {
+      if (QUALITY_KEYS.indexOf(key) >= 0 && order.indexOf(key) < 0) order.push(key);
+    });
+  }
+  QUALITY_KEYS.forEach(function (key) { if (order.indexOf(key) < 0) order.push(key); });
+  return order;
+}
+
+function normalizeQualityOff(value) {
+  const off = [];
+  if (!Array.isArray(value)) return off;
+  value.forEach(function (key) {
+    if (QUALITY_KEYS.indexOf(key) >= 0 && off.indexOf(key) < 0) off.push(key);
+  });
+  return off;
+}
+
+function resolveQuality(raw) {
+  const hasOrder = !!raw && Array.isArray(raw.qualityOrder);
+  const order = normalizeQualityOrder(raw && raw.qualityOrder);
+  let off = hasOrder
+    ? normalizeQualityOff(raw && raw.qualityOff)
+    : (String((raw && raw.minQuality) || '') === '1080' ? ['720', 'auto'] : []);
+  const enabled = order.filter(function (key) { return off.indexOf(key) < 0; });
+  if (!enabled.length) off = off.filter(function (key) { return key !== order[0]; });
+  return { qualityOrder: order, qualityOff: off };
+}
+
 const DEFAULT_CFG = {
   p: PROVIDERS.map(function (p) { return p.id; }),
   langs: ['Original', 'Hindi', 'English', 'Multi'],
   langStrict: false,
   streamStyle: 'lightgdrive',
-  minQuality: '720',
+  qualityOrder: QUALITY_KEYS.slice(),
+  qualityOff: [],
   resultLimit: '40',
   requestTimeout: '5',
   includeDash: true,
@@ -29,17 +73,49 @@ const DEFAULT_CFG = {
 
 var cfgSyncEnabled = false;
 var cfgPushTimer = 0;
+var profileTokens = {};
+
+function addonUrlFromToken(token) {
+  return window.location.origin + '/u/' + token + '/manifest.json';
+}
+
+function manifestUrl(cfg, profile) {
+  var target = profile || activeProfile();
+  if (target && profileTokens[target.id]) return addonUrlFromToken(profileTokens[target.id]);
+  return window.location.origin + '/' + b64url(cfg) + '/manifest.json';
+}
+
+function syncTokens(data) {
+  if (!data || !Array.isArray(data.profiles)) return;
+  var next = {};
+  data.profiles.forEach(function (p) {
+    if (p && typeof p.id === 'string' && typeof p.token === 'string') next[p.id] = p.token;
+  });
+  profileTokens = next;
+}
 
 function pushCfg() {
   if (!cfgSyncEnabled) return;
   clearTimeout(cfgPushTimer);
   cfgPushTimer = setTimeout(function () {
     var cfg = currentCfg();
+    var profiles = loadProfiles();
+    var activeId = activeProfileId(profiles);
     try {
       fetch('/api/cfg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cfg: cfg }),
+        body: JSON.stringify({
+          cfg: cfg,
+          profiles: profiles.map(function (p) {
+            return { id: p.id, name: p.name, cfg: sanitizeCfg(p.cfg) };
+          }),
+          activeId: activeId,
+        }),
+      }).then(function (res) { return res.json(); }).then(function (data) {
+        syncTokens(data);
+        setText('manifestUrl', manifestUrl(currentCfg()));
+        renderProfiles();
       }).catch(function () {});
     } catch (e) {}
   }, 600);
@@ -87,7 +163,10 @@ function sanitizeCfg(raw) {
   }
   merged.langStrict = !!merged.langStrict;
   merged.streamStyle = typeof merged.streamStyle === 'string' ? merged.streamStyle : DEFAULT_CFG.streamStyle;
-  merged.minQuality = ['0', '720', '1080'].indexOf(String(merged.minQuality)) >= 0 ? String(merged.minQuality) : DEFAULT_CFG.minQuality;
+  const quality = resolveQuality(merged);
+  merged.qualityOrder = quality.qualityOrder;
+  merged.qualityOff = quality.qualityOff;
+  delete merged.minQuality;
   merged.resultLimit = ['0', '20', '40', '80'].indexOf(String(merged.resultLimit)) >= 0 ? String(merged.resultLimit) : DEFAULT_CFG.resultLimit;
   merged.requestTimeout = ['5', '10', '15', '25'].indexOf(String(merged.requestTimeout)) >= 0 ? String(merged.requestTimeout) : DEFAULT_CFG.requestTimeout;
   merged.includeDash = !!merged.includeDash;
@@ -180,12 +259,17 @@ function currentCfg() {
     .concat(selectedP.filter(function (id) { return prevP.indexOf(id) < 0; }));
   const langsOrdered = prevL.filter(function (l) { return langs.indexOf(l) >= 0; })
     .concat(langs.filter(function (l) { return prevL.indexOf(l) < 0; }));
+  const qualityRows = Array.from(document.querySelectorAll('#qualityRank .quality-item'));
+  const qualityOrder = qualityRows.map(function (el) { return el.dataset.key; });
+  const qualityOff = qualityRows.filter(function (el) { return el.classList.contains('off'); })
+    .map(function (el) { return el.dataset.key; });
   return {
     p: p,
     langs: langsOrdered,
     langStrict: document.getElementById('langStrict').checked,
     streamStyle: document.getElementById('streamStyle').value,
-    minQuality: document.getElementById('minQualitySeg').querySelector('.active').dataset.value,
+    qualityOrder: qualityOrder.length ? qualityOrder : QUALITY_KEYS.slice(),
+    qualityOff: qualityOff,
     resultLimit: document.getElementById('resultLimitSeg').querySelector('.active').dataset.value,
     requestTimeout: document.getElementById('timeoutSeg').querySelector('.active').dataset.value,
     includeDash: document.getElementById('includeDash').checked,
@@ -214,7 +298,6 @@ function applyCfg(cfg) {
     el.classList.toggle('active', active);
     el.setAttribute('aria-pressed', String(active));
   });
-  setSeg('#minQualitySeg', cfg.minQuality);
   setSeg('#resultLimitSeg', cfg.resultLimit);
   setSeg('#timeoutSeg', cfg.requestTimeout);
   document.getElementById('langStrict').checked = !!cfg.langStrict;
@@ -223,6 +306,7 @@ function applyCfg(cfg) {
   document.getElementById('debug').checked = !!cfg.debug;
   const styleSel = document.getElementById('streamStyle');
   if (styleSel && cfg.streamStyle) styleSel.value = cfg.streamStyle;
+  renderQualityList(cfg);
   updateAll();
 }
 
@@ -236,13 +320,21 @@ function toast(msg) {
 
 function configureUrlCfg() {
   const m = window.location.pathname.match(/^\/([A-Za-z0-9_-]+)\/configure\/?$/);
-  if (!m) return null;
+  if (!m || m[1] === 'u') return null;
   const cfg = decodeCfgSegment(m[1]);
   return cfg ? sanitizeCfg(cfg) : null;
 }
 
-function manifestUrl(cfg) {
-  return window.location.origin + '/' + b64url(cfg) + '/manifest.json';
+function configureAddonToken() {
+  const m = window.location.pathname.match(/^\/u\/([A-Za-z0-9_-]{16,64})\/configure\/?$/);
+  return m ? m[1] : null;
+}
+
+function qualitySummary(cfg) {
+  const order = cfg.qualityOrder.filter(function (key) { return cfg.qualityOff.indexOf(key) < 0; });
+  if (!order.length) return '—';
+  if (order.length === QUALITY_KEYS.length) return 'All qualities';
+  return order.slice(0, 3).map(function (key) { return QUALITY_MAP[key].mark; }).join(' → ');
 }
 
 function flashSaved() {
@@ -268,7 +360,7 @@ function updateAll() {
   const saved = saveCfg(cfg);
   if (saved) flashSaved();
   else toast('Changes could not be saved to this browser');
-  const url = manifestUrl(cfg);
+  const url = manifestUrl(cfg, activeProfile());
   setText('manifestUrl', url);
   setText('sourcesBadge', cfg.p.length);
   setText('sourcesCount', cfg.p.length + ' selected');
@@ -287,7 +379,7 @@ function renderProfiles() {
   grid.innerHTML = '';
   profiles.forEach(function (p) {
     const cfg = sanitizeCfg(p.cfg);
-    const url = manifestUrl(cfg);
+    const url = manifestUrl(cfg, p);
     const isActive = p.id === activeId;
     const card = document.createElement('div');
     card.className = 'profile-card' + (isActive ? ' active' : '');
@@ -296,7 +388,7 @@ function renderProfiles() {
         '<div class="profile-avatar">' + escapeHtml((p.name || 'P')[0].toUpperCase()) + '</div>' +
         '<div><div class="profile-name">' + escapeHtml(p.name) + '</div>' +
         '<div class="profile-meta"><strong>' + cfg.p.length + '</strong> sources · ' +
-          (cfg.minQuality === '0' ? 'any quality' : cfg.minQuality + 'p+') +
+          qualitySummary(cfg) +
           (cfg.langs.length ? ' · ' + cfg.langs.length + ' language' + (cfg.langs.length > 1 ? 's' : '') : '') +
         '</div></div>' +
         (isActive ? '<span class="profile-active-tag">Active</span>' : '') +
@@ -353,7 +445,19 @@ function createProfile(seedCfg, suggestedName) {
 }
 
 function importFromUrl(url) {
-  const m = String(url || '').match(/\/([A-Za-z0-9_-]+)\/manifest\.json/);
+  const text = String(url || '');
+  const tokenMatch = text.match(/\/u\/([A-Za-z0-9_-]{16,64})\/manifest\.json/);
+  if (tokenMatch) {
+    fetch('/api/addon/' + encodeURIComponent(tokenMatch[1]))
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.ok) { toast('That addon link is invalid'); return; }
+        createProfile(data.cfg, data.profile && data.profile.name ? data.profile.name : 'Imported');
+      })
+      .catch(function () { toast('Could not read that addon link'); });
+    return;
+  }
+  const m = text.match(/\/([A-Za-z0-9_-]+)\/manifest\.json/);
   if (!m) { toast('No config found in that URL'); return; }
   const cfg = decodeCfgSegment(m[1]);
   if (!cfg) { toast('That config URL is invalid'); return; }
@@ -511,6 +615,7 @@ async function loadAccount() {
     loginConfigured = !!data.loginEnabled;
     cfgSyncEnabled = signedIn;
     if (signedIn) {
+      syncTokens(data);
       if (data.cfg && typeof data.cfg === 'object') {
         const merged = sanitizeCfg(data.cfg);
         saveCfg(merged);
@@ -522,7 +627,7 @@ async function loadAccount() {
     const name = signedIn ? (data.user.name || 'Account') : 'Guest';
     if (note) {
       note.textContent = signedIn
-        ? 'Signed in as ' + name + '. Your settings stay on this device; copy the addon URL to use it in Nuvio/Stremio.'
+        ? 'Signed in as ' + name + '. The install links follow your saved setup — changes apply automatically.'
         : 'Guest — copy this URL and paste it into Nuvio/Stremio. Settings stay on this device.';
     }
     if (googleBtn) googleBtn.hidden = signedIn || !loginConfigured;
@@ -796,7 +901,7 @@ function setupActions() {
 }
 
 function setupSegmented() {
-  ['#minQualitySeg', '#resultLimitSeg', '#timeoutSeg'].forEach(function (sel) {
+  ['#resultLimitSeg', '#timeoutSeg'].forEach(function (sel) {
     const wrap = document.querySelector(sel);
     if (!wrap) return;
     wrap.addEventListener('click', function (e) {
@@ -868,6 +973,38 @@ setupSegmented();
 setupActions();
 setupWelcomeModal();
 loadStyles();
+(function () {
+  var token = configureAddonToken();
+  if (!token) return;
+  Promise.all([
+    fetch('/api/addon/' + encodeURIComponent(token)).then(function (res) { return res.ok ? res.json() : null; }).catch(function () { return null; }),
+    fetch('/api/me').then(function (res) { return res.json(); }).catch(function () { return null; }),
+  ]).then(function (results) {
+    var data = results[0];
+    var me = results[1];
+    if (!data || !data.ok) return;
+    var sameAccount = me && me.signedIn && Array.isArray(me.profiles) &&
+      me.profiles.some(function (p) { return p && p.id === data.profile.id; });
+    var profiles = loadProfiles();
+    var id;
+    var idx = -1;
+    if (sameAccount) {
+      id = String(data.profile.id);
+      idx = profiles.findIndex(function (p) { return p.id === id; });
+    } else {
+      id = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : 'p' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    }
+    var entry = { id: id, name: String(data.profile.name || 'Profile').slice(0, 40), cfg: sanitizeCfg(data.cfg) };
+    if (idx >= 0) profiles[idx] = entry; else profiles.push(entry);
+    saveProfiles(profiles);
+    safeSet(LS_ACTIVE, id);
+    if (sameAccount) syncTokens(me);
+    applyCfg(loadCfg());
+    toast(sameAccount
+      ? 'Loaded settings from the addon — changes sync to it'
+      : 'Saved a local copy — sign in with the same account to sync those changes');
+  }).catch(function () {});
+})();
 (function () {
   const urlCfg = configureUrlCfg();
   if (!urlCfg) return;
@@ -1078,7 +1215,7 @@ setupSpatialNav();
 function updateStats(cfg) {
   var total = PROVIDERS.length;
   setText('statSources', cfg.p.length);
-  setText('statFloor', cfg.minQuality === '0' ? 'Any' : cfg.minQuality + 'p');
+  setText('statFloor', qualitySummary(cfg));
   setText('statResults', cfg.resultLimit === '0' ? 'No limit' : cfg.resultLimit);
   var styleSel = document.getElementById('streamStyle');
   var opt = styleSel && styleSel.selectedOptions && styleSel.selectedOptions[0];
@@ -1090,6 +1227,7 @@ function updateStats(cfg) {
 function refreshDerived() {
   try { updateStats(currentCfg()); } catch (e) { /* stats are decorative */ }
   try { renderRankLists(); } catch (e) { /* ranking is decorative */ }
+  try { renderQualityList(); } catch (e) { /* quality list is decorative */ }
 }
 var originalUpdateAll = updateAll;
 updateAll = function () {
@@ -1228,6 +1366,139 @@ function setupRankList(listId) {
 setupRankList('providerRank');
 setupRankList('langRank');
 
+/* ---------- Quality preference list ---------- */
+var QUALITY_KIND = 'quality';
+
+function renderQualityList(cfgArg) {
+  var list = document.getElementById('qualityRank');
+  if (!list) return;
+  var cfg = cfgArg || loadCfg();
+  list.innerHTML = '';
+  cfg.qualityOrder.forEach(function (key) {
+    var q = QUALITY_MAP[key];
+    if (!q) return;
+    var off = cfg.qualityOff.indexOf(key) >= 0;
+    var li = document.createElement('li');
+    li.className = 'rank-item quality-item' + (off ? ' off' : '');
+    li.setAttribute('role', 'listitem');
+    li.draggable = true;
+    li.dataset.kind = QUALITY_KIND;
+    li.dataset.key = key;
+    li.innerHTML =
+      '<button class="quality-toggle" type="button" data-toggle="' + key + '" aria-pressed="' + (off ? 'false' : 'true') + '" aria-label="' + (off ? 'Allow ' : 'Hide ') + escapeHtml(q.name) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 10"/></svg>' +
+      '</button>' +
+      '<span class="rank-mark" aria-hidden="true">' + escapeHtml(q.mark) + '</span>' +
+      '<span class="rank-copy"><b>' + escapeHtml(q.name) + '</b><small>' + escapeHtml(q.meta) + '</small></span>' +
+      '<span class="rank-actions">' +
+        '<button class="rank-btn" type="button" data-move="-1" aria-label="Move ' + escapeHtml(q.name) + ' up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg></button>' +
+        '<button class="rank-btn" type="button" data-move="1" aria-label="Move ' + escapeHtml(q.name) + ' down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>' +
+      '</span>';
+    list.appendChild(li);
+  });
+  var items = list.querySelectorAll('.quality-item');
+  items.forEach(function (li, i) {
+    var up = li.querySelector('[data-move="-1"]');
+    var down = li.querySelector('[data-move="1"]');
+    if (up) up.disabled = i === 0;
+    if (down) down.disabled = i === items.length - 1;
+  });
+}
+
+function moveQualityItem(key, delta) {
+  var cfg = loadCfg();
+  var i = cfg.qualityOrder.indexOf(key);
+  var j = i + delta;
+  if (i < 0 || j < 0 || j >= cfg.qualityOrder.length) return;
+  var next = cfg.qualityOrder.slice();
+  var tmp = next[i]; next[i] = next[j]; next[j] = tmp;
+  cfg.qualityOrder = next;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function dropQualityItem(draggedKey, targetKey) {
+  var cfg = loadCfg();
+  var arr = cfg.qualityOrder.slice();
+  var from = arr.indexOf(draggedKey);
+  var to = arr.indexOf(targetKey);
+  if (from < 0 || to < 0 || from === to) return;
+  arr.splice(from, 1);
+  arr.splice(to, 0, draggedKey);
+  cfg.qualityOrder = arr;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+function toggleQualityItem(key) {
+  var cfg = loadCfg();
+  var off = cfg.qualityOff.slice();
+  var idx = off.indexOf(key);
+  var enabledCount = cfg.qualityOrder.length - off.length;
+  if (idx >= 0) {
+    off.splice(idx, 1);
+  } else {
+    if (enabledCount <= 1) {
+      toast('Keep at least one quality enabled');
+      return;
+    }
+    off.push(key);
+  }
+  cfg.qualityOff = off;
+  saveCfg(cfg);
+  applyCfg(loadCfg());
+}
+
+var qualityDragKey = null;
+function setupQualityList(listId) {
+  var list = document.getElementById(listId);
+  if (!list) return;
+  list.addEventListener('click', function (e) {
+    var toggle = e.target.closest('.quality-toggle');
+    if (toggle) {
+      toggleQualityItem(toggle.dataset.toggle);
+      return;
+    }
+    var btn = e.target.closest('.rank-btn');
+    if (!btn || btn.disabled) return;
+    var row = btn.closest('.quality-item');
+    if (!row) return;
+    moveQualityItem(row.dataset.key, Number(btn.dataset.move));
+  });
+  list.addEventListener('dragstart', function (e) {
+    if (e.target.closest && e.target.closest('.rank-btn, .quality-toggle')) { e.preventDefault(); return; }
+    var row = e.target.closest('.quality-item');
+    if (!row) return;
+    qualityDragKey = row.dataset.key;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', row.dataset.key); } catch (err) {}
+  });
+  list.addEventListener('dragover', function (e) {
+    var row = e.target.closest('.quality-item');
+    if (!row || !qualityDragKey || row.dataset.key === qualityDragKey) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    row.classList.add('drag-over');
+  });
+  list.addEventListener('dragleave', function (e) {
+    var row = e.target.closest('.quality-item');
+    if (row && (!e.relatedTarget || !row.contains(e.relatedTarget))) row.classList.remove('drag-over');
+  });
+  list.addEventListener('drop', function (e) {
+    e.preventDefault();
+    var row = e.target.closest('.quality-item');
+    list.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+    if (!row || !qualityDragKey) return;
+    dropQualityItem(qualityDragKey, row.dataset.key);
+  });
+  list.addEventListener('dragend', function () {
+    qualityDragKey = null;
+    list.querySelectorAll('.dragging, .drag-over').forEach(function (el) { el.classList.remove('dragging', 'drag-over'); });
+  });
+}
+setupQualityList('qualityRank');
+
 /* Reset action on the install panel. */
 var resetInstall = document.getElementById('resetInstall');
 if (resetInstall) {
@@ -1238,7 +1509,7 @@ if (resetInstall) {
 }
 
 /* First paint of the stats (before the first updateAll cycle settles). */
-try { updateStats(loadCfg()); renderRankLists(); } catch (e) {}
+try { updateStats(loadCfg()); renderRankLists(); renderQualityList(); } catch (e) {}
 
 /* Surface a failed sign-in that landed back on / with ?error=... */
 try {

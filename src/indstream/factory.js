@@ -105,7 +105,7 @@ function createPlugin(provider) {
     }
 
     return finalize.finalizeStreams(streams, {
-      minQuality: s.minQuality,
+      qualityOrder: s.qualityOrder,
       includeDash: s.includeDash,
       resultLimit: s.resultLimit,
       providers: providerList,

@@ -225,6 +225,69 @@ test('result limit applies after sorting', function () {
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].url, 'https://x/1080');
 });
+test('quality bucket maps heights', function () {
+  assert.strictEqual(finalize.qualityBucket(fakeStream({ height: 2160 })), '2160');
+  assert.strictEqual(finalize.qualityBucket(fakeStream({ height: 1440 })), '1440');
+  assert.strictEqual(finalize.qualityBucket(fakeStream({ height: 1080 })), '1080');
+  assert.strictEqual(finalize.qualityBucket(fakeStream({ height: 900 })), 'auto');
+  assert.strictEqual(finalize.qualityBucket(fakeStream({ height: 480 })), 'below');
+  assert.strictEqual(finalize.qualityBucket(fakeStream({ height: 0 })), 'unknown');
+});
+test('known below-720 streams are always hidden', function () {
+  const out = finalize.finalizeStreams([
+    fakeStream({ url: 'https://x/480', height: 480 }),
+    fakeStream({ url: 'https://x/576', height: 576 }),
+    fakeStream({ url: 'https://x/720', height: 720 }),
+  ], { providers: FAKE_PROVIDERS });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720']);
+});
+test('quality order decides ranking', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/4k', height: 2160 }),
+    fakeStream({ url: 'https://x/1080', height: 1080 }),
+    fakeStream({ url: 'https://x/720', height: 720 }),
+    fakeStream({ url: 'https://x/auto', height: 900 }),
+    fakeStream({ url: 'https://x/unknown', height: 0 }),
+  ];
+  const out = finalize.finalizeStreams(streams, {
+    qualityOrder: ['720', 'unknown', 'auto', '1080', '1440', '2160'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), [
+    'https://x/720',
+    'https://x/unknown',
+    'https://x/auto',
+    'https://x/1080',
+    'https://x/4k',
+  ]);
+});
+test('disabled quality is hidden', function () {
+  const out = finalize.finalizeStreams([
+    fakeStream({ url: 'https://x/1080', height: 1080 }),
+    fakeStream({ url: 'https://x/unknown', height: 0 }),
+    fakeStream({ url: 'https://x/720', height: 720 }),
+  ], {
+    qualityOrder: ['720'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720']);
+});
+test('auto catches other heights and can be disabled', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/900', height: 900 }),
+    fakeStream({ url: 'https://x/1080', height: 1080 }),
+  ];
+  const enabled = finalize.finalizeStreams(streams, {
+    qualityOrder: ['2160', '1440', '1080', '720', 'auto', 'unknown'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(enabled.map(function (s) { return s.url; }), ['https://x/1080', 'https://x/900']);
+  const hidden = finalize.finalizeStreams(streams, {
+    qualityOrder: ['2160', '1440', '1080', '720', 'unknown'],
+    providers: FAKE_PROVIDERS,
+  });
+  assert.deepStrictEqual(hidden.map(function (s) { return s.url; }), ['https://x/1080']);
+});
 
 
 section('html');
@@ -259,10 +322,34 @@ section('settings');
 test('defaults', function () {
   globalThis.SCRAPER_SETTINGS = undefined;
   const s = settings.getSettings();
-  assert.strictEqual(s.minQuality, 720);
+  assert.deepStrictEqual(s.qualityOrder, ['2160', '1440', '1080', '720', 'auto', 'unknown']);
+  assert.deepStrictEqual(s.qualityOff, []);
   assert.strictEqual(s.resultLimit, 40);
   assert.strictEqual(s.includeDash, true);
   assert.strictEqual(s.requestTimeout, 5);
+});
+test('legacy minQuality migrate', function () {
+  globalThis.SCRAPER_SETTINGS = JSON.stringify({ minQuality: '1080' });
+  const s = settings.getSettings();
+  assert.deepStrictEqual(s.qualityOrder, ['2160', '1440', '1080', 'unknown']);
+  assert.deepStrictEqual(s.qualityOff, ['720', 'auto']);
+});
+test('quality order is sanitized and reordered', function () {
+  globalThis.SCRAPER_SETTINGS = JSON.stringify({
+    qualityOrder: ['1080', 'nope', '2160', '2160'],
+    qualityOff: ['720'],
+  });
+  const s = settings.getSettings();
+  assert.deepStrictEqual(s.qualityOrder, ['1080', '2160', '1440', 'auto', 'unknown']);
+  assert.deepStrictEqual(s.qualityOff, ['720']);
+});
+test('at least one quality stays enabled', function () {
+  globalThis.SCRAPER_SETTINGS = JSON.stringify({
+    qualityOrder: ['1080', '720'],
+    qualityOff: ['1080', '720', '1440', '2160', 'auto', 'unknown'],
+  });
+  const s = settings.getSettings();
+  assert.deepStrictEqual(s.qualityOrder, ['1080']);
 });
 test('override', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({
@@ -271,7 +358,7 @@ test('override', function () {
     includeDash: false,
   });
   const s = settings.getSettings();
-  assert.strictEqual(s.minQuality, 1080);
+  assert.deepStrictEqual(s.qualityOrder, ['2160', '1440', '1080', 'unknown']);
   assert.strictEqual(s.resultLimit, 20);
   assert.strictEqual(s.includeDash, false);
 });
@@ -279,7 +366,7 @@ test('onSettings shape', function () {
   const layout = settings.onSettings();
   assert.ok(Array.isArray(layout));
   const keys = layout.filter(function (item) { return item.key; }).map(function (item) { return item.key; });
-  ['minQuality', 'resultLimit', 'requestTimeout', 'probeQuality', 'includeDash', 'debug'].forEach(function (key) {
+  ['resultLimit', 'requestTimeout', 'probeQuality', 'includeDash', 'streamStyle', 'debug'].forEach(function (key) {
     assert.ok(keys.indexOf(key) >= 0, 'missing key ' + key);
   });
   assert.strictEqual(typeof settings.onSettings, 'function');
@@ -988,6 +1075,60 @@ test('userStore keeps one config per account and reloads it from disk', async fu
     assert.deepStrictEqual(reloaded.get('user-a'), { p: ['hdhub'], minQuality: '1080' });
     assert.deepStrictEqual(reloaded.get('user-b'), { p: [], langs: ['Hindi'] });
     assert.strictEqual(reloaded.get('missing'), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('userStore migrates legacy entries to a tokenized preset', async function () {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'indstream-users-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'user-settings.json'), JSON.stringify({
+      'user-a': { cfg: { p: ['hdhub'] }, updatedAt: 1 },
+    }));
+    const store = userStore.createUserStore({ dir: dir });
+    const account = store.getAccount('user-a');
+    assert.strictEqual(account.profiles.length, 1);
+    assert.deepStrictEqual(account.profiles[0].cfg, { p: ['hdhub'] });
+    assert.ok(/^[A-Za-z0-9_-]{16,64}$/.test(account.profiles[0].token));
+    assert.strictEqual(store.findByToken(account.profiles[0].token).profile.name, 'Default');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('userStore syncs preset profiles with stable addon tokens', async function () {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'indstream-users-'));
+  try {
+    const store = userStore.createUserStore({ dir: dir });
+    const account = store.setAccount('user-a', {
+      profiles: [
+        { id: 'p1', name: 'Movie night', cfg: { p: ['hdhub'], langs: ['Hindi'] } },
+        { id: 'p2', name: 'Work', cfg: { p: ['vidly'] } },
+      ],
+      activeId: 'p2',
+    });
+    await store.flush();
+    assert.strictEqual(account.profiles.length, 2);
+    assert.strictEqual(account.activeId, 'p2');
+    account.profiles.forEach(function (profile) {
+      assert.ok(/^[A-Za-z0-9_-]{16,64}$/.test(profile.token));
+    });
+    assert.strictEqual(store.get('user-a').p[0], 'vidly');
+    const hit = store.findByToken(account.profiles[0].token);
+    assert.strictEqual(hit.profile.name, 'Movie night');
+    assert.deepStrictEqual(hit.profile.cfg.langs, ['Hindi']);
+
+    const reloaded = userStore.createUserStore({ dir: dir });
+    const hitAfterReload = reloaded.findByToken(account.profiles[0].token);
+    assert.strictEqual(hitAfterReload.profile.name, 'Movie night');
+
+    const again = reloaded.setAccount('user-a', {
+      profiles: [{ id: 'p1', name: 'Movie night', cfg: { p: ['hdhub'], langs: ['English'] } }],
+      activeId: 'p1',
+    });
+    assert.strictEqual(again.profiles[0].token, account.profiles[0].token);
+    assert.deepStrictEqual(again.profiles[0].cfg.langs, ['English']);
+    assert.strictEqual(reloaded.findByToken(account.profiles[1].token), null);
+    await reloaded.flush();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
