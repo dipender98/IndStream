@@ -3,6 +3,11 @@ primary_region = "iad"
 
 [env]
   PUBLIC_URL = "https://indstream.fly.dev"
+  DATA_DIR = "/data"
+
+[[mounts]]
+  source = "indstream_data"
+  destination = "/data"
 
 [build]
   dockerfile = "Dockerfile"

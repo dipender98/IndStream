@@ -22,6 +22,7 @@ const netmirror = require('./src/indstream/providers/netmirror');
 const atlantic = require('./src/indstream/providers/atlantic');
 const vidly = require('./src/indstream/providers/vidly');
 const streamCacheModule = require('./src/indstream/cache');
+const userStoreModule = require('./src/indstream/userStore');
 
 const streamCache = streamCacheModule.createTtlCache({ ttlMs: 15 * 60 * 1000, maxEntries: 400 });
 
@@ -31,6 +32,9 @@ const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
+const userStore = userStoreModule.createUserStore({
+  dir: process.env.DATA_DIR || path.join(ROOT, '.data'),
+});
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
@@ -39,7 +43,7 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
 const LOGIN_ENABLED = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && SESSION_SECRET);
 
 const DEFAULT_CFG = {
-  p: ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'],
+  p: ALL_PROVIDERS.map(function (p) { return p.id; }),
   langs: [],
   langStrict: false,
   streamStyle: styles.DEFAULT_STYLE,
@@ -366,7 +370,7 @@ function sanitizeConfigFromApi(raw) {
     }
     if (key === 'requestTimeout') {
       const t = String(v);
-      if (['10', '15', '25'].indexOf(t) >= 0) out.requestTimeout = t;
+      if (['5', '10', '15', '25'].indexOf(t) >= 0) out.requestTimeout = t;
       return;
     }
   });
@@ -577,11 +581,13 @@ async function handleRequest(req, res) {
 
   if (pathname === '/api/me') {
     const session = readSession(req);
+    const saved = session ? userStore.get(session.sub) : null;
+    const savedCfg = saved ? sanitizeConfigFromApi(saved) : null;
     sendJson(res, 200, {
       signedIn: !!session,
       loginEnabled: LOGIN_ENABLED,
       user: session ? { name: session.name, email: session.email, picture: session.picture } : null,
-      cfg: session ? readCfgCookie(req) : null,
+      cfg: savedCfg || (session ? readCfgCookie(req) : null),
     }, false);
     return;
   }
@@ -622,6 +628,7 @@ async function handleRequest(req, res) {
       return;
     }
     const cfg = sanitizeConfigFromApi(posted && posted.cfg ? posted.cfg : posted);
+    userStore.set(session.sub, cfg);
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',

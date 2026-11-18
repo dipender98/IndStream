@@ -15,7 +15,7 @@ const LANGS = ['Original', 'Hindi', 'English', 'Multi', 'Tamil', 'Telugu', 'Mala
   'Vietnamese', 'Thai', 'Turkish', 'German', 'Italian', 'Dutch', 'Polish', 'Nepali'];
 
 const DEFAULT_CFG = {
-  p: ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'],
+  p: PROVIDERS.map(function (p) { return p.id; }),
   langs: ['Original', 'Hindi', 'English', 'Multi'],
   langStrict: false,
   streamStyle: 'lightgdrive',
@@ -48,6 +48,8 @@ function pushCfg() {
 const LS_KEY = 'indstream.cfg.v3';
 
 const LS_LANG_MIGRATE = 'indstream.langDefaults.v4';
+const LS_PROVIDER_MIGRATE = 'indstream.providerDefaults.v6';
+const LEGACY_DEFAULT_PROVIDERS = ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k'];
 const LS_WELCOME = 'indstream.welcome.dismissed';
 const LS_PROFILES = 'indstream.profiles.v1';
 const LS_ACTIVE = 'indstream.activeProfile.v1';
@@ -67,6 +69,12 @@ function sanitizeCfg(raw) {
   const merged = Object.assign({}, DEFAULT_CFG, raw || {});
   const providerIds = PROVIDERS.map(function (p) { return p.id; });
   merged.p = Array.isArray(merged.p) ? merged.p.filter(function (id) { return providerIds.indexOf(id) >= 0; }) : [];
+  if (safeGet(LS_PROVIDER_MIGRATE) !== '1') {
+    const oldDefault = merged.p.length === LEGACY_DEFAULT_PROVIDERS.length &&
+      LEGACY_DEFAULT_PROVIDERS.every(function (id) { return merged.p.indexOf(id) >= 0; });
+    if (oldDefault) merged.p = providerIds.slice();
+    safeSet(LS_PROVIDER_MIGRATE, '1');
+  }
   const storedLangs = merged.langs;
   if (!Array.isArray(storedLangs)) {
     merged.langs = DEFAULT_CFG.langs.slice();
@@ -501,11 +509,15 @@ async function loadAccount() {
     const data = await res.json();
     const signedIn = !!(data.signedIn && data.user);
     loginConfigured = !!data.loginEnabled;
-    if (signedIn && data.cfg && typeof data.cfg === 'object') {
-      cfgSyncEnabled = true;
-      const merged = sanitizeCfg(data.cfg);
-      saveCfg(merged);
-      applyCfg(merged);
+    cfgSyncEnabled = signedIn;
+    if (signedIn) {
+      if (data.cfg && typeof data.cfg === 'object') {
+        const merged = sanitizeCfg(data.cfg);
+        saveCfg(merged);
+        applyCfg(merged);
+      } else {
+        pushCfg();
+      }
     }
     const name = signedIn ? (data.user.name || 'Account') : 'Guest';
     if (note) {
@@ -743,14 +755,18 @@ function setupWelcomeModal() {
 }
 
 function setupActions() {
-  const url = function () { return manifestUrl(currentCfg()); };
   const copy = function () {
     const cfg = currentCfg();
     if (!cfg.p.length) { toast('Select at least one source to copy the addon URL'); return; }
     copyText(manifestUrl(cfg));
   };
   const installBtn = document.getElementById('installBtn');
-  if (installBtn) installBtn.addEventListener('click', copy);
+  if (installBtn) installBtn.addEventListener('click', function () {
+    const cfg = currentCfg();
+    if (!cfg.p.length) { toast('Select at least one source to install the addon'); return; }
+    toast('Opening your player to install — copy the URL if it does not open');
+    window.location.href = manifestUrl(cfg).replace(/^https?:\/\//, 'stremio://');
+  });
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   if (copyUrlBtn) copyUrlBtn.addEventListener('click', copy);
   document.getElementById('sourcesAll').addEventListener('click', function () {

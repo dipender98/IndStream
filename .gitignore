@@ -2,3 +2,4 @@ node_modules/
 reference/
 *.log
 .DS_Store
+.data/

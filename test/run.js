@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const util = require('../src/indstream/util');
 const html = require('../src/indstream/html');
@@ -21,6 +24,7 @@ const netmirror = require('../src/indstream/providers/netmirror');
 const atlantic = require('../src/indstream/providers/atlantic');
 const vidly = require('../src/indstream/providers/vidly');
 const filehost = require('../src/indstream/filehost');
+const userStore = require('../src/indstream/userStore');
 
 const queue = [];
 let passed = 0;
@@ -968,6 +972,38 @@ test('concurrent identical requests join a single producer', async function () {
   assert.strictEqual(calls.n, 1);
   assert.strictEqual(out[0].value[0].url, 'x');
   assert.strictEqual(out[1].value[0].url, 'x');
+});
+
+section('userStore');
+test('userStore keeps one config per account and reloads it from disk', async function () {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'indstream-users-'));
+  try {
+    const store = userStore.createUserStore({ dir: dir });
+    assert.strictEqual(store.get('missing'), null);
+    await store.set('user-a', { p: ['hdhub'], minQuality: '1080' });
+    await store.set('user-b', { p: [], langs: ['Hindi'] });
+    await store.flush();
+
+    const reloaded = userStore.createUserStore({ dir: dir });
+    assert.deepStrictEqual(reloaded.get('user-a'), { p: ['hdhub'], minQuality: '1080' });
+    assert.deepStrictEqual(reloaded.get('user-b'), { p: [], langs: ['Hindi'] });
+    assert.strictEqual(reloaded.get('missing'), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('userStore ignores malformed files and empty keys', async function () {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'indstream-users-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'user-settings.json'), 'not json');
+    const store = userStore.createUserStore({ dir: dir });
+    assert.strictEqual(store.get('user-a'), null);
+    await store.set('', { p: ['hdhub'] });
+    await store.set('user-a', null);
+    assert.strictEqual(store.get('user-a'), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 main();
