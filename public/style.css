@@ -716,12 +716,12 @@ img, svg, canvas { max-width: 100%; }
 .rank-item.off .rank-mark,
 .rank-item.off .rank-copy { opacity: .4; }
 .list-toggle {
-  flex: none; width: 17px; height: 17px; border-radius: 50%;
+  flex: none; width: 14.45px; height: 14.45px; border-radius: 50%;
   border: 1.4px solid var(--line-strong); background: rgba(255, 255, 255, .03);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
   transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
 }
-.check-glyph { color: #161613; font-size: 10px; font-weight: 800; line-height: 1; }
+.check-glyph { color: #161613; font-size: 11px; font-weight: 800; line-height: 1; }
 .list-toggle .check-glyph { opacity: 0; }
 .list-toggle[aria-pressed="true"] { border-color: transparent; background: var(--fill); }
 .list-toggle[aria-pressed="true"] .check-glyph { opacity: 1; }
