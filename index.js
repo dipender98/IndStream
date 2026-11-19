@@ -266,6 +266,99 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProvid
   return resultLimit > 0 ? finalized.slice(0, resultLimit) : finalized;
 }
 
+const STATUS_INTERVAL_MS = 12 * 60 * 60 * 1000;
+let statusSnapshot = null;
+let statusInFlight = null;
+let statusTimer = null;
+
+async function checkProviderStatus() {
+  const normalProbes = [
+    { label: 'Inception', type: 'movie', id: '27205', season: 0, episode: 0 },
+    { label: 'John Wick', type: 'movie', id: '245891', season: 0, episode: 0 },
+    { label: 'Stranger Things', type: 'series', id: '66732', season: 1, episode: 1 },
+  ];
+  const animeProbes = [
+    { label: 'Your Name', type: 'movie', id: '372058', season: 0, episode: 0 },
+    { label: 'Spirited Away', type: 'movie', id: '129', season: 0, episode: 0 },
+    { label: 'Attack on Titan', type: 'series', id: '1429', season: 1, episode: 1 },
+  ];
+  const isAnime = function (provider) {
+    return Array.isArray(provider.tags) && provider.tags.some(function (tag) { return /anime/i.test(String(tag)); });
+  };
+  const normal = ALL_PROVIDERS.filter(function (p) { return !isAnime(p); });
+  const anime = ALL_PROVIDERS.filter(isAnime);
+  const providers = ALL_PROVIDERS.map(function (p) {
+    return { id: p.id, name: p.name, state: 'testing', streams: 0, ms: 0 };
+  });
+  const byId = new Map(providers.map(function (p) { return [p.id, p]; }));
+  const seen = new Map();
+  const record = function (result) {
+    if (!byId.has(result.id)) return;
+    const s = seen.get(result.id) || { streams: 0, ms: 0, attempts: 0, errors: 0 };
+    s.streams += result.streams || 0;
+    s.ms += result.ms || 0;
+    s.attempts += 1;
+    if (result.state === 'error') s.errors += 1;
+    seen.set(result.id, s);
+  };
+  const runGroup = function (probes, group) {
+    if (!group.length) return Promise.resolve();
+    const ids = group.map(function (p) { return p.id; });
+    const cfg = Object.assign({}, DEFAULT_CFG, { p: ids, sourceOrder: ids, requestTimeout: '10', debug: false, resultLimit: 0 });
+    return (async function () {
+      for (const probe of probes) {
+        try { await resolveStreams(probe.id, probe.type, probe.season, probe.episode, cfg, record); } catch (e) {}
+      }
+    })();
+  };
+  // Run groups one at a time; splitting the burst keeps both groups off each other's way.
+  await runGroup(normalProbes, normal);
+  await runGroup(animeProbes, anime);
+  providers.forEach(function (p) {
+    const s = seen.get(p.id);
+    if (!s) { p.state = 'down'; return; }
+    p.streams = s.streams;
+    p.ms = s.attempts ? Math.round(s.ms / s.attempts) : 0;
+    if (s.streams > 0) { p.state = 'live'; }
+    else if (s.attempts > 0 && s.errors === s.attempts) { p.state = 'error'; }
+    else { p.state = 'down'; }
+  });
+  const checkedAt = Date.now();
+  return {
+    checkedAt: checkedAt,
+    nextCheckAt: checkedAt + STATUS_INTERVAL_MS,
+    probes: {
+      normal: normalProbes.map(function (p) { return p.label; }),
+      anime: animeProbes.map(function (p) { return p.label; }),
+    },
+    providers: providers,
+    live: providers.filter(function (p) { return p.state === 'live'; }).length,
+    total: providers.length,
+  };
+}
+
+function refreshProviderStatus() {
+  if (statusInFlight) return statusInFlight;
+  statusInFlight = checkProviderStatus().then(function (snapshot) {
+    statusSnapshot = snapshot;
+    return snapshot;
+  }).catch(function (err) {
+    console.error('provider status check failed:', err && err.message ? err.message : err);
+    throw err;
+  }).finally(function () {
+    statusInFlight = null;
+  });
+  return statusInFlight;
+}
+
+function scheduleProviderStatus() {
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(function () {
+    refreshProviderStatus().catch(function () {}).then(scheduleProviderStatus);
+  }, STATUS_INTERVAL_MS);
+  if (statusTimer && typeof statusTimer.unref === 'function') statusTimer.unref();
+}
+
 function sendJson(res, status, body, corsEnabled) {
   if (corsEnabled == null) corsEnabled = true;
   const headers = {
@@ -617,67 +710,11 @@ async function handleRequest(req, res) {
   }
 
   if (pathname === '/api/status') {
-    const normalProbes = [
-      { label: 'Inception', type: 'movie', id: '27205', season: 0, episode: 0 },
-      { label: 'John Wick', type: 'movie', id: '245891', season: 0, episode: 0 },
-      { label: 'Stranger Things', type: 'series', id: '66732', season: 1, episode: 1 },
-    ];
-    const animeProbes = [
-      { label: 'Your Name', type: 'movie', id: '372058', season: 0, episode: 0 },
-      { label: 'Spirited Away', type: 'movie', id: '129', season: 0, episode: 0 },
-      { label: 'Attack on Titan', type: 'series', id: '1429', season: 1, episode: 1 },
-    ];
-    const isAnime = function (provider) {
-      return Array.isArray(provider.tags) && provider.tags.some(function (tag) { return /anime/i.test(String(tag)); });
-    };
-    const normal = ALL_PROVIDERS.filter(function (p) { return !isAnime(p); });
-    const anime = ALL_PROVIDERS.filter(isAnime);
-    const providers = ALL_PROVIDERS.map(function (p) {
-      return { id: p.id, name: p.name, state: 'testing', streams: 0, ms: 0 };
-    });
-    const byId = new Map(providers.map(function (p) { return [p.id, p]; }));
-    const seen = new Map();
-    const record = function (result) {
-      if (!byId.has(result.id)) return;
-      const s = seen.get(result.id) || { streams: 0, ms: 0, attempts: 0, errors: 0 };
-      s.streams += result.streams || 0;
-      s.ms += result.ms || 0;
-      s.attempts += 1;
-      if (result.state === 'error') s.errors += 1;
-      seen.set(result.id, s);
-    };
-    const runGroup = function (probes, group) {
-      if (!group.length) return Promise.resolve();
-      const ids = group.map(function (p) { return p.id; });
-      const cfg = Object.assign({}, DEFAULT_CFG, { p: ids, sourceOrder: ids, requestTimeout: '10', debug: false, resultLimit: 0 });
-      return (async function () {
-        for (const probe of probes) {
-          try { await resolveStreams(probe.id, probe.type, probe.season, probe.episode, cfg, record); } catch (e) {}
-        }
-      })();
-    };
-    // Run groups one at a time; splitting the burst keeps both groups off each other's way.
-    await runGroup(normalProbes, normal);
-    await runGroup(animeProbes, anime);
-    providers.forEach(function (p) {
-      const s = seen.get(p.id);
-      if (!s) { p.state = 'down'; return; }
-      p.streams = s.streams;
-      p.ms = s.attempts ? Math.round(s.ms / s.attempts) : 0;
-      if (s.streams > 0) { p.state = 'live'; }
-      else if (s.attempts > 0 && s.errors === s.attempts) { p.state = 'error'; }
-      else { p.state = 'down'; }
-    });
-    sendJson(res, 200, {
-      checkedAt: Date.now(),
-      probes: {
-        normal: normalProbes.map(function (p) { return p.label; }),
-        anime: animeProbes.map(function (p) { return p.label; }),
-      },
-      providers: providers,
-      live: providers.filter(function (p) { return p.state === 'live'; }).length,
-      total: providers.length,
-    }, false);
+    if (!statusSnapshot) {
+      sendJson(res, 503, { checking: true }, false);
+      return;
+    }
+    sendJson(res, 200, statusSnapshot, false);
     return;
   }
 
@@ -916,4 +953,5 @@ function splitConfig(pathname) {
 server.listen(PORT, HOST, function () {
   console.log('IndStream addon listening on http://' + HOST + ':' + PORT);
   console.log('Google login: ' + (LOGIN_ENABLED ? 'enabled' : 'disabled (guest only)'));
+  refreshProviderStatus().catch(function () {}).then(scheduleProviderStatus);
 });

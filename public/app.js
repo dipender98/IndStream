@@ -893,7 +893,7 @@ function setSection(name) {
     panel.setAttribute('tabindex', '-1');
     panel.focus({ preventScroll: true });
   }
-  if (name === 'status') maybeAutoStatus();
+  if (name === 'status') loadStatus();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
 }
@@ -1251,10 +1251,10 @@ function setupSegmented() {
 }
 
 
-const LS_STATUS = 'indstream.status.v1';
-const STATUS_INTERVAL = 12 * 60 * 60 * 1000;
-let statusRunning = false;
+const STATUS_UI_INTERVAL = 60 * 60 * 1000;
 let statusTimer = 0;
+let statusLoading = false;
+let statusData = null;
 let lastStatusAt = 0;
 
 function statusAgo(ts) {
@@ -1266,21 +1266,30 @@ function statusAgo(ts) {
   return hours + ' hour' + (hours === 1 ? '' : 's') + ' ago';
 }
 
-function updateStatusTime() {
-  if (lastStatusAt) setText('statusChecked', 'Checked ' + statusAgo(lastStatusAt));
+function nextCheckText(data) {
+  const at = Number(data && data.nextCheckAt) || 0;
+  if (!at) return 'Refreshes twice a day';
+  const minutes = Math.max(1, Math.round((at - Date.now()) / 60000));
+  if (minutes >= 60) return 'Next check in ' + Math.round(minutes / 60) + ' h';
+  return 'Next check in ' + minutes + ' min';
 }
 
-function scheduleStatus() {
+function updateStatusTime() {
+  if (!lastStatusAt) return;
+  setText('statusChecked', 'Checked ' + statusAgo(lastStatusAt) + ' · ' + nextCheckText(statusData));
+}
+
+function scheduleStatusRefresh() {
   clearTimeout(statusTimer);
-  statusTimer = setTimeout(checkProviderStatus, STATUS_INTERVAL);
+  statusTimer = setTimeout(loadStatus, STATUS_UI_INTERVAL);
 }
 
 function renderStatus(data) {
   const list = document.getElementById('providerList');
   if (list) {
     list.innerHTML = (data.providers || []).map(function (p) {
-      const state = p.state === 'testing' ? 'testing' : (p.state === 'error' ? 'error' : (p.streams > 0 ? 'live' : 'down'));
-      const meta = state === 'testing' ? 'Testing…' : (state === 'live' ? 'Up · ' + p.streams + ' streams' : (state === 'error' ? 'Error · 0 streams' : 'Down · 0 streams'));
+      const state = p.state === 'error' ? 'error' : (p.streams > 0 ? 'live' : 'down');
+      const meta = state === 'live' ? 'Up · ' + p.streams + ' streams' : (state === 'error' ? 'Error · 0 streams' : 'Down · 0 streams');
       return '<div class="provider-row" data-state="' + state + '">' +
         '<span class="provider-dot" aria-hidden="true"></span>' +
         '<span class="provider-name">' + escapeHtml(p.name) + '</span>' +
@@ -1291,74 +1300,42 @@ function renderStatus(data) {
   const total = Number(data.total) || 0;
   setText('statusLive', live);
   setText('statusTotal', total);
+  statusData = data;
   lastStatusAt = Number(data.checkedAt) || Date.now();
   updateStatusTime();
-  scheduleStatus();
+  scheduleStatusRefresh();
 }
 
-async function checkProviderStatus() {
-  if (statusRunning) return;
-  statusRunning = true;
-  const btn = document.getElementById('statusCheckBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
-  const list = document.getElementById('providerList');
-  if (list) {
-    list.querySelectorAll('.provider-row').forEach(function (row) {
-      row.dataset.state = 'testing';
-      const meta = row.querySelector('.provider-meta');
-      if (meta) meta.textContent = 'Testing…';
-    });
-  }
-  setText('statusChecked', 'Checking live…');
+async function loadStatus() {
+  if (statusLoading) return;
+  statusLoading = true;
   try {
     const res = await fetch('/api/status', { cache: 'no-store' });
+    if (res.status === 503 || !res.ok) {
+      setText('statusChecked', 'First server check running…');
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(loadStatus, 10000);
+      return;
+    }
     const data = await res.json();
     if (Array.isArray(data.providers)) {
       renderStatus(data);
-      safeSet(LS_STATUS, JSON.stringify(data));
     } else {
-      setText('statusChecked', 'Check failed');
+      setText('statusChecked', 'Status unavailable');
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(loadStatus, 30000);
     }
   } catch (e) {
-    setText('statusChecked', 'Check failed — retrying later');
+    setText('statusChecked', 'Status unavailable — retrying');
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(loadStatus, 30000);
   } finally {
-    statusRunning = false;
-    if (btn) { btn.disabled = false; btn.textContent = 'Check now'; }
-    scheduleStatus();
+    statusLoading = false;
   }
-}
-
-function readStatusCache() {
-  try {
-    const cached = JSON.parse(safeGet(LS_STATUS) || 'null');
-    return cached && Array.isArray(cached.providers) ? cached : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function statusIsStale(data) {
-  return !data || Date.now() - (Number(data.checkedAt) || 0) > STATUS_INTERVAL;
-}
-
-function primeStatusFromCache() {
-  const cached = readStatusCache();
-  if (cached) {
-    renderStatus(cached);
-    return cached;
-  }
-  return null;
-}
-
-function maybeAutoStatus() {
-  const cached = primeStatusFromCache();
-  if (statusIsStale(cached)) checkProviderStatus();
 }
 
 function setupStatus() {
-  const btn = document.getElementById('statusCheckBtn');
-  if (btn) btn.addEventListener('click', checkProviderStatus);
-  maybeAutoStatus();
+  loadStatus();
   setInterval(updateStatusTime, 60000);
 }
 
