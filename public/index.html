@@ -256,7 +256,8 @@
       <p class="card-hint">Known below 720p is always hidden. Auto covers other detected heights; Unknown means no height detected. At least one quality stays on.</p>
     </div>
 
-    <label class="switch card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span class="switch-copy"><b>Probe unknown quality</b><small>Read stream manifests to detect missing quality. Slower, but labels more streams.</small></span></label>
+    <label class="switch card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span class="switch-copy"><b>Probe streams</b><small>Read stream manifests to detect missing quality and audio tracks. Slower, but labels more streams.</small></span></label>
+    <label class="switch card"><input type="checkbox" id="hideNonSeekable"><span class="switch-track"></span><span class="switch-copy"><b>Hide non-seekable streams</b><small>Drop live HLS/DASH streams that cannot be scrubbed.</small></span></label>
     <label class="switch card"><input type="checkbox" id="includeDash" checked><span class="switch-track"></span><span class="switch-copy"><b>Include DASH streams</b><small>Drop .mpd streams if your player stutters on them.</small></span></label>
   </section>
 

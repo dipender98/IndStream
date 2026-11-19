@@ -5,40 +5,13 @@ const tmdb = require('./tmdb');
 const settings = require('./settings');
 const racer = require('./racer');
 const finalize = require('./finalize');
-const util = require('./util');
+const probe = require('./probe');
 
 const TMDB_META_CAP_MS = 2000;
 
 function safeInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) ? n : 0;
-}
-
-async function probeUnknownQuality(stream, ctx) {
-  if (!ctx.settings.probeQuality) return stream;
-  const needHeight = !finalize.streamHeight(stream);
-  const needLanguage = !String(stream.language || '').trim();
-  if (!needHeight && !needLanguage) return stream;
-  const url = stream.url;
-  if (stream.type !== 'hls' && stream.type !== 'dash' && url.indexOf('.m3u8') < 0 && url.indexOf('.mpd') < 0) {
-    return stream;
-  }
-  const text = await http.getText(url, {
-    timeoutMs: 4000,
-    headers: stream.headers || {},
-  });
-  if (!text) return stream;
-  let result = { height: 0, languages: [] };
-  if (url.indexOf('.mpd') >= 0) result = util.parseDashHeights(text);
-  else if (text.indexOf('#EXTM3U') >= 0) result = util.parseHlsMaster(text);
-  if (needHeight && result.height > 0) {
-    stream.height = result.height;
-    stream.quality = util.qualityLabel(result.height);
-  }
-  if (needLanguage && result.languages && result.languages.length) {
-    stream.language = result.languages.join(', ');
-  }
-  return stream;
 }
 
 function createPlugin(provider) {
@@ -105,15 +78,16 @@ function createPlugin(provider) {
 
     let streams = await racer.race(wanted, context, finalize.normalizeStream);
 
-    if (s.probeQuality) {
+    if (s.probeQuality || s.hideNonSeekable) {
       streams = await http.parallelMap(streams, 4, function (stream) {
-        return probeUnknownQuality(stream, context);
+        return probe.probeStream(stream, { settings: s });
       });
     }
 
     return finalize.finalizeStreams(streams, {
       qualityOrder: s.qualityOrder,
       includeDash: s.includeDash,
+      hideNonSeekable: s.hideNonSeekable,
       resultLimit: s.resultLimit,
       providers: providerList,
     });

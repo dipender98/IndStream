@@ -10,6 +10,7 @@ const tmdb = require('./src/indstream/tmdb');
 const util = require('./src/indstream/util');
 const racer = require('./src/indstream/racer');
 const finalize = require('./src/indstream/finalize');
+const streamProbe = require('./src/indstream/probe');
 const httpLib = require('./src/indstream/http');
 const styles = require('./src/indstream/styles');
 
@@ -61,6 +62,7 @@ const DEFAULT_CFG = {
   requestTimeout: '10',
   includeDash: true,
   probeQuality: false,
+  hideNonSeekable: false,
   debug: false,
 };
 
@@ -250,9 +252,17 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProvid
   const normalize = function (rawStream, provider, scope) {
     const stream = finalize.normalizeStream(rawStream, provider, scope);
     if (!stream) return null;
-    return finalize.finalizeStreams([stream], { includeDash: s.includeDash }).length ? stream : null;
+    return finalize.finalizeStreams([stream], {
+      includeDash: s.includeDash,
+      hideNonSeekable: s.hideNonSeekable,
+    }).length ? stream : null;
   };
-  const raw = await racer.race(wanted, context, normalize);
+  let raw = await racer.race(wanted, context, normalize);
+  if (s.probeQuality || s.hideNonSeekable) {
+    raw = await httpLib.parallelMap(raw, 4, function (stream) {
+      return streamProbe.probeStream(stream, { settings: s });
+    });
+  }
   const resultLimit = Number(s.resultLimit) || 0;
   const prefs = languagePrefs(cfg);
   const finalized = finalize.finalizeStreams(raw, {
@@ -260,6 +270,7 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProvid
     languageOrder: prefs.langs,
     langStrict: prefs.langStrict,
     includeDash: s.includeDash,
+    hideNonSeekable: s.hideNonSeekable,
     resultLimit: 0,
     providers: wanted,
   });
@@ -466,7 +477,7 @@ function sanitizeConfigFromApi(raw) {
       }
       return;
     }
-    if (key === 'langStrict' || key === 'includeDash' || key === 'probeQuality' || key === 'debug') {
+    if (key === 'langStrict' || key === 'includeDash' || key === 'probeQuality' || key === 'hideNonSeekable' || key === 'debug') {
       out[key] = !!v;
       return;
     }

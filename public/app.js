@@ -101,6 +101,7 @@ const DEFAULT_CFG = {
   requestTimeout: '10',
   includeDash: true,
   probeQuality: false,
+  hideNonSeekable: false,
   debug: false,
 };
 
@@ -218,6 +219,7 @@ function sanitizeCfg(raw) {
   merged.requestTimeout = ['5', '10', '15', '25'].indexOf(String(merged.requestTimeout)) >= 0 ? String(merged.requestTimeout) : DEFAULT_CFG.requestTimeout;
   merged.includeDash = !!merged.includeDash;
   merged.probeQuality = !!merged.probeQuality;
+  merged.hideNonSeekable = !!merged.hideNonSeekable;
   merged.debug = !!merged.debug;
   return merged;
 }
@@ -324,6 +326,7 @@ function currentCfg() {
     requestTimeout: document.getElementById('timeoutSeg').querySelector('.active').dataset.value,
     includeDash: document.getElementById('includeDash').checked,
     probeQuality: document.getElementById('probeQuality').checked,
+    hideNonSeekable: document.getElementById('hideNonSeekable').checked,
     debug: document.getElementById('debug').checked,
   };
 }
@@ -348,6 +351,7 @@ function applyCfg(cfg) {
   document.getElementById('langStrict').checked = !!cfg.langStrict;
   document.getElementById('includeDash').checked = !!cfg.includeDash;
   document.getElementById('probeQuality').checked = !!cfg.probeQuality;
+  document.getElementById('hideNonSeekable').checked = !!cfg.hideNonSeekable;
   document.getElementById('debug').checked = !!cfg.debug;
   const styleSel = document.getElementById('streamStyle');
   if (styleSel && cfg.streamStyle) {
@@ -1244,7 +1248,7 @@ function setupSegmented() {
       updateAll();
     });
   });
-  ['includeDash', 'probeQuality', 'debug', 'langStrict'].forEach(function (id) {
+  ['includeDash', 'probeQuality', 'hideNonSeekable', 'debug', 'langStrict'].forEach(function (id) {
     document.getElementById(id).addEventListener('change', function () { updateAll(); });
   });
   document.getElementById('streamStyle').addEventListener('change', function () { updateAll(); });

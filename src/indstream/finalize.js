@@ -55,6 +55,7 @@ function normalizeStream(raw, provider, ctx) {
     height: height,
     size: raw.size || '',
     language: raw.language || '',
+    seekable: raw.seekable !== false && raw.isLive !== true && !(raw.behaviorHints && raw.behaviorHints.isLive),
     provider: providerName,
     providerId: provider.id || '',
     headers: raw.headers || {},
@@ -149,6 +150,7 @@ function finalizeStreams(streams, options) {
     if (!/^https?:\/\//i.test(stream.url)) return false;
     if (util.isJunkStreamUrl(stream.url)) return false;
     if (!includeDash && stream.type === 'dash') return false;
+    if (opts.hideNonSeekable && stream.seekable === false) return false;
     if (util.isKnownBelowFloor(streamHeight(stream), FLOOR)) return false;
     if (strictLanguages) {
       const label = String(stream.language || '').trim();

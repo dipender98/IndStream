@@ -10,6 +10,7 @@ const html = require('../src/indstream/html');
 const factory = require('../src/indstream/factory');
 const http = require('../src/indstream/http');
 const finalize = require('../src/indstream/finalize');
+const streamProbe = require('../src/indstream/probe');
 const settings = require('../src/indstream/settings');
 const tmdb = require('../src/indstream/tmdb');
 const providers = require('../src/indstream/providers');
@@ -195,6 +196,37 @@ test('floor and dash filtering', function () {
     fakeStream({ url: 'https://x/dash.mpd', type: 'dash', quality: '1080p', height: 1080 }),
   ], { minQuality: 720, includeDash: false, providers: FAKE_PROVIDERS });
   assert.deepStrictEqual(out.map(function (s) { return s.url; }), ['https://x/720', 'https://x/unknown']);
+});
+test('hideNonSeekable drops only non-seekable streams', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/live.m3u8', height: 1080, seekable: false }),
+    fakeStream({ url: 'https://x/vod.m3u8', height: 1080, seekable: true }),
+    fakeStream({ url: 'https://x/unknown.m3u8', height: 1080 }),
+  ];
+  const hidden = finalize.finalizeStreams(streams, { hideNonSeekable: true, providers: FAKE_PROVIDERS });
+  assert.strictEqual(hidden.length, 2);
+  assert.strictEqual(hidden.some(function (s) { return s.url === 'https://x/live.m3u8'; }), false);
+  const shown = finalize.finalizeStreams(streams, { providers: FAKE_PROVIDERS });
+  assert.strictEqual(shown.length, 3);
+});
+test('normalizeStream marks declared live streams as non-seekable', function () {
+  const stream = finalize.normalizeStream(
+    { url: 'https://x/live.m3u8', quality: '1080p', height: 1080, isLive: true },
+    { id: 'fake', name: 'Fake' },
+    { settings: {} }
+  );
+  assert.strictEqual(stream.seekable, false);
+  assert.strictEqual(finalize.finalizeStreams([stream], { hideNonSeekable: true }).length, 0);
+});
+test('isLiveManifest detects live and VOD playlists', function () {
+  assert.strictEqual(streamProbe.isLiveManifest('#EXTM3U\n#EXT-X-PLAYLIST-TYPE:LIVE\n#EXTINF:6\nseg.ts', 'hls'), true);
+  assert.strictEqual(streamProbe.isLiveManifest('#EXTM3U\n#EXTINF:6\nseg.ts', 'hls'), true);
+  assert.strictEqual(streamProbe.isLiveManifest('#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:6\nseg.ts\n#EXT-X-ENDLIST', 'hls'), false);
+  assert.strictEqual(streamProbe.isLiveManifest('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8', 'hls'), false);
+  assert.strictEqual(streamProbe.firstVariant('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8', 'https://x/master.m3u8'), 'https://x/variant.m3u8');
+  assert.strictEqual(streamProbe.isLiveManifest('<MPD type="dynamic"></MPD>', 'dash'), true);
+  assert.strictEqual(streamProbe.isLiveManifest('<MPD type="static" mediaPresentationDuration="PT2H"></MPD>', 'dash'), false);
+  assert.strictEqual(streamProbe.isLiveManifest('', 'hls'), false);
 });
 test('junk samples and non-http urls are dropped', function () {
   const out = finalize.finalizeStreams([
@@ -409,7 +441,14 @@ test('defaults', function () {
   assert.deepStrictEqual(s.qualityOff, []);
   assert.strictEqual(s.resultLimit, 40);
   assert.strictEqual(s.includeDash, true);
+  assert.strictEqual(s.probeQuality, false);
+  assert.strictEqual(s.hideNonSeekable, false);
   assert.strictEqual(s.requestTimeout, 10);
+});
+test('hideNonSeekable setting is normalized', function () {
+  globalThis.SCRAPER_SETTINGS = JSON.stringify({ hideNonSeekable: 'true' });
+  assert.strictEqual(settings.getSettings().hideNonSeekable, true);
+  globalThis.SCRAPER_SETTINGS = undefined;
 });
 test('legacy minQuality migrate', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({ minQuality: '1080' });
