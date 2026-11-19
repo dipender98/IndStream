@@ -45,16 +45,13 @@ Use logic and judgment on every task. If two rules conflict, correctness wins.
 
 - Commit only when asked. Never push or bump the version until the user explicitly says so.
 - Describe the change and its implementation in the commit message. The size of the message depends on the changes.
-- Version bumps follow the owner's scheme: routine changes take the next patch in the
-  current series (e.g., v1.2.71 → v1.2.72 → v1.2.75); a `big update` bumps the
-  minor-ish component (v1.2.75 → v1.2.8), as with v1.2.8 (four new sources,
-  recommended-only installs, size limits). When in doubt about the target number, ask
-  instead of guessing — the number is the owner's call, not semver math.
-- Keep `package.json` and `package-lock.json` in sync when bumping (the root
-  `"version"` in both files; verify with a search for the old number).
-- Bump, push and deploy are separate verbs: push goes to `origin/main` (CI runs
-  `npm test` there); deploy is `fly deploy` (fly.toml: app `indstream`, builds the
-  Dockerfile, serves `https://indstream.fly.dev`) — only when the user says so.
-- Before releasing, run the test suite (stream logs to a file) and review the diff for
-  scope; include everything the user asked to ship, nothing unrelated, nothing you
-  could not verify.
+- Version bumps use the owner's decimal-counter scheme, never semver math:
+  - The version's last component is a decimal counter running inside the major.minor series,
+    printed with two decimals between big updates.
+  - Routine (small) release: increment the hundredths digit — the series continues.
+    (e.g. 1.2.71 → 1.2.72 → … → 1.2.75).
+  - `big update`: advance the tenths digit and zero the hundredths — the series restarts
+    (e.g. 1.2.75 → 1.2.8, printed with one decimal).
+  - Keep `package.json` and `package-lock.json` in sync (both `"version"` fields).
+  - When in doubt — including any release the owner names explicitly — the owner's number
+    wins and the counter never overrides it.
