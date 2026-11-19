@@ -23,7 +23,6 @@ const moviebox = require('../src/indstream/providers/moviebox');
 const hub4k = require('../src/indstream/providers/hub4k');
 const netmirror = require('../src/indstream/providers/netmirror');
 const atlantic = require('../src/indstream/providers/atlantic');
-const movies4u = require('../src/indstream/providers/movies4u');
 const vegamovies = require('../src/indstream/providers/vegamovies');
 const vidly = require('../src/indstream/providers/vidly');
 const vidbolt = require('../src/indstream/providers/vidbolt');
@@ -878,84 +877,6 @@ test('subtitlesOf maps mbox and q62 subtitle shapes', function () {
   assert.strictEqual(atlantic._test.subtitlesOf({ subtitles: [{ url: 'not-http' }] }, 'mbox').length, 0);
 });
 
-section('movies4u');
-test('m4uSearchHits parses json hits and builds urls', function () {
-  const json = JSON.stringify({ ok: true, found: 2, hits: [
-    { id: '7639', post_title: 'Jawan (2023) WEB-DL Multi Audio Full Movie', permalink: '/jawan-2023-web-dl-multi-audio-full-movie/' },
-    { id: '1', post_title: 'Jawan Purana (2024) Full Movie', permalink: '/jawan-purana-2024/' },
-  ] });
-  const out = movies4u._test.m4uSearchHits(json);
-  assert.strictEqual(out.length, 2);
-  assert.strictEqual(out[0].url, 'https://new8.movies4u.garden/jawan-2023-web-dl-multi-audio-full-movie/');
-  assert.ok(out[0].title.indexOf('Multi Audio') >= 0);
-  assert.strictEqual(out[1].url, 'https://new8.movies4u.garden/jawan-purana-2024/');
-});
-test('m4uSearchHits ignores garbage', function () {
-  assert.strictEqual(movies4u._test.m4uSearchHits('<html>no json</html>').length, 0);
-  assert.strictEqual(movies4u._test.m4uSearchHits('{"ok":false}').length, 0);
-  assert.strictEqual(movies4u._test.m4uSearchHits('{"ok":true,"hits":"nope"}').length, 0);
-});
-test('m4uGroups pairs heading with buttons under downloads-btns-div', function () {
-  const html =
-    '<h4>1080p HQ [6.1GB] </h4>' +
-    '<div class="downloads-btns-div">' +
-    '<a href="https://hubcloud.mov/drive/6ce1cjickkw61jg" class="btn">Hub-Cloud [DD]</a>' +
-    '<a href="https://example.com/not-a-gateway" class="btn">Mirror</a>' +
-    '</div>' +
-    '<h4>2160p 4K [20.2GB] </h4>' +
-    '<div class="downloads-btns-div">' +
-    '<a href="https://hubcloud.mov/drive/xx62qg49zdqxzly" class="btn">Hub-Cloud [DD]</a>' +
-    '</div>' +
-    '<h4>Unrelated heading</h4>' +
-    '<p>no buttons here</p>';
-  const groups = movies4u._test.m4uGroups(html);
-  assert.strictEqual(groups.length, 2);
-  assert.strictEqual(groups[0].heading, '1080p HQ [6.1GB]');
-  assert.strictEqual(groups[0].links.length, 2);
-  assert.strictEqual(groups[1].heading, '2160p 4K [20.2GB]');
-  assert.deepStrictEqual(groups[1].links, ['https://hubcloud.mov/drive/xx62qg49zdqxzly']);
-});
-test('m4uGroups rejects non-btn anchors inside the box', function () {
-  const html =
-    '<h5>720p [1.3GB]</h5>' +
-    '<div class="downloads-btns-div">' +
-    '<a href="https://hubcloud.mov/drive/deivgftidxq5fx2" class="primary">Not btn class</a>' +
-    '<a href="https://hubcloud.mov/drive/xx62qg49zdqxzly">plain anchor</a>' +
-    '</div>';
-  assert.strictEqual(movies4u._test.m4uGroups(html).length, 0);
-});
-test('m4uEpisodeOf parses episode numbers', function () {
-  assert.strictEqual(movies4u._test.m4uEpisodeOf('-:Episodes: 1:-'), 1);
-  assert.strictEqual(movies4u._test.m4uEpisodeOf('-:Episodes: 12:-'), 12);
-  assert.strictEqual(movies4u._test.m4uEpisodeOf('Episode 4'), 4);
-  assert.strictEqual(movies4u._test.m4uEpisodeOf('S02E03 1080p'), 3);
-  assert.strictEqual(movies4u._test.m4uEpisodeOf('EP 07'), 7);
-  assert.strictEqual(movies4u._test.m4uEpisodeOf('Batch / Zip'), null);
-});
-test('groupAudioLabel prefers multi marker and richer post audio', function () {
-  assert.strictEqual(movies4u._test.groupAudioLabel('2160p 4K [Multi Audio]', 'Hindi, Tamil, Telugu'), 'Hindi, Tamil, Telugu');
-  assert.strictEqual(movies4u._test.groupAudioLabel('Jawan [Hindi + Tamil + Telugu] 2160p', 'Multi Audio'), 'Hindi, Tamil, Telugu');
-  assert.strictEqual(movies4u._test.groupAudioLabel('2160p 4K [Tamil]', 'Hindi'), 'Tamil');
-});
-test('postYearMatches movie strict and tv tolerant', function () {
-  assert.strictEqual(movies4u._test.postYearMatches('2023', '2023', 'movie'), true);
-  assert.strictEqual(movies4u._test.postYearMatches('2023', '2025', 'movie'), false);
-  assert.strictEqual(movies4u._test.postYearMatches('2024', '2026', 'tv'), true);
-  assert.strictEqual(movies4u._test.postYearMatches('2019', '2026', 'tv'), true);
-  assert.strictEqual(movies4u._test.postYearMatches('2019', '2015', 'tv'), false);
-  assert.strictEqual(movies4u._test.postYearMatches('', '2026', 'tv'), true);
-});
-test('matchGroup prefers exact size token then height', function () {
-  const groups = [
-    { heading: '1080p [6.1GB]', links: ['https://hubcloud.mov/drive/a'] },
-    { heading: '1080p [2.6GB]', links: ['https://hubcloud.mov/drive/b'] },
-    { heading: '2160p 4K [20.2GB]', links: ['https://hubcloud.mov/drive/c'] },
-  ];
-  assert.strictEqual(movies4u._test.matchGroup(groups, { heading: '1080p HQ [6.1GB]' }, '6.1GB', 1080).links[0], 'https://hubcloud.mov/drive/a');
-  assert.strictEqual(movies4u._test.matchGroup(groups, { heading: '1080p [2.6GB]' }, '2.6GB', 1080).links[0], 'https://hubcloud.mov/drive/b');
-  assert.strictEqual(movies4u._test.matchGroup(groups, { heading: '2160p 4K [20.2GB]' }, '20.2GB', 2160).links[0], 'https://hubcloud.mov/drive/c');
-});
-
 section('vegamovies');
 test('parseSearchHits parses typesense hits', function () {
   const json = { found: 2, hits: [
@@ -1427,7 +1348,7 @@ test('registry contract', function () {
   const ids = {};
   assert.deepStrictEqual(
     providers.PROVIDERS.map(function (provider) { return provider.id; }),
-    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'movies4u', 'vegamovies', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'vidout', 'multimovies', 'allanime', 'hianime', 'animeworld']
+    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vegamovies', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'vidout', 'multimovies', 'allanime', 'hianime', 'animeworld']
   );
   providers.PROVIDERS.forEach(function (provider) {
     assert.ok(provider.id, 'missing id');

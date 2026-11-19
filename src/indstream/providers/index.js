@@ -7,7 +7,6 @@ const moviebox = require('./moviebox');
 const hub4k = require('./hub4k');
 const netmirror = require('./netmirror');
 const atlantic = require('./atlantic');
-const movies4u = require('./movies4u');
 const vegamovies = require('./vegamovies');
 const vidly = require('./vidly');
 const vidbolt = require('./vidbolt');
@@ -22,7 +21,7 @@ const animeworld = require('./animeworld');
 
 // Every entry is an independent provider. The racer runs them concurrently;
 // none of them knows about the others.
-const PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, movies4u, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, allanime, hianime, animeworld];
+const PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, allanime, hianime, animeworld];
 
 const BY_ID = {};
 PROVIDERS.forEach(function (provider) {

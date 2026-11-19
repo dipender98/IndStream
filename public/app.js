@@ -6,7 +6,6 @@ const PROVIDERS = [
   { id: 'hub4k', name: '4KHDHub', mark: '4K', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download'] },
   { id: 'netmirror', name: 'NetMirror', mark: 'NM', tags: ['Multi-Audio', 'Stream', 'Download', 'Fast'] },
   { id: 'atlantic', name: 'Atlantic', mark: 'AT', tags: ['1080p', 'Multi-Audio', 'Stream', 'Very Fast'] },
-  { id: 'movies4u', name: 'Movies4u', mark: 'M4', tags: ['4K', 'Multi-Audio', 'Download', 'Slow'] },
   { id: 'vegamovies', name: 'Vegamovies', mark: 'VG', tags: ['4K', 'Multi-Audio', 'Download', 'Slow'] },
   { id: 'vidly', name: 'Vidly', mark: 'VL', tags: ['1080p', 'Stream', 'Fast'] },
   { id: 'vidbolt', name: 'VidBolt', mark: 'VB', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
@@ -51,7 +50,7 @@ const LANGS = ['Multi', 'Original'].concat(
 );
 
 const QUALITY_KEYS = ['2160', '1440', '1080', '720', 'auto', 'unknown'];
-const RECOMMENDED_IDS = ['hdhub', 'vidrift', 'netmirror', 'movy', 'vidy', 'atlantic', 'movies4u', 'vegamovies', 'allanime', 'hianime', 'animeworld'];
+const RECOMMENDED_IDS = ['hdhub', 'vidrift', 'netmirror', 'movy', 'vidy', 'atlantic', 'vegamovies', 'allanime', 'hianime', 'animeworld'];
 const QUALITIES = [
   { id: '2160', name: '4K/2160p', mark: '4K', meta: '2160p and above' },
   { id: '1440', name: '2K/1440p', mark: '2K', meta: '1440p' },

@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const http = require('http');
 const fs = require('fs');
@@ -21,7 +21,6 @@ const moviebox = require('./src/indstream/providers/moviebox');
 const hub4k = require('./src/indstream/providers/hub4k');
 const netmirror = require('./src/indstream/providers/netmirror');
 const atlantic = require('./src/indstream/providers/atlantic');
-const movies4u = require('./src/indstream/providers/movies4u');
 const vegamovies = require('./src/indstream/providers/vegamovies');
 const vidly = require('./src/indstream/providers/vidly');
 const vidbolt = require('./src/indstream/providers/vidbolt');
@@ -40,7 +39,7 @@ const userStoreModule = require('./src/indstream/userStore');
 // identical request, so keep only a short in-flight dedupe here rather than a long TTL.
 const streamCache = streamCacheModule.createTtlCache({ ttlMs: 2000, maxEntries: 400 });
 
-const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, movies4u, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, allanime, hianime, animeworld];
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, allanime, hianime, animeworld];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -57,7 +56,7 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
 const LOGIN_ENABLED = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && SESSION_SECRET);
 
 const DEFAULT_CFG = {
-  p: ['hdhub', 'vidrift', 'netmirror', 'movy', 'vidy', 'atlantic', 'movies4u', 'vegamovies', 'allanime', 'hianime', 'animeworld'],
+  p: ['hdhub', 'vidrift', 'netmirror', 'movy', 'vidy', 'atlantic', 'vegamovies', 'allanime', 'hianime', 'animeworld'],
   langs: [],
   langStrict: false,
   streamStyle: styles.DEFAULT_STYLE,
@@ -142,10 +141,10 @@ const QUALITY_LABELS = {
 
 function manifestName(cfg) {
   const name = typeof cfg.profileName === 'string' ? cfg.profileName.trim().slice(0, 40) : '';
-  if (name) return 'IndStream · ' + name;
+  if (name) return 'IndStream Â· ' + name;
   const count = selectedProviders(cfg).length;
   const top = QUALITY_LABELS[normalizeCfg(cfg).qualityOrder[0]] || 'Auto';
-  return 'IndStream · ' + count + ' src · ' + top;
+  return 'IndStream Â· ' + count + ' src Â· ' + top;
 }
 
 function makeManifest(cfg, base, options) {

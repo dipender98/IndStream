@@ -41,6 +41,11 @@ chains; `new1.vegamovies.lease`/`new2.vegamovies.futbol` keep redirecting to the
 same family the Indflix plugin uses) is **live and works** (local probes 2026-11-19):
 the gateway chain resolves to real direct files, e.g. The Odyssey yields playable
 4K MKV (21.7 GB class, HTTP 206) and 1080p/720p files via pixeldrain.
+**Removed at the owner's request on 2026-11-19 (full removal — provider, registry,
+Recommended set, tests) shortly after its v1.2.8 ship.** Reason: 4KHDHub already covers
+the same multi-audio 4K catalogue, and the Movies4u release links are non-seekable
+(measured non-seekable by the addon's stream probe). Do not re-add without a fresh
+owner decision.
 Notes recorded while adding it as the `movies4u` provider:
 - hubcloud token pages show a **decoy** `<a id="pxl-1" href="...decoy...">` button (a
   shared 404 dead link, identical on every page); the real file URL is assigned from

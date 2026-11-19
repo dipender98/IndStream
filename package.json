@@ -1,6 +1,6 @@
 ﻿{
   "name": "indstream",
-  "version": "1.2.8",
+  "version": "1.2.81",
   "private": true,
   "description": "IndStream Stremio/Nuvio addon (hosted).",
   "scripts": {
