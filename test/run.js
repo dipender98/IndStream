@@ -523,6 +523,36 @@ test('isFilePage rejects dead file-host links but keeps direct media', function 
   assert.strictEqual(hdhub._test.isFilePage('https://pixel.hubcloud.mov/?id=abc'), true);
   assert.strictEqual(hdhub._test.isFilePage('https://cdn.example.com/video.m3u8'), false);
 });
+test('sourceOf tags the actual source site', function () {
+  assert.strictEqual(hdhub._test.sourceOf('4KHDHub 4K'), '4KHDHub');
+  assert.strictEqual(hdhub._test.sourceOf('HdHub 2160p'), 'HdHub4u');
+  assert.strictEqual(hdhub._test.sourceOf('Movie.2010.2160p-HDHub4u.Ms.mkv'), 'HdHub4u');
+  assert.strictEqual(
+    hdhub._test.sourceOf('4KHDHub 1080p Movie.HDHub4u.Tv.mkv\npixeldrain | 4KHDHub'),
+    '4KHDHub'
+  );
+  assert.strictEqual(
+    hdhub._test.sourceOf('HdHub 1080p\n10Gbps Download Only | HdHub'),
+    'HdHub4u'
+  );
+});
+test('audioLabel reads declared audio names only', function () {
+  assert.strictEqual(
+    hdhub._test.audioLabel('Inception (2010) 1080p BluRay [Hindi DDP 5.1 + English DTS-HD MA 5.1] x264'),
+    'Hindi, English'
+  );
+  assert.strictEqual(
+    hdhub._test.audioLabel('Movie.2023.2160p.BluRay.Hindi.DD5.1-English.5.1.x265-HDHub4u.Ms.mkv'),
+    'Hindi, English'
+  );
+  assert.strictEqual(hdhub._test.audioLabel('Movie.2023.1080p.HEVC [Hindi + English] ESub.mkv'), 'Hindi, English');
+  assert.strictEqual(
+    hdhub._test.audioLabel('Show S01E01 2160p [Hindi-Tamil-Telugu NF DDP 5.1 + Eng DDP 5.1] x264'),
+    'Hindi, Tamil, Telugu, English'
+  );
+  assert.strictEqual(hdhub._test.audioLabel('Movie.2023.2160p.NF.WEB-DL.MULTi.DDP5.1.HDR'), 'Multi');
+  assert.strictEqual(hdhub._test.audioLabel('Movie.2023.1080p.WEB-DL.x264'), '');
+});
 
 section('vidrift');
 test('vidriftStreams builds stream objects from orionStreams', function () {
@@ -598,15 +628,34 @@ test('matchSubjects exact title', function () {
     { subjectId: '1', title: 'Inception (2010)' },
     { subjectId: '2', title: 'Inception 2' },
     { subjectId: '3', title: 'Other Movie' },
+    { subjectId: '4', title: 'Inception [Hindi]', corner: 'Hindi' },
   ];
   const subjects = moviebox._test.matchSubjects(items, 'Inception', 'movie', 1);
   assert.strictEqual(subjects.length, 2);
   assert.strictEqual(subjects[0].id, '1');
+  assert.strictEqual(subjects[1].id, '4');
+  assert.strictEqual(subjects[1].language, 'Hindi');
 });
-test('matchSubjects reverse prefix', function () {
-  const items = [{ subjectId: '9', title: 'The Fast and the Furious (2001)' }];
-  const subjects = moviebox._test.matchSubjects(items, 'The Fast', 'movie', 1);
+test('matchSubjects keeps bracketed titles', function () {
+  const items = [{ subjectId: '5', title: '[REC] (2007)' }];
+  const subjects = moviebox._test.matchSubjects(items, '[REC]', 'movie', 1);
   assert.strictEqual(subjects.length, 1);
+});
+test('declaredAudio reads declared tags', function () {
+  assert.strictEqual(moviebox._test.declaredAudio({ corner: 'Hindi' }, 'Inception [Hindi]'), 'Hindi');
+  assert.strictEqual(moviebox._test.declaredAudio({ corner: '' }, 'Inception'), '');
+  assert.strictEqual(moviebox._test.declaredAudio({ corner: '' }, 'Inception - Telugu'), 'Telugu');
+});
+test('sizeLabel formats bytes', function () {
+  assert.strictEqual(moviebox._test.sizeLabel('1657124945'), '1.54 GB');
+  assert.strictEqual(moviebox._test.sizeLabel('937454633'), '894 MB');
+  assert.strictEqual(moviebox._test.sizeLabel('1.5 GB'), '1.5GB');
+  assert.strictEqual(moviebox._test.sizeLabel(''), '');
+});
+test('streamHeight reads resolutions', function () {
+  assert.strictEqual(moviebox._test.streamHeight({ resolutions: '1080' }), 1080);
+  assert.strictEqual(moviebox._test.streamHeight({ resolution: '1920x1080' }), 1080);
+  assert.strictEqual(moviebox._test.streamHeight({}), 0);
 });
 test('cloudFrontCookie filters blanks', function () {
   const cookie = moviebox._test.cloudFrontCookie('CloudFront-Policy="abc"; CloudFront-Signature=""; CloudFront-Key-Pair-Id="k1"');
@@ -1374,7 +1423,7 @@ test('indstream renders one icon per meaning', function () {
   assert.strictEqual(out.name, 'IND 4K · HdHub');
   assert.strictEqual(out.title, [
     '🎬 Inception (2010)',
-    '💿 BluRay REMUX · 🔆 DV HDR · 🎞️ HEVC 10bit · 📦 65.95 GB',
+    '💿 BluRay REMUX · 🔆 DV HDR · 🎞️ HEVC 10bit · 💾 65.95 GB',
     '🎧 Atmos · DD+ · 🔊 5.1',
     'Lang: Multi 🌐 English 🇬🇧 Hindi 🇮🇳',
   ].join('\n'));
@@ -1411,7 +1460,7 @@ test('indstream renders Multi beyond three audio languages and invents nothing',
   assert.ok(out.title.indexOf('Lang: Multi 🌐') >= 0);
   assert.ok(out.title.indexOf('German') < 0);
   assert.ok(out.title.indexOf('💿') < 0);
-  assert.ok(out.title.indexOf('📦') < 0);
+  assert.ok(out.title.indexOf('💾') < 0);
 });
 test('indstream puts the original audio language first', function () {
   const raw = { url: 'https://example.com/v.mp4', type: 'mp4', quality: '1080p', height: 1080, language: 'English, Hindi, Korean' };

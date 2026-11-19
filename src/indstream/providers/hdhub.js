@@ -9,16 +9,49 @@ const BASE = 'https://hdhub.thevolecitor.qzz.io';
 // These hosts serve HTML file pages, not media; the player cannot use them.
 const FILE_PAGE_RE = /(?:^|\/\/)(?:[^/]+\.)?(?:hubdrive|hubcloud|hubcdn|gdrive)[^/]*\.[a-z]{2,}(?:\/|\?|$)/i;
 
+// The addon tags each release with the catalog it came from as the trailing
+// "Host | Source" token; release group tags can point somewhere else.
+function sourceOf(text) {
+  const value = String(text || '').trim();
+  const tail = value.match(/\|\s*(4KHDHub|HdHub(?:4u)?)\s*$/i);
+  if (tail) return /4khd/i.test(tail[1]) ? '4KHDHub' : 'HdHub4u';
+  return /4khd\s*hub/i.test(value) ? '4KHDHub' : 'HdHub4u';
+}
+
+// Release titles declare audio names; codecs, subtitles and file extensions can
+// look like language codes, so accept full names and unambiguous 3-letter codes only.
+function audioLabel(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return '';
+  if (/^(?:original|orig|org|default)$/i.test(text)) return 'Original';
+  const lower = text.toLowerCase();
+  const names = [];
+  const push = function (name) {
+    if (name && names.indexOf(name) < 0) names.push(name);
+  };
+  util.languageNames(text).forEach(function (name) {
+    if (new RegExp('(?:^|[^a-z])' + name.toLowerCase() + '(?:[^a-z]|$)').test(lower)) push(name);
+  });
+  text.split(/[\s+,&/|.:;_()\[\]{}-]+/).forEach(function (token) {
+    if (token.length !== 3) return;
+    const resolved = util.languageNames(token);
+    if (resolved.length === 1) push(resolved[0]);
+  });
+  if (names.length) return names.join(', ');
+  if (/\b(?:multi|dual|both)(?:\s*-?\s*audio)?\b/i.test(text)) return 'Multi';
+  return '';
+}
+
 module.exports = {
   id: 'hdhub',
-  name: 'HdHub',
+  name: 'HdHub4u',
   speed: 'very-fast',
   supports: { movie: true, tv: true },
   raceTimeoutMs: 5000,
   toggle: {
     key: 'sourceHdhub',
-    label: 'HdHub',
-    description: 'Fast aggregator: instant HLS streams plus 4K file links.',
+    label: 'HdHub4u',
+    description: 'Addon aggregating HdHub4u and 4KHDHub release pages. Streams are tagged with their actual source.',
   },
 
   async resolve(ctx) {
@@ -33,7 +66,9 @@ module.exports = {
     if (!json || !Array.isArray(json.streams)) return [];
 
     const out = [];
-    const seen = {};
+    const seenUrl = {};
+    const seenMeta = {};
+    const seenFile = {};
     json.streams.forEach(function (s) {
       if (!s || !s.url) return;
       const name = String(s.name || '');
@@ -42,11 +77,23 @@ module.exports = {
 
       const desc = String(s.description || s.title || '');
       const height = util.parseHeight(name + ' ' + desc);
-      const language = util.languageLabel(desc) || util.languageLabel(name) || '';
+      const language = audioLabel(desc) || audioLabel(name);
       const size = util.normalizeSizeToken(desc);
       const isHls = /m3u8/i.test(s.url) || /resolve\/cj/i.test(s.url);
-      const entry = {
-        provider: module.exports.name,
+
+      const path = String(s.url).split('#')[0].split('?')[0];
+      const file = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+      const metaKey = height > 0 && size ? height + '|' + size + '|' + language : '';
+      if (seenUrl[s.url] || (file && seenFile[file]) || (metaKey && seenMeta[metaKey])) {
+        if (file) seenFile[file] = true;
+        return;
+      }
+      seenUrl[s.url] = true;
+      if (file) seenFile[file] = true;
+      if (metaKey) seenMeta[metaKey] = true;
+
+      out.push({
+        provider: sourceOf(name + ' ' + desc),
         url: s.url,
         type: isHls ? 'hls' : 'mp4',
         quality: util.qualityLabel(height),
@@ -56,10 +103,7 @@ module.exports = {
         title: '',
         releaseText: desc.slice(0, 300),
         headers: { 'User-Agent': http.DEFAULT_UA },
-      };
-      if (seen[entry.url]) return;
-      seen[entry.url] = true;
-      out.push(entry);
+      });
     });
     if (out.length) await tmdb.awaitMeta(ctx, 400);
     ctx.log('hdhub: ' + out.length + ' streams');
@@ -88,5 +132,7 @@ async function streamPath(ctx) {
 
 module.exports._test = {
   streamPath: streamPath,
+  audioLabel: audioLabel,
+  sourceOf: sourceOf,
   isFilePage: function (url) { return FILE_PAGE_RE.test(String(url || '')); },
 };

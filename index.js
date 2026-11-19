@@ -245,7 +245,14 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProvid
   });
   if (!wanted.length) return [];
 
-  const raw = await racer.race(wanted, context, finalize.normalizeStream);
+  // Count only streams the player can actually use, so health probes do not
+  // report a provider as live on sub-720p or junk links that get filtered out.
+  const normalize = function (rawStream, provider, scope) {
+    const stream = finalize.normalizeStream(rawStream, provider, scope);
+    if (!stream) return null;
+    return finalize.finalizeStreams([stream], { includeDash: s.includeDash }).length ? stream : null;
+  };
+  const raw = await racer.race(wanted, context, normalize);
   const resultLimit = Number(s.resultLimit) || 0;
   const prefs = languagePrefs(cfg);
   const finalized = finalize.finalizeStreams(raw, {
@@ -618,7 +625,7 @@ async function handleRequest(req, res) {
     const animeProbes = [
       { label: 'Your Name', type: 'movie', id: '372058', season: 0, episode: 0 },
       { label: 'Spirited Away', type: 'movie', id: '129', season: 0, episode: 0 },
-      { label: 'Attack on Titan', type: 'series', id: '1396', season: 1, episode: 1 },
+      { label: 'Attack on Titan', type: 'series', id: '1429', season: 1, episode: 1 },
     ];
     const isAnime = function (provider) {
       return Array.isArray(provider.tags) && provider.tags.some(function (tag) { return /anime/i.test(String(tag)); });
@@ -632,29 +639,34 @@ async function handleRequest(req, res) {
     const seen = new Map();
     const record = function (result) {
       if (!byId.has(result.id)) return;
-      const s = seen.get(result.id) || { streams: 0, ms: 0, attempts: 0 };
+      const s = seen.get(result.id) || { streams: 0, ms: 0, attempts: 0, errors: 0 };
       s.streams += result.streams || 0;
       s.ms += result.ms || 0;
       s.attempts += 1;
+      if (result.state === 'error') s.errors += 1;
       seen.set(result.id, s);
     };
     const runGroup = function (probes, group) {
       if (!group.length) return Promise.resolve();
       const ids = group.map(function (p) { return p.id; });
-      const cfg = Object.assign({}, DEFAULT_CFG, { p: ids, sourceOrder: ids, requestTimeout: '5', debug: false, resultLimit: 0 });
+      const cfg = Object.assign({}, DEFAULT_CFG, { p: ids, sourceOrder: ids, requestTimeout: '10', debug: false, resultLimit: 0 });
       return (async function () {
         for (const probe of probes) {
           try { await resolveStreams(probe.id, probe.type, probe.season, probe.episode, cfg, record); } catch (e) {}
         }
       })();
     };
-    await Promise.all([runGroup(normalProbes, normal), runGroup(animeProbes, anime)]);
+    // Run groups one at a time; splitting the burst keeps both groups off each other's way.
+    await runGroup(normalProbes, normal);
+    await runGroup(animeProbes, anime);
     providers.forEach(function (p) {
       const s = seen.get(p.id);
       if (!s) { p.state = 'down'; return; }
       p.streams = s.streams;
       p.ms = s.attempts ? Math.round(s.ms / s.attempts) : 0;
-      p.state = s.streams > 0 ? 'live' : 'down';
+      if (s.streams > 0) { p.state = 'live'; }
+      else if (s.attempts > 0 && s.errors === s.attempts) { p.state = 'error'; }
+      else { p.state = 'down'; }
     });
     sendJson(res, 200, {
       checkedAt: Date.now(),

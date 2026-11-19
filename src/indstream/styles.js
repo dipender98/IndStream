@@ -232,7 +232,7 @@ function codecGroup(bits) {
 }
 
 function sizeGroup(bits) {
-  return bits.size ? '📦 ' + bits.size : '';
+  return bits.size ? '💾 ' + bits.size : '';
 }
 
 function audioGroup(bits) {
@@ -486,7 +486,7 @@ const SAMPLES = [
 ];
 
 function previewSamples(style) {
-  const provider = { id: 'hdhub', name: 'HdHub' };
+  const provider = { id: 'hdhub', name: 'HdHub4u' };
   return SAMPLES.map(function (sample) {
     const rendered = renderNameTitle(provider, sample.raw, sample.ctx, style);
     return { label: sample.label, name: rendered.name, title: rendered.title };

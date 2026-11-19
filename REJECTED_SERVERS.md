@@ -13,9 +13,25 @@ Read this **before** researching, testing, adding or replacing any stream provid
 
 | Provider | Endpoint | Result | Why not used |
 |---|---|---|---|
-| hdhub | `hdhub.thevolecitor.qzz.io` | HTTP 200 but “No streams found” for every probe title; then HTTP 429 | Upstream serves an empty catalogue and rate-limits. Effectively unusable. |
-| bingr | `api.bingr.one/api/stream` | HTTP 403 from **all 11** servers | Blocked/forbidden from this network (Cloudflare-style). Not a code bug. |
-| netmirror | `net79.cc` | ISP court-orders intercept page instead of JSON | Domain is current upstream (see Indflix below), but it is blocked on this network. Region/ISP-level, not a code fix. |
+| bingr | `api.bingr.one/api/stream` and `api.bingr.st/api/stream` | HTTP 403 from **all 11** servers (fresh probe 2026-11-19; `bingr.one` itself returns HTTP 200) | Blocked/forbidden from this network (Cloudflare-style). Not a code bug. |
+| netmirror | `net79.cc` | 2026-11-19: upstream intermittently serves an ISP court-orders intercept page (HTTP 200, `<iframe src="…/court-orders">`) instead of JSON (observed 7/8 requests); a short retry fixes it. Current status: works here with retries. | Region/ISP-level flakiness, not a code fix; handled by retrying. |
+| hubdrive | `hubdrive.blog/file/<id>` | HTTP 200 but page says “File not found !” | File host is dead; `hubdrive` links can never carry playable media. HdHub filters them out. |
+| hubcloud | `pixel.hubcloud.mov/?id=…`, `gpdl.hubcloud.mov/?id=…` | HTTP 500 (redirects to `pixel.rohitkiskk.workers.dev`) | 10Gbps “download only” host is dead server-side; filtered out. |
+
+`hdhub` (`hdhub.thevolecitor.qzz.io`) is **no longer rejected**: on 2026-11-19 it returned
+usable streams for several titles (Oppenheimer 5, John Wick 3, Stranger Things 10),
+while Inception's only upstream links are the dead hubdrive/hubcloud hosts, so Inception
+yields nothing usable. The endpoint labels each stream as coming from `HdHub` or
+`4KHDHub`; IndStream tags the rendered name with that actual source.
+
+## Source candidates tested but not added (2026-11-19, this machine)
+
+| Candidate | Endpoint | Result | Why not added |
+|---|---|---|---|
+| Arctic (PenguPlay) | `pengu.uk` (PenguPlay) | `/api/status` reports Arctic "up" (34–74 streams claimed for recent probes) | The streaming endpoint is server-side and requires a PenguPlay account token; the only public token found is revoked, and no direct Arctic domain or API has been identified. Not addable without an account token. |
+| VegaMovies | `vegamovies.fail` | HTTP 200, but its search page returns a generic page with zero matching links for every probe term (tested via both GET and POST) | Catalogue effectively unreachable without crawling; not usable as a provider. |
+| UHDMovies | `uhdmovies.co.in` | HTTP 200 and site search works | Catalogue is sparse; for example Inception is only available at 720p/480p, never 4K. Not enough content to justify a provider. |
+| MoviesDrive | `moviesdrive.*` | Every probed TLD fails to resolve or is a parked domain (`.buzz` is a parked page) | No usable site/domain found. |
 
 Probe titles used: Inception, John Wick, Stranger Things (normal); Your Name, Spirited Away,
 Attack on Titan (anime). Rule applied: 0 streams = down, ≥1 stream = up.

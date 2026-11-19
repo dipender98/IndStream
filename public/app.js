@@ -1,5 +1,5 @@
 const PROVIDERS = [
-  { id: 'hdhub', name: 'HdHub', mark: 'HH', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download', 'Very Fast'] },
+  { id: 'hdhub', name: 'HdHub4u', mark: 'H4', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download', 'Very Fast'] },
   { id: 'vidrift', name: 'Vidrift', mark: 'VR', tags: ['1080p', 'Stream', 'Very Fast'] },
   { id: 'bingr', name: 'Bingr', mark: 'BG', tags: ['1080p', 'Stream', 'Download', 'Fast'] },
   { id: 'moviebox', name: 'MovieBox', mark: 'MB', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download'] },
@@ -1279,8 +1279,8 @@ function renderStatus(data) {
   const list = document.getElementById('providerList');
   if (list) {
     list.innerHTML = (data.providers || []).map(function (p) {
-      const state = p.state === 'testing' ? 'testing' : (p.streams > 0 ? 'live' : 'down');
-      const meta = state === 'testing' ? 'Testing…' : (state === 'live' ? 'Up · ' + p.streams + ' streams' : 'Down · 0 streams');
+      const state = p.state === 'testing' ? 'testing' : (p.state === 'error' ? 'error' : (p.streams > 0 ? 'live' : 'down'));
+      const meta = state === 'testing' ? 'Testing…' : (state === 'live' ? 'Up · ' + p.streams + ' streams' : (state === 'error' ? 'Error · 0 streams' : 'Down · 0 streams'));
       return '<div class="provider-row" data-state="' + state + '">' +
         '<span class="provider-dot" aria-hidden="true"></span>' +
         '<span class="provider-name">' + escapeHtml(p.name) + '</span>' +

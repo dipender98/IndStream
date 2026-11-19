@@ -43,8 +43,9 @@ function normalizeStream(raw, provider, ctx) {
   const declaredHeight = Number(raw.height) || 0;
   const quality = raw.quality || util.qualityLabel(declaredHeight);
   const height = declaredHeight || util.parseHeight(quality);
+  const providerName = String((raw && raw.provider) || (provider && (provider.name || provider.id)) || '');
   const style = (ctx && ctx.settings && ctx.settings.streamStyle) || styles.DEFAULT_STYLE;
-  const rendered = styles.renderNameTitle(provider, raw, ctx, style);
+  const rendered = styles.renderNameTitle({ name: providerName, id: provider && provider.id }, raw, ctx, style);
   const stream = {
     title: rendered.title,
     name: rendered.name,
@@ -54,7 +55,7 @@ function normalizeStream(raw, provider, ctx) {
     height: height,
     size: raw.size || '',
     language: raw.language || '',
-    provider: provider.name || '',
+    provider: providerName,
     providerId: provider.id || '',
     headers: raw.headers || {},
   };

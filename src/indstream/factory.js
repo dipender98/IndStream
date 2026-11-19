@@ -16,9 +16,13 @@ function safeInt(value) {
 
 async function probeUnknownQuality(stream, ctx) {
   if (!ctx.settings.probeQuality) return stream;
-  if (finalize.streamHeight(stream)) return stream;
+  const needHeight = !finalize.streamHeight(stream);
+  const needLanguage = !String(stream.language || '').trim();
+  if (!needHeight && !needLanguage) return stream;
   const url = stream.url;
-  if (url.indexOf('.m3u8') < 0 && url.indexOf('.mpd') < 0) return stream;
+  if (stream.type !== 'hls' && stream.type !== 'dash' && url.indexOf('.m3u8') < 0 && url.indexOf('.mpd') < 0) {
+    return stream;
+  }
   const text = await http.getText(url, {
     timeoutMs: 4000,
     headers: stream.headers || {},
@@ -27,9 +31,12 @@ async function probeUnknownQuality(stream, ctx) {
   let result = { height: 0, languages: [] };
   if (url.indexOf('.mpd') >= 0) result = util.parseDashHeights(text);
   else if (text.indexOf('#EXTM3U') >= 0) result = util.parseHlsMaster(text);
-  if (result.height > 0) {
+  if (needHeight && result.height > 0) {
     stream.height = result.height;
     stream.quality = util.qualityLabel(result.height);
+  }
+  if (needLanguage && result.languages && result.languages.length) {
+    stream.language = result.languages.join(', ');
   }
   return stream;
 }

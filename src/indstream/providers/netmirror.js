@@ -42,12 +42,21 @@ module.exports = {
     const reqHeaders = { Referer: BASE + '/', 'User-Agent': http.DEFAULT_UA };
 
     const deadline = ctx.deadline || Date.now() + (ctx.timeoutMs || 10000);
-    const pair = await Promise.all([
-      net.getText(BASE + embedPath, { timeoutMs: 7000, headers: reqHeaders, deadline: deadline }),
-      net.getText(BASE + variantsPath, { timeoutMs: 5000, headers: reqHeaders, deadline: deadline }),
-    ]);
-    const rootText = pair[0];
-    const variantsText = pair[1];
+    // The upstream edge sometimes serves an intercept page to unlucky callers;
+    // retry a few times on fresh requests within the deadline.
+    let rootText = '';
+    let variantsText = '';
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const pair = await Promise.all([
+        net.getText(BASE + embedPath, { timeoutMs: 2500, headers: reqHeaders, deadline: deadline }),
+        net.getText(BASE + variantsPath, { timeoutMs: 2500, headers: reqHeaders, deadline: deadline }),
+      ]);
+      rootText = pair[0];
+      variantsText = pair[1];
+      if (parseJson(rootText)) break;
+      if (Date.now() >= deadline - 300) break;
+      await util.sleep(120 + Math.floor(Math.random() * 260));
+    }
 
     const out = [];
     const seen = {};

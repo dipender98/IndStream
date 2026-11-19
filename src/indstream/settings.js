@@ -58,8 +58,8 @@ const SETTINGS_LAYOUT = [
   {
     type: 'toggle',
     key: 'probeQuality',
-    label: 'Probe unknown quality',
-    description: 'Reads HLS/DASH manifests to detect the real height. Slower, but labels more streams.',
+    label: 'Probe streams',
+    description: 'Reads HLS/DASH manifests to detect the real height and audio tracks. Slower, but labels more streams.',
     defaultValue: false,
   },
   {
