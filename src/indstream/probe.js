@@ -18,6 +18,16 @@ function isLiveManifest(text, type) {
   return source.indexOf('#EXT-X-ENDLIST') < 0;
 }
 
+// A definitive answer from a byte-range probe; null means the host did not
+// answer clearly and the stream should be left alone.
+function rangeSeekable(response) {
+  if (!response) return null;
+  const range = (response.headers && response.headers.get && response.headers.get('content-range')) || '';
+  if (response.status === 206 && range) return true;
+  if (response.status === 200 && !range) return false;
+  return null;
+}
+
 function firstVariant(text, base) {
   const lines = String(text || '').split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
@@ -37,8 +47,20 @@ async function probeStream(stream, ctx) {
   const url = String((stream && stream.url) || '');
   const isDash = stream.type === 'dash' || url.indexOf('.mpd') >= 0;
   const isHls = stream.type === 'hls' || url.indexOf('.m3u8') >= 0;
-  const wantSeek = s.hideNonSeekable === true && stream.seekable !== false && (isDash || isHls);
+  const isMp4 = !isDash && !isHls && (stream.type === 'mp4' || /\.(mp4|mkv|mov|webm)(?:[?#]|$)/i.test(url));
+  const wantSeek = s.hideNonSeekable === true && stream.seekable !== false && (isDash || isHls || isMp4);
   if (!wantQuality && !wantSeek) return stream;
+
+  if (wantSeek && isMp4) {
+    const res = await http.request(url, {
+      timeoutMs: 3000,
+      maxBytes: 2048,
+      headers: Object.assign({}, stream.headers || {}, { Range: 'bytes=0-0' }),
+    });
+    const ok = rangeSeekable(res);
+    if (ok !== null) stream.seekable = ok;
+    return stream;
+  }
   if (!isDash && !isHls && url.indexOf('.m3u8') < 0 && url.indexOf('.mpd') < 0) return stream;
 
   let text = await http.getText(url, {
@@ -79,6 +101,7 @@ async function probeStream(stream, ctx) {
 
 module.exports = {
   isLiveManifest: isLiveManifest,
+  rangeSeekable: rangeSeekable,
   firstVariant: firstVariant,
   probeStream: probeStream,
 };

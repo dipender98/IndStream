@@ -224,6 +224,9 @@ test('isLiveManifest detects live and VOD playlists', function () {
   assert.strictEqual(streamProbe.isLiveManifest('#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:6\nseg.ts\n#EXT-X-ENDLIST', 'hls'), false);
   assert.strictEqual(streamProbe.isLiveManifest('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8', 'hls'), false);
   assert.strictEqual(streamProbe.firstVariant('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8', 'https://x/master.m3u8'), 'https://x/variant.m3u8');
+  assert.strictEqual(streamProbe.rangeSeekable({ status: 206, headers: { get: function () { return 'bytes 0-0/100'; } } }), true);
+  assert.strictEqual(streamProbe.rangeSeekable({ status: 200, headers: { get: function () { return ''; } } }), false);
+  assert.strictEqual(streamProbe.rangeSeekable({ status: 0, headers: null }), null);
   assert.strictEqual(streamProbe.isLiveManifest('<MPD type="dynamic"></MPD>', 'dash'), true);
   assert.strictEqual(streamProbe.isLiveManifest('<MPD type="static" mediaPresentationDuration="PT2H"></MPD>', 'dash'), false);
   assert.strictEqual(streamProbe.isLiveManifest('', 'hls'), false);
