@@ -23,12 +23,16 @@ const moviebox = require('../src/indstream/providers/moviebox');
 const hub4k = require('../src/indstream/providers/hub4k');
 const netmirror = require('../src/indstream/providers/netmirror');
 const atlantic = require('../src/indstream/providers/atlantic');
+const movies4u = require('../src/indstream/providers/movies4u');
+const vegamovies = require('../src/indstream/providers/vegamovies');
 const vidly = require('../src/indstream/providers/vidly');
 const vidbolt = require('../src/indstream/providers/vidbolt');
 const wecollege = require('../src/indstream/providers/wecollege');
 const movy = require('../src/indstream/providers/movy');
 const vidy = require('../src/indstream/providers/vidy');
 const vidlink = require('../src/indstream/providers/vidlink');
+const vidout = require('../src/indstream/providers/vidout');
+const multimovies = require('../src/indstream/providers/multimovies');
 const allanime = require('../src/indstream/providers/allanime');
 const hianime = require('../src/indstream/providers/hianime');
 const animeworld = require('../src/indstream/providers/animeworld');
@@ -154,6 +158,14 @@ test('qualityText/normalizeSizeToken', function () {
   assert.strictEqual(util.normalizeSizeToken('65.95 GB'), '65.95GB');
   assert.strictEqual(util.normalizeSizeToken('450MB'), '450MB');
 });
+test('parseSizeBytes reads declared sizes and leaves unknown empty', function () {
+  assert.strictEqual(util.parseSizeBytes('65.95 GB'), Math.round(65.95 * 1024 * 1024 * 1024));
+  assert.strictEqual(util.parseSizeBytes('650MB'), 650 * 1024 * 1024);
+  assert.strictEqual(util.parseSizeBytes('1.5GB'), Math.round(1.5 * 1024 * 1024 * 1024));
+  assert.strictEqual(util.parseSizeBytes(''), 0);
+  assert.strictEqual(util.parseSizeBytes('unknown'), 0);
+  assert.strictEqual(util.parseSizeBytes('2048'), 2048);
+});
 test('displayName prism-style naming', function () {
   assert.strictEqual(util.displayName('4KHDHub', 'Hindi, English', null, '65.95GB', ''), '4KHDHub (🇮🇳 Hindi, 🇬🇧 English) 65.95GB');
   assert.strictEqual(util.displayName('Bingr', 'Original', null, '', ''), 'Bingr (Original)');
@@ -208,6 +220,21 @@ test('hideNonSeekable drops only non-seekable streams', function () {
   assert.strictEqual(hidden.some(function (s) { return s.url === 'https://x/live.m3u8'; }), false);
   const shown = finalize.finalizeStreams(streams, { providers: FAKE_PROVIDERS });
   assert.strictEqual(shown.length, 3);
+});
+test('size limits keep unknown sizes and drop known outliers', function () {
+  const streams = [
+    fakeStream({ url: 'https://x/small', height: 1080, size: '500MB' }),
+    fakeStream({ url: 'https://x/medium', height: 1080, size: '4.5GB' }),
+    fakeStream({ url: 'https://x/large', height: 1080, size: '50GB' }),
+    fakeStream({ url: 'https://x/unknown', height: 1080, size: '' }),
+  ];
+  const min = finalize.finalizeStreams(streams, { minSize: '2', providers: FAKE_PROVIDERS });
+  assert.strictEqual(min.some(function (s) { return s.url === 'https://x/small'; }), false);
+  assert.strictEqual(min.some(function (s) { return s.url === 'https://x/unknown'; }), true);
+  const max = finalize.finalizeStreams(streams, { maxSize: '10', providers: FAKE_PROVIDERS });
+  assert.strictEqual(max.some(function (s) { return s.url === 'https://x/large'; }), false);
+  assert.strictEqual(max.some(function (s) { return s.url === 'https://x/unknown'; }), true);
+  assert.strictEqual(finalize.finalizeStreams(streams, { providers: FAKE_PROVIDERS }).length, 4);
 });
 test('normalizeStream marks declared live streams as non-seekable', function () {
   const stream = finalize.normalizeStream(
@@ -446,7 +473,16 @@ test('defaults', function () {
   assert.strictEqual(s.includeDash, true);
   assert.strictEqual(s.probeQuality, false);
   assert.strictEqual(s.hideNonSeekable, false);
+  assert.strictEqual(s.minSize, '0');
+  assert.strictEqual(s.maxSize, '0');
   assert.strictEqual(s.requestTimeout, 10);
+});
+test('size limits are normalized to whole GB choices', function () {
+  globalThis.SCRAPER_SETTINGS = JSON.stringify({ minSize: '2', maxSize: '0.5' });
+  const s = settings.getSettings();
+  assert.strictEqual(s.minSize, '2');
+  assert.strictEqual(s.maxSize, '0');
+  globalThis.SCRAPER_SETTINGS = undefined;
 });
 test('hideNonSeekable setting is normalized', function () {
   globalThis.SCRAPER_SETTINGS = JSON.stringify({ hideNonSeekable: 'true' });
@@ -842,6 +878,113 @@ test('subtitlesOf maps mbox and q62 subtitle shapes', function () {
   assert.strictEqual(atlantic._test.subtitlesOf({ subtitles: [{ url: 'not-http' }] }, 'mbox').length, 0);
 });
 
+section('movies4u');
+test('m4uSearchHits parses json hits and builds urls', function () {
+  const json = JSON.stringify({ ok: true, found: 2, hits: [
+    { id: '7639', post_title: 'Jawan (2023) WEB-DL Multi Audio Full Movie', permalink: '/jawan-2023-web-dl-multi-audio-full-movie/' },
+    { id: '1', post_title: 'Jawan Purana (2024) Full Movie', permalink: '/jawan-purana-2024/' },
+  ] });
+  const out = movies4u._test.m4uSearchHits(json);
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].url, 'https://new8.movies4u.garden/jawan-2023-web-dl-multi-audio-full-movie/');
+  assert.ok(out[0].title.indexOf('Multi Audio') >= 0);
+  assert.strictEqual(out[1].url, 'https://new8.movies4u.garden/jawan-purana-2024/');
+});
+test('m4uSearchHits ignores garbage', function () {
+  assert.strictEqual(movies4u._test.m4uSearchHits('<html>no json</html>').length, 0);
+  assert.strictEqual(movies4u._test.m4uSearchHits('{"ok":false}').length, 0);
+  assert.strictEqual(movies4u._test.m4uSearchHits('{"ok":true,"hits":"nope"}').length, 0);
+});
+test('m4uGroups pairs heading with buttons under downloads-btns-div', function () {
+  const html =
+    '<h4>1080p HQ [6.1GB] </h4>' +
+    '<div class="downloads-btns-div">' +
+    '<a href="https://hubcloud.mov/drive/6ce1cjickkw61jg" class="btn">Hub-Cloud [DD]</a>' +
+    '<a href="https://example.com/not-a-gateway" class="btn">Mirror</a>' +
+    '</div>' +
+    '<h4>2160p 4K [20.2GB] </h4>' +
+    '<div class="downloads-btns-div">' +
+    '<a href="https://hubcloud.mov/drive/xx62qg49zdqxzly" class="btn">Hub-Cloud [DD]</a>' +
+    '</div>' +
+    '<h4>Unrelated heading</h4>' +
+    '<p>no buttons here</p>';
+  const groups = movies4u._test.m4uGroups(html);
+  assert.strictEqual(groups.length, 2);
+  assert.strictEqual(groups[0].heading, '1080p HQ [6.1GB]');
+  assert.strictEqual(groups[0].links.length, 2);
+  assert.strictEqual(groups[1].heading, '2160p 4K [20.2GB]');
+  assert.deepStrictEqual(groups[1].links, ['https://hubcloud.mov/drive/xx62qg49zdqxzly']);
+});
+test('m4uGroups rejects non-btn anchors inside the box', function () {
+  const html =
+    '<h5>720p [1.3GB]</h5>' +
+    '<div class="downloads-btns-div">' +
+    '<a href="https://hubcloud.mov/drive/deivgftidxq5fx2" class="primary">Not btn class</a>' +
+    '<a href="https://hubcloud.mov/drive/xx62qg49zdqxzly">plain anchor</a>' +
+    '</div>';
+  assert.strictEqual(movies4u._test.m4uGroups(html).length, 0);
+});
+test('m4uEpisodeOf parses episode numbers', function () {
+  assert.strictEqual(movies4u._test.m4uEpisodeOf('-:Episodes: 1:-'), 1);
+  assert.strictEqual(movies4u._test.m4uEpisodeOf('-:Episodes: 12:-'), 12);
+  assert.strictEqual(movies4u._test.m4uEpisodeOf('Episode 4'), 4);
+  assert.strictEqual(movies4u._test.m4uEpisodeOf('S02E03 1080p'), 3);
+  assert.strictEqual(movies4u._test.m4uEpisodeOf('EP 07'), 7);
+  assert.strictEqual(movies4u._test.m4uEpisodeOf('Batch / Zip'), null);
+});
+test('groupAudioLabel prefers multi marker and richer post audio', function () {
+  assert.strictEqual(movies4u._test.groupAudioLabel('2160p 4K [Multi Audio]', 'Hindi, Tamil, Telugu'), 'Hindi, Tamil, Telugu');
+  assert.strictEqual(movies4u._test.groupAudioLabel('Jawan [Hindi + Tamil + Telugu] 2160p', 'Multi Audio'), 'Hindi, Tamil, Telugu');
+  assert.strictEqual(movies4u._test.groupAudioLabel('2160p 4K [Tamil]', 'Hindi'), 'Tamil');
+});
+test('postYearMatches movie strict and tv tolerant', function () {
+  assert.strictEqual(movies4u._test.postYearMatches('2023', '2023', 'movie'), true);
+  assert.strictEqual(movies4u._test.postYearMatches('2023', '2025', 'movie'), false);
+  assert.strictEqual(movies4u._test.postYearMatches('2024', '2026', 'tv'), true);
+  assert.strictEqual(movies4u._test.postYearMatches('2019', '2026', 'tv'), true);
+  assert.strictEqual(movies4u._test.postYearMatches('2019', '2015', 'tv'), false);
+  assert.strictEqual(movies4u._test.postYearMatches('', '2026', 'tv'), true);
+});
+test('matchGroup prefers exact size token then height', function () {
+  const groups = [
+    { heading: '1080p [6.1GB]', links: ['https://hubcloud.mov/drive/a'] },
+    { heading: '1080p [2.6GB]', links: ['https://hubcloud.mov/drive/b'] },
+    { heading: '2160p 4K [20.2GB]', links: ['https://hubcloud.mov/drive/c'] },
+  ];
+  assert.strictEqual(movies4u._test.matchGroup(groups, { heading: '1080p HQ [6.1GB]' }, '6.1GB', 1080).links[0], 'https://hubcloud.mov/drive/a');
+  assert.strictEqual(movies4u._test.matchGroup(groups, { heading: '1080p [2.6GB]' }, '2.6GB', 1080).links[0], 'https://hubcloud.mov/drive/b');
+  assert.strictEqual(movies4u._test.matchGroup(groups, { heading: '2160p 4K [20.2GB]' }, '20.2GB', 2160).links[0], 'https://hubcloud.mov/drive/c');
+});
+
+section('vegamovies');
+test('parseSearchHits parses typesense hits', function () {
+  const json = { found: 2, hits: [
+    { document: { post_title: 'Download Spider-Man: Across the Spider-Verse (2023) BluRay Dual Audio 2160p 4K', permalink: '/download-spider-man-across-the-spider-verse-2023/', imdb_id: 'tt9362722', category: ['2160p 4K', 'Dual Audio'] } },
+    { document: { post_title: 'Spider-Man Into the Spider-Verse', permalink: '/spider-man-into-the-spider-verse/', imdb_id: 'tt4633694', category: ['1080p'] } },
+  ] };
+  const out = vegamovies._test.parseSearchHits(json, 'https://vega.example');
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].url, 'https://vega.example/download-spider-man-across-the-spider-verse-2023/');
+  assert.ok(out[0].title.indexOf('Spider-Man') >= 0);
+});
+test('parseSearchHits rejects malformed json', function () {
+  assert.strictEqual(vegamovies._test.parseSearchHits(null, 'https://vega.example').length, 0);
+  assert.strictEqual(vegamovies._test.parseSearchHits('not json', 'https://vega.example').length, 0);
+  assert.strictEqual(vegamovies._test.parseSearchHits({ hits: [] }, 'https://vega.example').length, 0);
+});
+test('extractDownloadGroups pairs heading with dwd-button', function () {
+  const html =
+    '<h5>Spider-Man (2023) BluRay 1080p [3GB] Hindi ORG</h5>' +
+    '<p><a href="https://nexdrive.beer/genxfm1111111/" target="_blank"><button class="dwd-button">Download Now</button></a></p>' +
+    '<h5>Spider-Man (2023) BluRay 2160p 4K [20GB]</h5>' +
+    '<p><a href="https://nexdrive.beer/genxfm2222222/" target="_blank"><button class="dwd-button">Download Now</button></a></p>';
+  const groups = vegamovies._test.extractDownloadGroups(html);
+  assert.strictEqual(groups.length, 2);
+  assert.ok(groups[0].heading.indexOf('1080p') >= 0);
+  assert.strictEqual(groups[0].embeds.length, 1);
+  assert.strictEqual(groups[1].heading.indexOf('2160p') >= 0, true);
+});
+
 section('vidly');
 test('vidlyStreamUrls extracts distinct m3u8 urls and unescapes entities', function () {
   const html = '<script>self.__DATA__={"u":"https:\\/\\/gzip.rousav.tech\\/tv\\/ee3c2a52662960708707\\/index.m3u8?sig=a\\u0026x=1"}</script>' +
@@ -940,6 +1083,64 @@ test('toStreams maps qualities and captions without faking audio', function () {
 test('toStreams returns empty for missing stream data', function () {
   assert.deepStrictEqual(vidlink._test.toStreams(null), []);
   assert.deepStrictEqual(vidlink._test.toStreams({ stream: { qualities: {} } }), []);
+});
+
+section('multimovies');
+test('searchCards parses cards with type, title and year', function () {
+  const html = '<article class="poster-card"><a class="poster-art" href="/movie/inception-8559" aria-label="Inception">x</a>' +
+    '<div class="poster-caption"><a href="/movie/inception-8559">Inception</a></div>' +
+    '<p class="poster-meta">2010 <span>·</span> Movie</p></article>' +
+    '<article class="poster-card"><a class="poster-art" href="/series/stranger-things-20795" aria-label="Stranger Things">x</a>' +
+    '<p class="poster-meta">2016 <span>·</span> Series</p></article>' +
+    '<article class="poster-card"><a class="poster-art" href="/other/nope" aria-label="Nope">x</a><p>2026</p></article>';
+  const cards = multimovies._test.searchCards(html);
+  assert.strictEqual(cards.length, 2);
+  assert.deepStrictEqual(cards.map(function (c) { return c.slug; }), ['inception-8559', 'stranger-things-20795']);
+  assert.strictEqual(cards[0].type, 'movie');
+  assert.strictEqual(cards[0].year, '2010');
+  assert.strictEqual(cards[1].type, 'tv');
+});
+test('downloadPackages keeps only HubCloud mirrors with quality and size', function () {
+  const html = '<div class="dl-package-card"><div class="dl-package-quality"><svg></svg><span>1080p FHD</span></div>' +
+    '<span class="dl-size-badge">0.95 GB</span>' +
+    '<a href="https://hubcloud.ist/drive/abc123" class="dl-mirror-btn">HubCloud (Direct)</a>' +
+    '<a href="https://gofile.io/d/xyz" class="dl-mirror-btn">GoFile</a></div>' +
+    '<div class="dl-package-card"><div class="dl-package-quality"><svg></svg><span>HD WEB-DL [Hindi + English]</span></div>' +
+    '<a href="https://megaup.net/direct/file.mkv" class="dl-mirror-btn">MegaUp</a></div>';
+  const packages = multimovies._test.downloadPackages(html);
+  assert.strictEqual(packages.length, 1);
+  assert.strictEqual(packages[0].quality, '1080p FHD');
+  assert.strictEqual(packages[0].size, '0.95GB');
+  assert.deepStrictEqual(packages[0].hubUrls, ['https://hubcloud.ist/drive/abc123']);
+});
+
+section('vidout');
+test('firstHttpLine picks the first url and rejects junk', function () {
+  assert.strictEqual(
+    vidout._test.firstHttpLine('\nhttps://cdn.example.com/master.txt\n'),
+    'https://cdn.example.com/master.txt'
+  );
+  assert.strictEqual(vidout._test.firstHttpLine('nothing here'), '');
+  assert.strictEqual(vidout._test.firstHttpLine(''), '');
+});
+test('pickTvUrl maps episodes and treats blanks as missing', function () {
+  assert.strictEqual(
+    vidout._test.pickTvUrl({ '1': 'https://cdn.example.com/e1.txt', '3': '' }, 1),
+    'https://cdn.example.com/e1.txt'
+  );
+  assert.strictEqual(vidout._test.pickTvUrl({ '1': 'https://cdn.example.com/e1.txt', '3': '' }, 3), '');
+  assert.strictEqual(vidout._test.pickTvUrl(null, 1), '');
+});
+test('parseHlsMaster reads heights and audio languages', function () {
+  const master = '#EXTM3U\n' +
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="Hindi",LANGUAGE="hi",DEFAULT=YES,URI="a1.txt"\n' +
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio0",NAME="English",LANGUAGE="en",DEFAULT=NO,URI="a2.txt"\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=852x480,AUDIO="audio0"\nv1.txt\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1920x1080,AUDIO="audio0"\nv2.txt\n';
+  const parsed = util.parseHlsMaster(master);
+  assert.strictEqual(parsed.height, 1080);
+  assert.deepStrictEqual(parsed.languages, ['Hindi', 'English']);
+  assert.strictEqual(util.parseHlsMaster('not a playlist').height, 0);
 });
 
 section('allanime');
@@ -1146,10 +1347,19 @@ test('hubFileButtons filters non-btn and archive links', function () {
     '<a class="btn btn-success" href="https://drive.workers.dev/1">Download File [10 GB]</a>' +
     '<a class="btn" href="https://r2.dev/2.zip">ZIP</a>' +
     '<a class="plain" href="https://drive.workers.dev/3">No btn</a>' +
-    '<a class="btn" href="https://pixel.hubcloud.ist/?id=1">Pixel</a>';
+    '<a class="btn" href="https://pixel.hubcloud.ist/?id=1">Pixel</a>' +
+    '<a class="btn" href="https://gpdl.hubcloud.mov/?id=dead">gpdl</a>';
   const buttons = filehost._test.hubFileButtons(markup);
   assert.strictEqual(buttons.length, 1);
   assert.strictEqual(buttons[0].url, 'https://drive.workers.dev/1');
+});
+test('hubFileButtons prefers var pxl over the static pxl-1 href', function () {
+  const markup =
+    '<a href="https://pixeldrain.dev/u/decoy123" id="pxl-1" class="btn btn-success">Download [PixelServer : 2]</a>' +
+    '<script>var pxl = "https://pixeldrain.dev/u/REAL4567"; document.getElementById("pxl-1").href = pxl;</script>';
+  const buttons = filehost._test.hubFileButtons(markup);
+  assert.strictEqual(buttons.length, 1);
+  assert.strictEqual(buttons[0].url, 'https://pixeldrain.dev/api/file/REAL4567');
 });
 
 section('tmdb ids');
@@ -1217,7 +1427,7 @@ test('registry contract', function () {
   const ids = {};
   assert.deepStrictEqual(
     providers.PROVIDERS.map(function (provider) { return provider.id; }),
-    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'allanime', 'hianime', 'animeworld']
+    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'movies4u', 'vegamovies', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'vidout', 'multimovies', 'allanime', 'hianime', 'animeworld']
   );
   providers.PROVIDERS.forEach(function (provider) {
     assert.ok(provider.id, 'missing id');

@@ -4,10 +4,16 @@ const styles = require('./styles');
 
 const QUALITY_KEYS = ['2160', '1440', '1080', '720', 'auto', 'unknown'];
 const DEFAULT_QUALITY_ORDER = QUALITY_KEYS.slice();
+const SIZE_OPTIONS = ['0', '1', '2', '5', '10', '20', '50', '100', '200'];
+const SIZE_SELECT_OPTIONS = SIZE_OPTIONS.map(function (value) {
+  return { label: value === '0' ? 'Off' : value + ' GB', value: value };
+});
 
 const CORE_DEFAULTS = {
   resultLimit: '40',
   requestTimeout: '10',
+  minSize: '0',
+  maxSize: '0',
   probeQuality: false,
   hideNonSeekable: false,
   includeDash: true,
@@ -55,6 +61,22 @@ const SETTINGS_LAYOUT = [
       { label: '15 seconds', value: '15' },
       { label: '25 seconds', value: '25' },
     ],
+  },
+  {
+    type: 'select',
+    key: 'minSize',
+    label: 'Minimum size (GB)',
+    description: 'Hide streams below this size. Streams with unknown size are always shown.',
+    defaultValue: '0',
+    options: SIZE_SELECT_OPTIONS,
+  },
+  {
+    type: 'select',
+    key: 'maxSize',
+    label: 'Maximum size (GB)',
+    description: 'Hide streams above this size. Streams with unknown size are always shown.',
+    defaultValue: '0',
+    options: SIZE_SELECT_OPTIONS,
   },
   {
     type: 'toggle',
@@ -181,6 +203,8 @@ function getSettings() {
     qualityOff: quality.qualityOff,
     resultLimit: Number(pick(merged.resultLimit, ['0', '20', '40', '80'], DEFAULTS.resultLimit)),
     requestTimeout: Number(pick(merged.requestTimeout, ['5', '10', '15', '25'], DEFAULTS.requestTimeout)),
+    minSize: pick(merged.minSize, SIZE_OPTIONS, DEFAULTS.minSize),
+    maxSize: pick(merged.maxSize, SIZE_OPTIONS, DEFAULTS.maxSize),
     probeQuality: normalizeBool(merged.probeQuality, DEFAULTS.probeQuality),
     hideNonSeekable: normalizeBool(merged.hideNonSeekable, DEFAULTS.hideNonSeekable),
     includeDash: normalizeBool(merged.includeDash, DEFAULTS.includeDash),
@@ -198,6 +222,7 @@ function onSettings() {
 module.exports = {
   DEFAULTS: DEFAULTS,
   QUALITY_KEYS: QUALITY_KEYS,
+  SIZE_OPTIONS: SIZE_OPTIONS,
   DEFAULT_QUALITY_ORDER: DEFAULT_QUALITY_ORDER,
   SETTINGS_LAYOUT: SETTINGS_LAYOUT,
   getSettings: getSettings,

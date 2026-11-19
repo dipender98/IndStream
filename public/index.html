@@ -223,12 +223,16 @@
         <p class="panel-sub">Select 5–6 sources for a good balance of coverage and speed.</p>
       </div>
       <div class="panel-actions">
-        <button class="text-btn" id="sourcesAll" type="button">Select all</button>
-        <button class="text-btn" id="sourcesNone" type="button">Reset</button>
+        <button class="text-btn" id="sourcesAll" type="button">All</button>
+        <button class="text-btn" id="sourcesNone" type="button">Recommended</button>
       </div>
     </div>
-    <div class="rank-head"><span>Source order</span><small>Toggle to allow or hide a source · drag or use the arrows to set priority</small></div>
+    <div class="rank-head"><span>Movie &amp; Series Provider</span><small>Toggle to allow or hide a source · drag or use the arrows to set priority</small></div>
     <ol class="rank-list" id="sourceList" role="list" aria-labelledby="sourcesHeading"></ol>
+    <div class="rank-gap">
+      <div class="rank-head"><span id="animeHeading">Anime providers</span><small>Anime-specialized catalog and picks — different from the general list</small></div>
+    </div>
+    <ol class="rank-list" id="animeSourceList" role="list" aria-labelledby="animeHeading"></ol>
   </section>
 
   <!-- FILTERING -->
@@ -254,6 +258,35 @@
       <div class="rank-head"><span>Quality preference</span><small>Tap the toggle to allow or hide a quality — drag or use the arrows to reorder what wins</small></div>
       <ol class="rank-list" id="qualityRank" role="list" aria-labelledby="qualityLabel"></ol>
       <p class="card-hint">Known below 720p is always hidden. Auto covers other detected heights; Unknown means no height detected. At least one quality stays on.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head" id="sizeLimitsLabel">Size limits</div>
+      <label class="field-label" for="minSize">Minimum size</label>
+      <select class="select" id="minSize" aria-labelledby="sizeLimitsLabel">
+        <option value="0" selected>Off</option>
+        <option value="1">1 GB</option>
+        <option value="2">2 GB</option>
+        <option value="5">5 GB</option>
+        <option value="10">10 GB</option>
+        <option value="20">20 GB</option>
+        <option value="50">50 GB</option>
+        <option value="100">100 GB</option>
+        <option value="200">200 GB</option>
+      </select>
+      <label class="field-label" for="maxSize">Maximum size</label>
+      <select class="select" id="maxSize" aria-labelledby="sizeLimitsLabel">
+        <option value="0" selected>Off</option>
+        <option value="1">1 GB</option>
+        <option value="2">2 GB</option>
+        <option value="5">5 GB</option>
+        <option value="10">10 GB</option>
+        <option value="20">20 GB</option>
+        <option value="50">50 GB</option>
+        <option value="100">100 GB</option>
+        <option value="200">200 GB</option>
+      </select>
+      <p class="card-hint">Whole GB values. Streams with no declared size are always shown.</p>
     </div>
 
     <label class="switch card"><input type="checkbox" id="probeQuality"><span class="switch-track"></span><span class="switch-copy"><b>Probe streams</b><small>Read stream manifests to detect missing quality and audio tracks. Slower, but labels more streams.</small></span></label>

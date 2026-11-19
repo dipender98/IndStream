@@ -24,6 +24,8 @@ Use logic and judgment on every task. If two rules conflict, correctness wins.
 - Never emit a stream below 720p; filter out any stream whose height is known to be less than 720. Streams below 720p are not allowed in the server list.
 - Stream/link display names show at most 3 audio language names (title's original language first, then Hindi, then English, then any); when more than 3 audio languages are detected, render `Multi` instead of listing them. Keep this rule for all future providers and name-formatting changes.
 - When a stream's audio language cannot be determined with certainty, keep `Unknown` rather than guessing; resolve it from declared evidence only (manifest audio tracks, file/button labels, release title), never from the title's original language alone.
+- A source belongs in the Recommended set (the default install selection) only with fresh live-probe evidence of speed and reliability across diverse titles — use the addon's twice-daily check or probe locally with the same titles as evidence. Multi-language support is a bonus. Promote with measured results (streams emitted, avg ms), re-check before and after changing the set, and drop or replace any Recommended source that goes down.
+- Source classes beyond general movies/series (anime now, later live TV, sports, …) belong in their own clearly separated category, kept on by default, not mixed into the general list. A category that fails live probes must not stay on by default even if popular.
 
 ## 4. Verification
 

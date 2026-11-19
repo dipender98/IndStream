@@ -21,11 +21,15 @@ const moviebox = require('./src/indstream/providers/moviebox');
 const hub4k = require('./src/indstream/providers/hub4k');
 const netmirror = require('./src/indstream/providers/netmirror');
 const atlantic = require('./src/indstream/providers/atlantic');
+const movies4u = require('./src/indstream/providers/movies4u');
+const vegamovies = require('./src/indstream/providers/vegamovies');
 const vidly = require('./src/indstream/providers/vidly');
 const vidbolt = require('./src/indstream/providers/vidbolt');
 const movy = require('./src/indstream/providers/movy');
 const vidy = require('./src/indstream/providers/vidy');
 const vidlink = require('./src/indstream/providers/vidlink');
+const vidout = require('./src/indstream/providers/vidout');
+const multimovies = require('./src/indstream/providers/multimovies');
 const allanime = require('./src/indstream/providers/allanime');
 const hianime = require('./src/indstream/providers/hianime');
 const animeworld = require('./src/indstream/providers/animeworld');
@@ -36,7 +40,7 @@ const userStoreModule = require('./src/indstream/userStore');
 // identical request, so keep only a short in-flight dedupe here rather than a long TTL.
 const streamCache = streamCacheModule.createTtlCache({ ttlMs: 2000, maxEntries: 400 });
 
-const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vidly, vidbolt, movy, vidy, vidlink, allanime, hianime, animeworld];
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, movies4u, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, allanime, hianime, animeworld];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -53,13 +57,15 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
 const LOGIN_ENABLED = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && SESSION_SECRET);
 
 const DEFAULT_CFG = {
-  p: ALL_PROVIDERS.map(function (p) { return p.id; }),
+  p: ['hdhub', 'vidrift', 'netmirror', 'movy', 'vidy', 'atlantic', 'movies4u', 'vegamovies', 'allanime', 'hianime', 'animeworld'],
   langs: [],
   langStrict: false,
   streamStyle: styles.DEFAULT_STYLE,
   minQuality: '720',
   resultLimit: '40',
   requestTimeout: '10',
+  minSize: '0',
+  maxSize: '0',
   includeDash: true,
   probeQuality: false,
   hideNonSeekable: false,
@@ -255,6 +261,8 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProvid
     return finalize.finalizeStreams([stream], {
       includeDash: s.includeDash,
       hideNonSeekable: s.hideNonSeekable,
+      minSize: s.minSize,
+      maxSize: s.maxSize,
     }).length ? stream : null;
   };
   let raw = await racer.race(wanted, context, normalize);
@@ -271,6 +279,8 @@ async function resolveStreams(mediaId, mediaType, season, episode, cfg, onProvid
     langStrict: prefs.langStrict,
     includeDash: s.includeDash,
     hideNonSeekable: s.hideNonSeekable,
+    minSize: s.minSize,
+    maxSize: s.maxSize,
     resultLimit: 0,
     providers: wanted,
   });
@@ -510,6 +520,11 @@ function sanitizeConfigFromApi(raw) {
     if (key === 'requestTimeout') {
       const t = String(v);
       if (['5', '10', '15', '25'].indexOf(t) >= 0) out.requestTimeout = t;
+      return;
+    }
+    if (key === 'minSize' || key === 'maxSize') {
+      const t = String(v);
+      if (settings.SIZE_OPTIONS.indexOf(t) >= 0) out[key] = t;
       return;
     }
   });

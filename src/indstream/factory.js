@@ -88,6 +88,8 @@ function createPlugin(provider) {
       qualityOrder: s.qualityOrder,
       includeDash: s.includeDash,
       hideNonSeekable: s.hideNonSeekable,
+      minSize: s.minSize,
+      maxSize: s.maxSize,
       resultLimit: s.resultLimit,
       providers: providerList,
     });

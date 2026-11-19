@@ -6,11 +6,15 @@ const PROVIDERS = [
   { id: 'hub4k', name: '4KHDHub', mark: '4K', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Download'] },
   { id: 'netmirror', name: 'NetMirror', mark: 'NM', tags: ['Multi-Audio', 'Stream', 'Download', 'Fast'] },
   { id: 'atlantic', name: 'Atlantic', mark: 'AT', tags: ['1080p', 'Multi-Audio', 'Stream', 'Very Fast'] },
+  { id: 'movies4u', name: 'Movies4u', mark: 'M4', tags: ['4K', 'Multi-Audio', 'Download', 'Slow'] },
+  { id: 'vegamovies', name: 'Vegamovies', mark: 'VG', tags: ['4K', 'Multi-Audio', 'Download', 'Slow'] },
   { id: 'vidly', name: 'Vidly', mark: 'VL', tags: ['1080p', 'Stream', 'Fast'] },
   { id: 'vidbolt', name: 'VidBolt', mark: 'VB', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
   { id: 'movy', name: 'Movy', mark: 'MV', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
   { id: 'vidy', name: 'Vidy', mark: 'VD', tags: ['4K', '1080p', 'Multi-Audio', 'Stream', 'Fast'] },
   { id: 'vidlink', name: 'VidLink', mark: 'VK', tags: ['1080p', 'Stream', 'Very Fast'] },
+  { id: 'vidout', name: 'VidOut', mark: 'VO', tags: ['1080p', 'Multi-Audio', 'Stream', 'Fast'] },
+  { id: 'multimovies', name: 'MultiMovies', mark: 'MM', tags: ['1080p', 'Multi-Audio', 'Download', 'Slow'] },
   { id: 'allanime', name: 'AllAnime', mark: 'AA', tags: ['1080p', 'Anime', 'Stream', 'Fast'] },
   { id: 'hianime', name: 'Hianime', mark: 'HI', tags: ['1080p', 'Anime', 'Stream', 'Fast'] },
   { id: 'animeworld', name: 'AnimeWorld', mark: 'AW', tags: ['1080p', 'Anime', 'Multi-Audio', 'Stream'] },
@@ -47,6 +51,7 @@ const LANGS = ['Multi', 'Original'].concat(
 );
 
 const QUALITY_KEYS = ['2160', '1440', '1080', '720', 'auto', 'unknown'];
+const RECOMMENDED_IDS = ['hdhub', 'vidrift', 'netmirror', 'movy', 'vidy', 'atlantic', 'movies4u', 'vegamovies', 'allanime', 'hianime', 'animeworld'];
 const QUALITIES = [
   { id: '2160', name: '4K/2160p', mark: '4K', meta: '2160p and above' },
   { id: '1440', name: '2K/1440p', mark: '2K', meta: '1440p' },
@@ -89,9 +94,10 @@ function resolveQuality(raw) {
   return { qualityOrder: order, qualityOff: off };
 }
 
+const RECOMMENDED_ORDER = RECOMMENDED_IDS.concat(PROVIDERS.map(function (p) { return p.id; }).filter(function (id) { return RECOMMENDED_IDS.indexOf(id) < 0; }));
 const DEFAULT_CFG = {
-  p: PROVIDERS.map(function (p) { return p.id; }),
-  sourceOrder: PROVIDERS.map(function (p) { return p.id; }),
+  p: RECOMMENDED_IDS.slice(),
+  sourceOrder: RECOMMENDED_ORDER.slice(),
   langs: ['Original', 'Hindi', 'English', 'Multi'],
   langStrict: false,
   streamStyle: 'indstream',
@@ -99,6 +105,8 @@ const DEFAULT_CFG = {
   qualityOff: [],
   resultLimit: '40',
   requestTimeout: '10',
+  minSize: '0',
+  maxSize: '0',
   includeDash: true,
   probeQuality: false,
   hideNonSeekable: false,
@@ -217,6 +225,9 @@ function sanitizeCfg(raw) {
   delete merged.minQuality;
   merged.resultLimit = ['0', '20', '40', '80'].indexOf(String(merged.resultLimit)) >= 0 ? String(merged.resultLimit) : DEFAULT_CFG.resultLimit;
   merged.requestTimeout = ['5', '10', '15', '25'].indexOf(String(merged.requestTimeout)) >= 0 ? String(merged.requestTimeout) : DEFAULT_CFG.requestTimeout;
+  const sizeOptions = ['0', '1', '2', '5', '10', '20', '50', '100', '200'];
+  merged.minSize = sizeOptions.indexOf(String(merged.minSize)) >= 0 ? String(merged.minSize) : DEFAULT_CFG.minSize;
+  merged.maxSize = sizeOptions.indexOf(String(merged.maxSize)) >= 0 ? String(merged.maxSize) : DEFAULT_CFG.maxSize;
   merged.includeDash = !!merged.includeDash;
   merged.probeQuality = !!merged.probeQuality;
   merged.hideNonSeekable = !!merged.hideNonSeekable;
@@ -303,7 +314,7 @@ function currentCfg() {
   const prev = loadCfg();
   const prevL = prev.langs;
   const langs = Array.from(document.querySelectorAll('#langs .chip-btn.active')).map(function (el) { return el.dataset.lang; });
-  const sourceRows = Array.from(document.querySelectorAll('#sourceList .source-item'));
+  const sourceRows = Array.from(document.querySelectorAll('#sourceList .source-item, #animeSourceList .source-item'));
   const sourceOrder = sourceRows.length ? sourceRows.map(function (el) { return el.dataset.key; }) : prev.sourceOrder.slice();
   const p = sourceRows.length
     ? sourceRows.filter(function (el) { return !el.classList.contains('off'); }).map(function (el) { return el.dataset.key; })
@@ -324,6 +335,8 @@ function currentCfg() {
     qualityOff: qualityOff,
     resultLimit: document.getElementById('resultLimitSeg').querySelector('.active').dataset.value,
     requestTimeout: document.getElementById('timeoutSeg').querySelector('.active').dataset.value,
+    minSize: document.getElementById('minSize').value,
+    maxSize: document.getElementById('maxSize').value,
     includeDash: document.getElementById('includeDash').checked,
     probeQuality: document.getElementById('probeQuality').checked,
     hideNonSeekable: document.getElementById('hideNonSeekable').checked,
@@ -348,6 +361,8 @@ function applyCfg(cfg) {
   });
   setSeg('#resultLimitSeg', cfg.resultLimit);
   setSeg('#timeoutSeg', cfg.requestTimeout);
+  document.getElementById('minSize').value = cfg.minSize;
+  document.getElementById('maxSize').value = cfg.maxSize;
   document.getElementById('langStrict').checked = !!cfg.langStrict;
   document.getElementById('includeDash').checked = !!cfg.includeDash;
   document.getElementById('probeQuality').checked = !!cfg.probeQuality;
@@ -1204,11 +1219,11 @@ function setupActions() {
   });
   document.getElementById('sourcesNone').addEventListener('click', function () {
     const cfg = loadCfg();
-    cfg.p = DEFAULT_CFG.p.slice();
-    cfg.sourceOrder = DEFAULT_CFG.sourceOrder.slice();
+    cfg.p = RECOMMENDED_IDS.slice();
+    cfg.sourceOrder = RECOMMENDED_ORDER.slice();
     saveCfg(cfg);
     applyCfg(loadCfg());
-    toast('Source selection reset to recommended');
+    toast('Recommended fast, reliable sources (' + RECOMMENDED_IDS.length + ') selected');
   });
   document.getElementById('newProfileBtn').addEventListener('click', function () { createProfile(loadCfg()); });
   document.getElementById('importProfileBtn').addEventListener('click', function () {
@@ -1248,7 +1263,7 @@ function setupSegmented() {
       updateAll();
     });
   });
-  ['includeDash', 'probeQuality', 'hideNonSeekable', 'debug', 'langStrict'].forEach(function (id) {
+  ['includeDash', 'probeQuality', 'hideNonSeekable', 'debug', 'langStrict', 'minSize', 'maxSize'].forEach(function (id) {
     document.getElementById(id).addEventListener('change', function () { updateAll(); });
   });
   document.getElementById('streamStyle').addEventListener('change', function () { updateAll(); });
@@ -1763,44 +1778,87 @@ function dropLanguageItem(draggedKey, targetKey) {
   applyCfg(loadCfg());
 }
 
+function providerOf(key) {
+  return PROVIDERS.find(function (item) { return item.id === key; }) || null;
+}
+
+function isAnimeSource(provider) {
+  return !!(provider && Array.isArray(provider.tags) && provider.tags.some(function (tag) { return /anime/i.test(String(tag)); }));
+}
+
+function renderSourceRow(cfg, key) {
+  var pr = providerOf(key);
+  if (!pr) return null;
+  var off = cfg.p.indexOf(key) < 0;
+  var li = document.createElement('li');
+  li.className = 'rank-item source-item' + (off ? ' off' : '');
+  li.setAttribute('role', 'listitem');
+  li.draggable = true;
+  li.dataset.key = key;
+  li.innerHTML =
+    rowToggle(key, pr.name, off, true) +
+    '<span class="rank-mark" aria-hidden="true">' + escapeHtml(pr.mark) + '</span>' +
+    '<span class="rank-copy"><b>' + escapeHtml(pr.name) + '</b><small>' + escapeHtml(displayTags(pr.tags).join(' · ')) + '</small></span>' +
+    rowActions(pr.name);
+  return li;
+}
+
 function renderSourceList(cfgArg) {
-  var list = document.getElementById('sourceList');
-  if (!list) return;
+  var normal = document.getElementById('sourceList');
+  var animeList = document.getElementById('animeSourceList');
+  if (!normal && !animeList) return;
   var cfg = cfgArg || loadCfg();
-  list.innerHTML = '';
-  cfg.sourceOrder.forEach(function (key) {
-    var pr = PROVIDERS.find(function (item) { return item.id === key; });
-    if (!pr) return;
-    var off = cfg.p.indexOf(key) < 0;
-    var li = document.createElement('li');
-    li.className = 'rank-item source-item' + (off ? ' off' : '');
-    li.setAttribute('role', 'listitem');
-    li.draggable = true;
-    li.dataset.key = key;
-    li.innerHTML =
-      rowToggle(key, pr.name, off, true) +
-      '<span class="rank-mark" aria-hidden="true">' + escapeHtml(pr.mark) + '</span>' +
-      '<span class="rank-copy"><b>' + escapeHtml(pr.name) + '</b><small>' + escapeHtml(displayTags(pr.tags).join(' · ')) + '</small></span>' +
-      rowActions(pr.name);
-    list.appendChild(li);
+  var normalIds = cfg.sourceOrder.filter(function (key) { return !isAnimeSource(providerOf(key)); });
+  var animeIds = cfg.sourceOrder.filter(function (key) { return isAnimeSource(providerOf(key)); });
+  if (normal) normal.innerHTML = '';
+  if (animeList) animeList.innerHTML = '';
+  normalIds.forEach(function (key) {
+    var li = renderSourceRow(cfg, key);
+    if (li) normal.appendChild(li);
   });
-  syncEdgeButtons(list);
+  animeIds.forEach(function (key) {
+    var li = renderSourceRow(cfg, key);
+    if (li) animeList.appendChild(li);
+  });
+  if (normal) syncEdgeButtons(normal);
+  if (animeList) syncEdgeButtons(animeList);
+}
+
+function groupIdsOf(sourceOrder, anime) {
+  return sourceOrder.filter(function (key) {
+    return isAnimeSource(providerOf(key)) === anime;
+  });
+}
+
+function reorderGroup(sourceOrder, groupIds, nextGroupIds) {
+  var out = [];
+  var i = 0;
+  sourceOrder.forEach(function (id) {
+    if (groupIds.indexOf(id) >= 0) { out.push(nextGroupIds[i]); i += 1; }
+    else out.push(id);
+  });
+  return out;
 }
 
 function moveSourceItem(key, delta) {
   var cfg = loadCfg();
-  var next = moveInArray(cfg.sourceOrder, key, delta);
+  var anime = isAnimeSource(providerOf(key));
+  var group = groupIdsOf(cfg.sourceOrder, anime);
+  var next = moveInArray(group, key, delta);
   if (!next) return;
-  cfg.sourceOrder = next;
+  cfg.sourceOrder = reorderGroup(cfg.sourceOrder, group, next);
   saveCfg(cfg);
   applyCfg(loadCfg());
 }
 
 function dropSourceItem(draggedKey, targetKey) {
   var cfg = loadCfg();
-  var next = dropInArray(cfg.sourceOrder, draggedKey, targetKey);
+  var anime = isAnimeSource(providerOf(draggedKey));
+  if (isAnimeSource(providerOf(targetKey)) !== anime) return;
+  var group = groupIdsOf(cfg.sourceOrder, anime);
+  var next = dropInArray(group, draggedKey, targetKey);
   if (!next) return;
-  cfg.sourceOrder = next;
+  cfg.sourceOrder = reorderGroup(cfg.sourceOrder, group, next);
   saveCfg(cfg);
   applyCfg(loadCfg());
 }
@@ -1828,6 +1886,7 @@ function renderPreferenceLists(cfg) {
 
 setupPreferenceList('langRank', { move: moveLanguageItem, drop: dropLanguageItem });
 setupPreferenceList('sourceList', { toggle: toggleSourceItem, move: moveSourceItem, drop: dropSourceItem });
+setupPreferenceList('animeSourceList', { toggle: toggleSourceItem, move: moveSourceItem, drop: dropSourceItem });
 
 /* ---------- Quality preference list ---------- */
 function renderQualityList(cfgArg) {

@@ -24,6 +24,63 @@ while Inception's only upstream links are the dead hubdrive/hubcloud hosts, so I
 yields nothing usable. The endpoint labels each stream as coming from `HdHub` or
 `4KHDHub`; IndStream tags the rendered name with that actual source.
 
+`vegamovies.latino` (the Vegamovies 3 host Vegamovies redirects via
+`new1.vegamovies.lease`/`new2.vegamovies.futbol`, all of which redirect to latino now) is
+**live and works** (local probes 2026-11-19). `/ts-search.php?q=...` returns a Typesense
+JSON doc with `found`/`hits[].document` (post_title, permalink, imdb_id, category). Searching
+needs the exact library spelling (e.g. `bahubali` worked, `The Odyssey` worked). Post pages
+pull in a `h5` → `download` pairs; gateways are `nexdrive.beer/genxfm…`; resolution chain is
+nexdrive → `fastdl.beer/embed?download=…` or `vcloud.my/<id>` → `r2.cloudflarestorage.com`
+or `.r2.dev` direct files (e.g. Spider-Man Across the Spider-Verse 2160p 20 GB TMDb 9362722;
+The Odyssey 2160p 5.9-8.5 GB TMDb 1368337; The Animal 720p TMDb 10681). 4K direct files are
+playable from this machine (HTTP 206 ranges verified). The Vegamovies provider uses those
+chains; `new1.vegamovies.lease`/`new2.vegamovies.futbol` keep redirecting to the live host
+(the resolver follows redirects automatically and probes seeds for the healthy one each pass).
+
+`movies4u` (`new8.movies4u.garden`, lookup API + h4/`downloads-btns-div` HTML structure,
+same family the Indflix plugin uses) is **live and works** (local probes 2026-11-19):
+the gateway chain resolves to real direct files, e.g. The Odyssey yields playable
+4K MKV (21.7 GB class, HTTP 206) and 1080p/720p files via pixeldrain.
+Notes recorded while adding it as the `movies4u` provider:
+- hubcloud token pages show a **decoy** `<a id="pxl-1" href="...decoy...">` button (a
+  shared 404 dead link, identical on every page); the real file URL is assigned from
+  a `var pxl = "..."` in the same page. IndStream's `hubFileButtons` now prefers the
+  `var pxl` value — the decoy is never emitted.
+- `gpdl.hubcloud.mov` resolve points (HTTP 500) and the shared `pixel.hubcloud.mov`
+  button are still dead; `hubFileButtons` drops gpdl/hubcloud links.
+- `dl.netflix-india.workers.dev` returned HTTP 403 from this machine (2026-11-19 probe).
+
+`moviebox` (`h5-api.aoneroom.com`, provider API) is **alive and emitting streams**
+(Inception 1080p 2.25 GB, John Wick S3 720p/1080p/4K 9.07 GB, Stranger Things S1E1
+Hindi+Original, The Odyssey 720p — live probes 2026-11-19 ~15:20). BUT the same CDN
+that hosts every moviebox link it hands out (`*.hakunaymatata.com`, nginx) returned
+**HTTP 429 for every file URL tried from this machine** (bcdnw, bcdnxw; `resource/`,
+`tran-audio/`, `vegamovies/` paths; 429 with no Retry-After and no rate-limit headers,
+content-length 587, ~15:45 IST-class check 2026-11-19). This means the multi-language,
+multi-quality catalogue is real, but users on this network (this machine and the
+user's browser) get unplaysable, rate-limited links right now. Whether this is a
+per-IP throttle shared across this ISP's egress or a daily quota, neither can be
+worked around by the addon: the stored stream URLs are pre-signed by moviebox itself,
+and the addon has no alternative mirrors to swap in. moviebox is kept in the source
+list but deliberately NOT Recommended (the recommended set is probe-verified end to
+end and moviebox streams do not play from here).
+
+| multimovies | `multimovies.wtf/` | 2026-11-19 evidence (second pass): it is an ad/landing page whose links go to the "main" site `m1.multimovies.courses`. That domain initially failed DNS (ISP-level block, like netmirror's court-order intercept), but with working resolution it is **live**: homepage/search/`/movie/<slug>`/`/download/<slug>` all return 200 from this machine, and the HubCloud mirror chain resolves to real direct files (e.g. The Odyssey: 1080p "making-of" doc at pixeldrain `api/file/`, HTTP 206). TV pages render "No download mirrors found" for most episodes | Added as `multimovies` (opt-in, not Recommended — ISP-DNS-sensitive, spotty mirror coverage, Indian/anime catalogue). Watch player servers are browser-iframe embeds and are not emitted. |
+| multinime | `multinime.site/` | HTTP 200, anime-only site ("Watch Anime Online Free") | Alive but not probed as a provider; would need its own probe cycle before any use. |
+
+`vidout` (TMDB-keyed HLS catalogue backed by a GitHub repo, surfaced through a
+pages.dev frontend) is **live** with `Referer: https://vidout.pages.dev/` (local
+probes 2026-11-19, ~15 lookups + playlist fetches): fresh entries (latest 2026-11-19
+scrape) and several older ones return HTTP 200 `application/vnd.apple.mpegurl`;
+media playlists and segments (206 `video/MP2T`) also verified (e.g. The Odyssey
+TMDB 1368337, 480/720/1080, Hindi default + English). Without that Referer every
+CDN returns 403/404, and `cf-master.*.txt` links are dead from this machine (TLS
+reset). `#`-fragment links are embed pages, never direct streams; the provider
+only emits a line whose fetched body starts with `#EXTM3U`. No 2160p variant was
+observed in any probed playlist (max 1080p; heights come from the manifest, never
+guessed). It is added as `vidout` — opt-in, **not Recommended** (multi-audio
+Hindi-default catalogue; Indian/anime-title heavy).
+
 ## Source candidates tested but not added (2026-11-19, this machine)
 
 | Candidate | Endpoint | Result | Why not added |

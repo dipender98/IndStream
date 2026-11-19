@@ -144,6 +144,12 @@ function finalizeStreams(streams, options) {
     ? opts.languageOrder.filter(function (lang) { return typeof lang === 'string' && lang.trim(); })
     : [];
   const strictLanguages = opts.langStrict === true && langs.length > 0;
+  const gb = function (value) {
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 1024 * 1024 * 1024) : 0;
+  };
+  const minBytes = gb(opts.minSize);
+  const maxBytes = gb(opts.maxSize);
 
   const filtered = (streams || []).filter(function (stream) {
     if (!stream || !stream.url) return false;
@@ -151,6 +157,13 @@ function finalizeStreams(streams, options) {
     if (util.isJunkStreamUrl(stream.url)) return false;
     if (!includeDash && stream.type === 'dash') return false;
     if (opts.hideNonSeekable && stream.seekable === false) return false;
+    if (minBytes || maxBytes) {
+      const bytes = util.parseSizeBytes(stream.size);
+      if (bytes > 0) {
+        if (minBytes && bytes < minBytes) return false;
+        if (maxBytes && bytes > maxBytes) return false;
+      }
+    }
     if (util.isKnownBelowFloor(streamHeight(stream), FLOOR)) return false;
     if (strictLanguages) {
       const label = String(stream.language || '').trim();

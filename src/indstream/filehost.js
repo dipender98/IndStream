@@ -19,6 +19,8 @@ const GOOGLE_VIDEO_RE = /(https?:\/\/video-downloads\.googleusercontent\.com\/[^
 const PIXELDRAIN_SHORT_RE = /pixeldrain\.[a-z]+\/u\/([a-zA-Z0-9]+)/;
 const ARCHIVE_URL_RE = /\.(?:zip|rar|7z|tar|gz)(?:[?#]|$)/i;
 const BTN_CLASS_RE = /\bbtn\b/;
+const PXL_VAR_RE = /var\s+pxl\s*=\s*"([^"]+)"/;
+const GPDL_DEAD_RE = /gpdl\..*hubcloud\.|hubcloud\..*gpdl\./i;
 
 function isArchiveUrl(url) {
   return ARCHIVE_URL_RE.test(String(url || ''));
@@ -72,14 +74,17 @@ function jsRedirectTarget(pageHtml) {
 
 function hubFileButtons(pageHtml) {
   const headQ = util.parseHeight((html.firstTag(pageHtml, 'div', 'card-header') || {}).inner || '');
+  const pxl = (String(pageHtml || '').match(PXL_VAR_RE) || [])[1] || '';
   const out = [];
   const seen = {};
   html.anchors(pageHtml).forEach(function (a) {
     if (!BTN_CLASS_RE.test(a.attrs.class || '')) return;
     let url = a.href;
+    if (pxl && a.attrs && a.attrs.id === 'pxl-1') url = pxl;
     if (url.indexOf('http') !== 0) return;
     if (isArchiveUrl(url)) return;
     if (/facebook\.|twitter\.|t\.me|\/tg\/|pixel\.|\/admin/.test(url)) return;
+    if (GPDL_DEAD_RE.test(url)) return;
     const pixel = url.match(PIXELDRAIN_SHORT_RE);
     if (pixel) url = url.replace('/u/' + pixel[1], '/api/file/' + pixel[1]);
     if (seen[url]) return;

@@ -6,6 +6,7 @@ const util = require('../util');
 const tmdb = require('../tmdb');
 
 const BASE = 'https://stream.hls.lol';
+const CONTENT_BASE = 'https://cdn.hls.lol';
 const REFERER = 'https://atlantic.st/';
 const FALLBACK_KEY_HEX = '55060a042823f51a94c296894a58a0db15f3baef807155140983083fa799ef47';
 const HLS_PROVIDERS = ['vidbox', 'q62', 'moscow'];
@@ -46,12 +47,25 @@ module.exports = {
     let subtitles = [];
 
     const jsonTargets = HLS_PROVIDERS.concat(['mbox']);
-    const allJsons = await Promise.all(jsonTargets.map(function (provider) {
+    const movieOnly = type === 'movie';
+    if (movieOnly) jsonTargets.push('play4u');
+    const contentTarget = movieOnly ? CONTENT_BASE + '/content/movie/' + id : null;
+    const allFetches = jsonTargets.map(function (provider) {
       if (Date.now() >= deadline - 200) return Promise.resolve(null);
       return net.getJson(BASE + '/' + provider + query, { timeoutMs: 6000, headers: headers }).catch(function () { return null; });
-    }));
+    });
+    if (contentTarget) {
+      allFetches.push(
+        Date.now() < deadline - 200
+          ? net.getJson(contentTarget, { timeoutMs: 6000, headers: headers }).catch(function () { return null; })
+          : Promise.resolve(null)
+      );
+    }
+    const allJsons = await Promise.all(allFetches);
     const hlsJsons = allJsons.slice(0, HLS_PROVIDERS.length);
-    const mboxJson = allJsons[allJsons.length - 1];
+    const mboxJson = allJsons[HLS_PROVIDERS.length];
+    const play4uJson = allJsons[HLS_PROVIDERS.length + 1] || null;
+    const contentJson = contentTarget ? (allJsons[HLS_PROVIDERS.length + 2] || null) : null;
 
     for (let i = 0; i < HLS_PROVIDERS.length; i += 1) {
       const provider = HLS_PROVIDERS[i];
@@ -61,13 +75,12 @@ module.exports = {
       if (!pick) continue;
       let masterLang = '';
       let height = pick.height || 0;
-      if (Date.now() < deadline - 400) {
-        const masterText = await net.getText(pick.url, { timeoutMs: 5000, headers: headers });
-        const parsed = masterText ? util.parseHlsMaster(masterText) : null;
-        if (parsed) {
-          if (parsed.height > height) height = parsed.height;
-          if (parsed.languages && parsed.languages.length) masterLang = parsed.languages.join(', ');
-        }
+      const probed = Date.now() < deadline - 400
+        ? await probeMaster(net, pick.url, headers)
+        : null;
+      if (probed) {
+        if (probed.height > height) height = probed.height;
+        if (probed.language) masterLang = probed.language;
       }
       const stream = {
         provider: module.exports.name,
@@ -84,6 +97,48 @@ module.exports = {
       out.push(stream);
       subtitles = subtitles.concat(subtitlesOf(json, provider));
       break;
+    }
+
+    const extras = [];
+    if (play4uJson && play4uJson.url) {
+      extras.push({ url: String(play4uJson.url).trim(), qualities: play4uJson.qualities });
+    }
+    if (contentJson && contentJson.url) {
+      extras.push({ url: String(contentJson.url).trim(), qualities: null });
+    }
+    for (let i = 0; i < extras.length && out.length < 6; i += 1) {
+      const extra = extras[i];
+      if (extra.url.indexOf('http') !== 0) continue;
+      const key = extra.url.split('?')[0];
+      if (seen[key]) continue;
+      let height = 0;
+      let language = '';
+      if (extra.qualities) {
+        (extra.qualities || []).forEach(function (q) {
+          const h = util.parseHeight(String(q));
+          if (h > height) height = h;
+        });
+      }
+      if (Date.now() < deadline - 400) {
+        const probed = await probeMaster(net, extra.url, headers);
+        if (probed) {
+          if (probed.height > height) height = probed.height;
+          if (probed.language) language = probed.language;
+        }
+      }
+      const stream = {
+        provider: module.exports.name,
+        url: extra.url,
+        type: 'hls',
+        quality: util.qualityLabel(height),
+        height: height,
+        language: language,
+        size: '',
+        title: '',
+        headers: { Referer: REFERER, 'User-Agent': http.DEFAULT_UA },
+      };
+      seen[key] = stream;
+      out.push(stream);
     }
 
     if (mboxJson) {
@@ -108,6 +163,21 @@ module.exports = {
     return out;
   },
 };
+
+async function probeMaster(net, url, headers) {
+  try {
+    const text = await net.getText(url, { timeoutMs: 5000, headers: headers });
+    if (!text) return null;
+    const parsed = util.parseHlsMaster(text);
+    if (!parsed) return null;
+    return {
+      height: parsed.height || 0,
+      language: parsed.languages && parsed.languages.length ? parsed.languages.join(', ') : '',
+    };
+  } catch (error) {
+    return null;
+  }
+}
 
 function bestHlsSource(json) {
   if (!json || typeof json !== 'object') return null;

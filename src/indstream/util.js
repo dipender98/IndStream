@@ -384,6 +384,22 @@ function normalizeSizeToken(value) {
   return match ? match[0].replace(/\s+/g, '').toUpperCase() : '';
 }
 
+function parseSizeBytes(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return 0;
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
+    const plain = Number(text);
+    return plain >= 1024 ? Math.round(plain) : 0;
+  }
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(GB|MB|KB|B)\b/i);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const unit = match[2].toUpperCase();
+  const factor = unit === 'GB' ? 1024 * 1024 * 1024 : unit === 'MB' ? 1024 * 1024 : unit === 'KB' ? 1024 : 1;
+  return Math.round(amount * factor);
+}
+
 function episodeMatches(text, season, episode) {
   const source = String(text == null ? '' : text);
   const ep = '0?' + episode;
@@ -539,6 +555,7 @@ module.exports = {
   rot13: rot13,
   qualityText: qualityText,
   normalizeSizeToken: normalizeSizeToken,
+  parseSizeBytes: parseSizeBytes,
   episodeMatches: episodeMatches,
   seasonPackMatches: seasonPackMatches,
   episodeOrSeason: episodeOrSeason,
