@@ -29,6 +29,8 @@ const vidy = require('./src/indstream/providers/vidy');
 const vidlink = require('./src/indstream/providers/vidlink');
 const vidout = require('./src/indstream/providers/vidout');
 const multimovies = require('./src/indstream/providers/multimovies');
+const moviesdrive = require('./src/indstream/providers/moviesdrive');
+const hindmoviez = require('./src/indstream/providers/hindmoviez');
 const allanime = require('./src/indstream/providers/allanime');
 const hianime = require('./src/indstream/providers/hianime');
 const animeworld = require('./src/indstream/providers/animeworld');
@@ -39,7 +41,7 @@ const userStoreModule = require('./src/indstream/userStore');
 // identical request, so keep only a short in-flight dedupe here rather than a long TTL.
 const streamCache = streamCacheModule.createTtlCache({ ttlMs: 2000, maxEntries: 400 });
 
-const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, allanime, hianime, animeworld];
+const ALL_PROVIDERS = [hdhub, vidrift, bingr, moviebox, hub4k, netmirror, atlantic, vegamovies, vidly, vidbolt, movy, vidy, vidlink, vidout, multimovies, moviesdrive, hindmoviez, allanime, hianime, animeworld];
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';

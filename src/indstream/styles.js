@@ -67,10 +67,31 @@ function parseSpecs(text) {
   return specs;
 }
 
+// The release text a provider forwards is the first choice; when it is missing or
+// thin, the file name carried in the stream URL often holds the same codec/source/
+// audio tokens, so fall back to it so spec parsing works for every provider.
 function specTextOf(raw) {
-  return [raw && raw.releaseText, raw && raw.title, raw && raw.quality]
-    .filter(Boolean)
-    .join(' ');
+  const parts = [raw && raw.releaseText, raw && raw.title, raw && raw.quality];
+  const urlName = releaseNameFromUrl(raw && raw.url);
+  if (urlName) parts.push(urlName);
+  return parts.filter(Boolean).join(' ');
+}
+
+// Last path segment of a media URL, decoded and lightly cleaned. Only the file
+// name is used (never the host), so host words cannot be mistaken for specs.
+function releaseNameFromUrl(url) {
+  const text = String(url == null ? '' : url).trim();
+  if (!text) return '';
+  const path = text.split('#')[0].split('?')[0];
+  const segment = path.slice(path.lastIndexOf('/') + 1);
+  if (!segment || segment === path) return '';
+  let name;
+  try {
+    name = decodeURIComponent(segment);
+  } catch (error) {
+    name = segment;
+  }
+  return name.replace(/[_%+]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function resolutionOf(raw) {
@@ -501,6 +522,8 @@ module.exports = {
   previewSamples: previewSamples,
   _test: {
     parseSpecs: parseSpecs,
+    specTextOf: specTextOf,
+    releaseNameFromUrl: releaseNameFromUrl,
     resolutionOf: resolutionOf,
   },
 };

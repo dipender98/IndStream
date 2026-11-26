@@ -77,6 +77,26 @@ function titleScore(query, candidate, year, candidateYear) {
   return Math.min(1, score);
 }
 
+// Extra words after the query title are only accepted when they are release
+// metadata; a different subtitle or sequel means the hit is another title.
+const TITLE_META_RE = /^(?:(?:19|20)\d{2}|season\s*\d+(?:\s*[-–]\s*\d+)?|s\d{1,2}(?:e\d{1,3})?|e\d{1,3}|4k|2160p|1440p|1080p|720p|480p|dual|multi|hindi|english|tamil|telugu|malayalam|kannada|bangla|bengali|urdu|web(?:-?dl|-?rip)?|bluray|blu-ray|bdrip|brrip|hdrip|dvdrip|hdtv|cam|esub(?:s)?|hevc|x264|x265|h264|h265|aac|ddp?|51|71|10bit|nf|amzn|dsnp|hmax|full|movie|series|complete|\[|\()/i;
+
+function titleFits(query, candidate, year) {
+  const q = compactTitle(query);
+  const c = compactTitle(candidate);
+  if (!q || !c) return false;
+  const candidateYear = yearFromText(candidate);
+  const rest = c.indexOf(q) === 0 ? c.slice(q.length) : '';
+  if (year && candidateYear && Number(year) !== candidateYear) {
+    if (!/^(?:season|s\d{1,2})/i.test(rest)) return false;
+  }
+  if (c === q) return true;
+  if (c.indexOf(q) !== 0) return false;
+  if (!rest) return true;
+  if (/^(?:chapter|part|vol(?:ume)?)\s*\d/i.test(rest)) return false;
+  return TITLE_META_RE.test(rest);
+}
+
 function parseHeight(text) {
   const value = String(text == null ? '' : text);
   if (!value) return 0;
@@ -175,6 +195,14 @@ function decodeEntities(value) {
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&nbsp;/gi, ' ')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&mdash;/gi, '—')
+    .replace(/&hellip;/gi, '…')
+    .replace(/&lsquo;|&rsquo;/gi, "'")
+    .replace(/&ldquo;/gi, '“')
+    .replace(/&rdquo;/gi, '”')
+    .replace(/&middot;/gi, '·')
+    .replace(/&bull;/gi, '•')
     .replace(/&#(\d+);/g, function (_, n) { return String.fromCharCode(Number(n)); })
     .replace(/&#x([0-9a-f]+);/gi, function (_, n) { return String.fromCharCode(parseInt(n, 16)); });
 }
@@ -535,6 +563,7 @@ module.exports = {
   titleYearOf: titleYearOf,
   yearFromText: yearFromText,
   titleScore: titleScore,
+  titleFits: titleFits,
   parseHeight: parseHeight,
   qualityLabel: qualityLabel,
   isKnownBelowFloor: isKnownBelowFloor,

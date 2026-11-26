@@ -32,6 +32,8 @@ const vidy = require('../src/indstream/providers/vidy');
 const vidlink = require('../src/indstream/providers/vidlink');
 const vidout = require('../src/indstream/providers/vidout');
 const multimovies = require('../src/indstream/providers/multimovies');
+const moviesdrive = require('../src/indstream/providers/moviesdrive');
+const hindmoviez = require('../src/indstream/providers/hindmoviez');
 const allanime = require('../src/indstream/providers/allanime');
 const hianime = require('../src/indstream/providers/hianime');
 const animeworld = require('../src/indstream/providers/animeworld');
@@ -113,6 +115,21 @@ test('titleScore', function () {
   assert.ok(util.titleScore('Inception', 'Inception (2010)', '2010', '2010') >= 0.9);
   assert.ok(util.titleScore('Inception', 'Inception 2010 Hindi Dual Audio', '2010', '2010') >= 0.8);
   assert.ok(util.titleScore('Inception', 'Titanic', '2010', '1997') < 0.4);
+});
+test('titleFits accepts release metadata and rejects other titles', function () {
+  assert.strictEqual(util.titleFits('Inception', 'Inception', '2010'), true);
+  assert.strictEqual(util.titleFits('Inception', 'Inception (2010) BluRay 1080p', '2010'), true);
+  assert.strictEqual(util.titleFits('Inception', 'Inception 2010 Hindi Dual Audio', '2010'), true);
+  assert.strictEqual(util.titleFits('Inception', 'Titanic (1997)', '2010'), false);
+  assert.strictEqual(util.titleFits('Inception', 'Inception 2015', '2010'), false);
+  assert.strictEqual(util.titleFits('John Wick', 'John Wick: Chapter 4', '2014'), false);
+  assert.strictEqual(util.titleFits('Stranger Things', "Stranger Things: Tales from '85 (2026) Season 1 – 2", '2016'), false);
+  assert.strictEqual(util.titleFits('Stranger Things', 'Stranger Things (Season 1) 2016', '2016'), true);
+  assert.strictEqual(util.titleFits('Stranger Things', 'Stranger Things Season 1-5', '2016'), true);
+});
+test('decodeEntities handles named punctuation', function () {
+  assert.strictEqual(util.decodeEntities('Hindi &ndash; English &amp; Tamil'), 'Hindi – English & Tamil');
+  assert.strictEqual(util.decodeEntities('Tales from &lsquo;85&rsquo;'), "Tales from '85'");
 });
 test('dedupeStreams strips query and keeps the best duplicate', function () {
   const streams = [
@@ -1035,6 +1052,134 @@ test('downloadPackages keeps only HubCloud mirrors with quality and size', funct
   assert.deepStrictEqual(packages[0].hubUrls, ['https://hubcloud.ist/drive/abc123']);
 });
 
+section('moviesdrive');
+test('searchCards parses poster cards and decodes titles', function () {
+  const markup =
+    '<a href="https://new5.moviesdrive.cyou/inception-2010/" data-wpel-link="internal">' +
+    '<div class="poster-card"><div class="poster-inner"><div class="poster-image">' +
+    '<img src="x.jpg" alt="Inception"><span class="poster-quality">4K</span></div>' +
+    '<div class="poster-info"><p class="poster-title">Inception (2010) BluRay [Hindi (ORG 5.1) &#038; English] 4K 1080p</p></div>' +
+    '</div></div></a>';
+  const cards = moviesdrive._test.searchCards(markup);
+  assert.strictEqual(cards.length, 1);
+  assert.strictEqual(cards[0].url, 'https://new5.moviesdrive.cyou/inception-2010/');
+  assert.strictEqual(cards[0].year, '2010');
+  assert.ok(cards[0].title.indexOf('Hindi (ORG 5.1) & English') >= 0);
+});
+test('rankCards matches the requested season and rejects spin-offs', function () {
+  const cards = [
+    { url: 'https://x/tales/', title: "Stranger Things: Tales from '85 (2026) Season 1 – 2", year: '2026' },
+    { url: 'https://x/s5/', title: 'Stranger Things (Season 5) Dual Audio', year: '' },
+    { url: 'https://x/s1/', title: 'Stranger Things (Season 1) 2016 Dual Audio', year: '2016' },
+  ];
+  const ranked = moviesdrive._test.rankCards(cards, 'Stranger Things', '2016', 'tv', 1);
+  assert.deepStrictEqual(ranked.map(function (c) { return c.url; }), ['https://x/s1/']);
+  const multi = cards.concat([{ url: 'https://x/all/', title: 'Stranger Things Season 1-5 Dual Audio', year: '' }]);
+  const rankedMulti = moviesdrive._test.rankCards(multi, 'Stranger Things', '2016', 'tv', 3);
+  assert.deepStrictEqual(rankedMulti.map(function (c) { return c.url; }), ['https://x/all/']);
+});
+test('postGroups keeps archive links and decodes labels', function () {
+  const markup =
+    '<h5>Stranger Things (Season 1) [Hindi &ndash; English] 720p x264 [420MB/E]</h5>' +
+    '<h5><a href="https://mdrive.lol/archive/10383/">720p Single Episode</a></h5>' +
+    '<h5><a href="https://mdrive.lol/archive/10388/">ZIp [3.3GB]</a></h5>' +
+    '<h5>Stranger Things (Season 1) [Hindi – English] 1080p x264 [930MB/E]</h5>' +
+    '<h5><a href="https://mdrive.lol/archive/10377/">1080p Single Episode</a></h5>';
+  const groups = moviesdrive._test.postGroups(markup);
+  assert.strictEqual(groups.length, 2);
+  assert.strictEqual(groups[0].heading, 'Stranger Things (Season 1) [Hindi – English] 720p x264 [420MB/E]');
+  assert.strictEqual(groups[0].archive, 'https://mdrive.lol/archive/10383/');
+  assert.strictEqual(groups[0].label, '720p Single Episode');
+  assert.strictEqual(groups[1].archive, 'https://mdrive.lol/archive/10377/');
+});
+test('archiveItems groups nested HubCloud links by episode', function () {
+  const markup =
+    '<h5><span>Ep01</span>– 720p [410MB]</h5>' +
+    '<h5><a href="https://hubcloud.mov/drive/uue1dl92thtdzdz">HubCloud</a></h5>' +
+    '<h5><a href="https://hubcloud.mov/video/tgt9yttbtgb1hfb">HubCloud</a></h5>' +
+    '<h5><span>Ep02</span>– 720p [450MB]</h5>' +
+    '<h5><a href="https://hubcloud.mov/drive/kr6s8rs0zqrfbrz">HubCloud</a></h5>';
+  const ep1 = moviesdrive._test.archiveItems(markup, 'tv', 1, 1);
+  assert.strictEqual(ep1.length, 1);
+  assert.strictEqual(ep1[0].height, 720);
+  assert.strictEqual(ep1[0].links.length, 2);
+  const ep2 = moviesdrive._test.archiveItems(markup, 'tv', 1, 2);
+  assert.strictEqual(ep2.length, 1);
+  assert.strictEqual(ep2[0].links.length, 1);
+  assert.strictEqual(moviesdrive._test.archiveItems(markup, 'tv', 1, 3).length, 0);
+});
+
+section('hindmoviez');
+test('searchCards reads entry-title links', function () {
+  const markup =
+    '<article><h2 class="entry-title"><a class="entry-title-link" rel="bookmark" ' +
+    'href="https://v5.hindmovie.im/inception-2010-dual-audio-hindi-english-480p-720p-1080p/">' +
+    'Inception 2010 Dual Audio Hindi-English 480p 720p 1080p</a></h2></article>';
+  const posts = hindmoviez._test.searchCards(markup);
+  assert.strictEqual(posts.length, 1);
+  assert.strictEqual(posts[0].year, '2010');
+  assert.ok(posts[0].url.indexOf('inception-2010') >= 0);
+});
+test('rankPosts prefers the main series over a spin-off', function () {
+  const posts = [
+    { url: 'https://x/tales/', title: "Stranger Things: Tales from '85 (2026) Season 1 – 2", year: '2026' },
+    { url: 'https://x/main/', title: 'Stranger Things Season 1-5 Dual Audio Hindi-English', year: '' },
+  ];
+  const ranked = hindmoviez._test.rankPosts(posts, 'Stranger Things', '2016', 'tv', 1);
+  assert.deepStrictEqual(ranked.map(function (p) { return p.url; }), ['https://x/main/']);
+});
+test('postGroups keeps quality headings with index links', function () {
+  const markup =
+    '<h3>Inception 2010 Hindi-English 720p [1.2GB]</h3>' +
+    '<p><a href="https://mvlink.blog/892">Download Links</a></p>' +
+    '<h3>Inception 2010 Hindi-English 1080p [3.2GB]</h3>' +
+    '<p><a href="https://mvlink.blog/1287">Download Links</a></p>';
+  const groups = hindmoviez._test.postGroups(markup);
+  assert.strictEqual(groups.length, 2);
+  assert.strictEqual(groups[0].heading, 'Inception 2010 Hindi-English 720p [1.2GB]');
+  assert.strictEqual(groups[0].indexUrl, 'https://mvlink.blog/892');
+  assert.strictEqual(groups[1].indexUrl, 'https://mvlink.blog/1287');
+});
+test('indexFiles keeps the requested episode above the floor', function () {
+  const markup =
+    '<a href="https://hshare.lol/?id=Stranger.Things.S01E01.480p.Hindi.Eng.mkv">Episode 01</a>' +
+    '<a href="https://hshare.lol/?id=Stranger.Things.S01E01.720p.Hindi.Eng.mkv">Episode 01</a>' +
+    '<a href="https://hshare.lol/?id=Stranger.Things.S01E02.720p.Hindi.Eng.mkv">Episode 02</a>' +
+    '<a href="https://hshare.lol/?id=Stranger.Things.S01.720p.Hindi.Eng.zip">Batch Episode</a>';
+  const files = hindmoviez._test.indexFiles(markup, 'tv', 1, 1);
+  assert.strictEqual(files.length, 1);
+  assert.ok(files[0].file.indexOf('S01E01.720p') >= 0);
+  assert.strictEqual(hindmoviez._test.indexFiles(markup, 'tv', 1, 2).length, 1);
+  assert.strictEqual(hindmoviez._test.indexFiles(markup, 'tv', 1, 3).length, 0);
+});
+test('indexFiles accepts HindShare clone hosts from index pages', function () {
+  const markup =
+    '<a href="https://boldb.site/?id=3.Idiots.2009.BluRay.720p.Hindi.AAC.5.1.x264.ESub.mkv">Get Links</a>' +
+    '<a href="https://boldb.site/?id=3.Idiots.2009.BluRay.1080p.Hindi.DD.5.1.x264.ESub.mkv">Get Links</a>';
+  const files = hindmoviez._test.indexFiles(markup, 'movie', 0, 0);
+  assert.strictEqual(files.length, 2);
+  assert.strictEqual(files[0].height, 1080);
+  assert.strictEqual(files[1].height, 720);
+});
+test('indexMatches rejects a recycled index page', function () {
+  assert.strictEqual(
+    hindmoviez._test.indexMatches('Inception.(2010).1080p.Dual.Audio.(Hin-Eng).mkv (3.22 GB)', 'Inception', '2010', 'movie', 0),
+    true
+  );
+  assert.strictEqual(
+    hindmoviez._test.indexMatches('Van.der.Valk.S01.Hindi.480p (120 MB) HindShare', 'Inception', '2010', 'movie', 0),
+    false
+  );
+  assert.strictEqual(
+    hindmoviez._test.indexMatches('Stranger.Things.S01.720p.Hindi.Eng (420 MB) HindShare', 'Stranger Things', '2016', 'tv', 1),
+    true
+  );
+  assert.strictEqual(
+    hindmoviez._test.indexMatches('Stranger.Things.S01.720p.Hindi.Eng (420 MB) HindShare', 'Stranger Things', '2016', 'tv', 2),
+    false
+  );
+});
+
 section('vidout');
 test('firstHttpLine picks the first url and rejects junk', function () {
   assert.strictEqual(
@@ -1348,7 +1493,7 @@ test('registry contract', function () {
   const ids = {};
   assert.deepStrictEqual(
     providers.PROVIDERS.map(function (provider) { return provider.id; }),
-    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vegamovies', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'vidout', 'multimovies', 'allanime', 'hianime', 'animeworld']
+    ['hdhub', 'vidrift', 'bingr', 'moviebox', 'hub4k', 'netmirror', 'atlantic', 'vegamovies', 'vidly', 'vidbolt', 'movy', 'vidy', 'vidlink', 'vidout', 'multimovies', 'moviesdrive', 'hindmoviez', 'allanime', 'hianime', 'animeworld']
   );
   providers.PROVIDERS.forEach(function (provider) {
     assert.ok(provider.id, 'missing id');
@@ -1585,6 +1730,32 @@ test('unknown release text omits spec lines instead of guessing', function () {
   assert.ok(out.title.indexOf('🎥') < 0);
   assert.ok(out.title.indexOf('📺') < 0);
   assert.ok(out.title.indexOf('🔍 Bingr') >= 0);
+});
+test('url file name feeds spec parsing when no release text is declared', function () {
+  const raw = {
+    url: 'https://r2.example.com/movies/Inception.2010.2160p.BluRay.REMUX.DV.HDR.10bit.HEVC.Hindi.DDP.English.Atmos.5.1.mkv',
+    type: 'mp4', quality: '2160p', height: 2160, size: '65.95 GB', language: 'Hindi, English',
+  };
+  const ctx = { type: 'movie', season: 0, episode: 0, meta: { title: 'Inception', year: '2010', originalLanguage: 'English' } };
+  const out = styles.renderNameTitle({ id: 'bingr', name: 'Bingr' }, raw, ctx, 'indstream');
+  assert.ok(out.title.indexOf('💿 BluRay REMUX') >= 0);
+  assert.ok(out.title.indexOf('🔆 DV HDR') >= 0);
+  assert.ok(out.title.indexOf('🎞️ HEVC 10bit') >= 0);
+  assert.ok(out.title.indexOf('🎧 Atmos · DD+') >= 0);
+  assert.ok(out.title.indexOf('🔊 5.1') >= 0);
+});
+test('opaque url with no release text yields no spec lines', function () {
+  const raw = { url: 'https://cdn.example.com/master.m3u8?token=abc123', type: 'hls', quality: '1080p', height: 1080, language: '' };
+  const out = styles.renderNameTitle({ id: 'bingr', name: 'Bingr' }, raw, { type: 'movie', season: 0, episode: 0 }, 'lightgdrive');
+  assert.ok(out.title.indexOf('🎥') < 0);
+  assert.ok(out.title.indexOf('📺') < 0);
+  assert.ok(out.title.indexOf('🎞️') < 0);
+  assert.ok(out.title.indexOf('🔍 Bingr') >= 0);
+});
+test('releaseNameFromUrl takes only the last path segment', function () {
+  assert.strictEqual(styles._test.releaseNameFromUrl('https://cdn.example.com/movies/Inception.mkv?x=1#frag'), 'Inception.mkv');
+  assert.strictEqual(styles._test.releaseNameFromUrl('https://cdn.example.com/'), '');
+  assert.strictEqual(styles._test.releaseNameFromUrl(''), '');
 });
 test('indstream is the default signature style', function () {
   assert.strictEqual(styles.DEFAULT_STYLE, 'indstream');

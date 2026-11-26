@@ -14,6 +14,8 @@ const PROVIDERS = [
   { id: 'vidlink', name: 'VidLink', mark: 'VK', tags: ['1080p', 'Stream', 'Very Fast'] },
   { id: 'vidout', name: 'VidOut', mark: 'VO', tags: ['1080p', 'Multi-Audio', 'Stream', 'Fast'] },
   { id: 'multimovies', name: 'MultiMovies', mark: 'MM', tags: ['1080p', 'Multi-Audio', 'Download', 'Slow'] },
+  { id: 'moviesdrive', name: 'MoviesDrive', mark: 'MD', tags: ['4K', '1080p', 'Multi-Audio', 'Download', 'Slow'] },
+  { id: 'hindmoviez', name: 'HindMoviez', mark: 'HM', tags: ['1080p', 'Multi-Audio', 'Download', 'Slow'] },
   { id: 'allanime', name: 'AllAnime', mark: 'AA', tags: ['1080p', 'Anime', 'Stream', 'Fast'] },
   { id: 'hianime', name: 'Hianime', mark: 'HI', tags: ['1080p', 'Anime', 'Stream', 'Fast'] },
   { id: 'animeworld', name: 'AnimeWorld', mark: 'AW', tags: ['1080p', 'Anime', 'Multi-Audio', 'Stream'] },

@@ -93,10 +93,27 @@ Hindi-default catalogue; Indian/anime-title heavy).
 | Arctic (PenguPlay) | `pengu.uk` (PenguPlay) | `/api/status` reports Arctic "up" (34–74 streams claimed for recent probes) | The streaming endpoint is server-side and requires a PenguPlay account token; the only public token found is revoked, and no direct Arctic domain or API has been identified. Not addable without an account token. |
 | VegaMovies | `vegamovies.fail` | HTTP 200, but its search page returns a generic page with zero matching links for every probe term (tested via both GET and POST) | Catalogue effectively unreachable without crawling; not usable as a provider. |
 | UHDMovies | `uhdmovies.co.in` | HTTP 200 and site search works | Catalogue is sparse; for example Inception is only available at 720p/480p, never 4K. Not enough content to justify a provider. |
-| MoviesDrive | `moviesdrive.*` | Every probed TLD fails to resolve or is a parked domain (`.buzz` is a parked page) | No usable site/domain found. |
 
 Probe titles used: Inception, John Wick, Stranger Things (normal); Your Name, Spirited Away,
 Attack on Titan (anime). Rule applied: 0 streams = down, ≥1 stream = up.
+
+`moviesdrive` is **no longer rejected** (fresh probe 2026-11-26, this machine). The
+earlier `.buzz` parked-domain finding no longer applies: `new5.moviesdrive.cyou`
+serves live search (`/search/<title>/`) and post pages, and downloads resolve via
+`mdrive.lol/archive/<id>` → HubCloud → Pixeldrain. Inception 4K/1080p and Stranger
+Things S1E1 1080p/720p returned Pixeldrain files with HTTP 206 ranges. It is added
+as `moviesdrive` — opt-in, **not Recommended**, because Pixeldrain throughput here
+measured ~1.2–1.6 Mbps. `workers.dev` mirrors are skipped (Google Drive quota 403)
+and `gpdl*.hubcloud.mov` links are skipped (dead/unstable).
+
+`hindmoviez` (`hindmovie.one` → `v5.hindmovie.im`) is **live** (fresh probe
+2026-11-26, this machine). Search, post quality headings, `mvlink.blog` index
+pages and `hshare.lol` work; GDShine resolves to `lh3.googleusercontent.com`
+files and GDirect to `video-downloads.googleusercontent.com`. Inception 1080p and
+Stranger Things S1E1 4K/1080p were returned. Index IDs can be recycled to other
+titles, so each index page title is validated before use. It is added as
+`hindmoviez` — opt-in, **not Recommended**, because Google direct downloads were
+slow (~130–600 KB/s) from this machine.
 
 ## Indflix researched-and-rejected list (imported 2026-11-18, attribution: dipender98/Indflix `RejectedServers.kt`)
 
